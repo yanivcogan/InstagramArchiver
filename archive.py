@@ -82,6 +82,7 @@ class ArchiveSessionMetadata(BaseModel):
     warc_archive: Optional[Path] = None
     my_ip: Optional[str] = None
     har_hash: Optional[str] = None
+    sanitized_har_hash: Optional[str] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = commit_id
 
@@ -116,7 +117,8 @@ The archiving process started at {metadata.archiving_start_timestamp} and was co
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
 The script records the screen during this process, and also saves a HAR file of the network traffic. The HAR file is then sanitized to remove sensitive information, and the screen recording is saved as a video file.
-None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})"""
+None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
+MD5 hash of the HAR file: {metadata.har_hash}, MD5 hash of the sanitized HAR file: {metadata.sanitized_har_hash}."""
     return affidavit
 
 
@@ -134,13 +136,19 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     metadata.archiving_finished_timestamp = archiving_finished_timestamp
 
     har_path = metadata.har_archive
+    sanitized_har_path = archive_dir / "sanitized.har"
 
-    sanitize_har(har_path, har_path)
+    sanitize_har(har_path, sanitized_har_path)
 
     with open(har_path, 'rb') as file:
         har_content = file.read()
         har_hash = md5(har_content).hexdigest()
         metadata.har_hash = har_hash
+
+    with open(sanitized_har_path, 'rb') as file:
+        sanitized_har_content = file.read()
+        sanitized_har_hash = md5(sanitized_har_content).hexdigest()
+        metadata.sanitized_har_hash = sanitized_har_hash
 
     with open(archive_dir / "metadata.json", "w") as f:
         metadata_dict = metadata.model_dump()
@@ -196,7 +204,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
         browser = p.firefox.launch(headless=False)
         browser_build_id = f"{browser.browser_type.name}_{browser.version}"
         metadata.browser_build_id = browser_build_id
-        browser.on("disconnected", lambda b: finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event))
+        # browser.on("disconnected", lambda b: finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event))
         context = browser.new_context(
             storage_state=storage_state,
             record_har_path=metadata.har_archive,
@@ -213,6 +221,8 @@ def archive_instagram_content(profile: Profile, target_url: str):
             page.wait_for_event("close", timeout=0)
         except Exception as e:
             print(f"Error during archiving: {e}")
+        finally:
+            finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event)
 
 
 
