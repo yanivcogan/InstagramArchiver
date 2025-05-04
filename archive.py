@@ -116,7 +116,7 @@ The archiving process started at {metadata.archiving_start_timestamp} and was co
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
 The script records the screen during this process, and also saves a HAR file of the network traffic. The HAR file is then sanitized to remove sensitive information, and the screen recording is saved as a video file.
-None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at"""
+None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})"""
     return affidavit
 
 
