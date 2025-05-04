@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 
 class MediaSegment(BaseModel):
-    start: int
-    end: int
+    start: Optional[int]
+    end: Optional[int]
     data: bytes
 
 
@@ -48,16 +48,6 @@ def extract_xpv_asset_id(url):
         return None
 
 
-def assemble_media_segments(track: Optional[MediaTrack]) -> Optional[MediaTrack]:
-    if track is None:
-        return None
-    # Sort segments by start time
-    track.segments.sort(key=lambda x: x.start)
-    # Remove duplicates
-    track.segments = list({(s.start, s.end): s for s in track.segments}.values())
-    return track
-
-
 def extract_video_maps(har_path:Path) -> list[Video]:
     """Extracts video segment data from the HAR file."""
     with open(har_path, 'rb') as file:  # Open the file in binary mode
@@ -72,10 +62,11 @@ def extract_video_maps(har_path:Path) -> list[Video]:
                 url = entry['request']['url']
                 xpv_asset_id = extract_xpv_asset_id(url)
                 filename = url.split(".mp4")[0].split("/")[-1]
-                if "bytestart=" not in url or "byteend=" not in url:
-                    continue
-                start = int(url.split("bytestart=")[1].split("&")[0])
-                end = int(url.split("byteend=")[1].split("&")[0])
+                start = end = None
+                if "bytestart=" in url:
+                    start = int(url.split("bytestart=")[1].split("&")[0])
+                if "byteend=" in url:
+                    end = int(url.split("byteend=")[1].split("&")[0])
                 response_content = base64.b64decode(entry['response']['content']['text'])
                 if xpv_asset_id not in videos_dict:
                     videos_dict[xpv_asset_id] = Video(
@@ -96,9 +87,6 @@ def extract_video_maps(har_path:Path) -> list[Video]:
             print(f'Error processing entry: {e}')
             traceback.print_exc()
             continue
-    for v in videos_dict.values():
-        v.video_track = assemble_media_segments(v.video_track)
-        v.audio_track = assemble_media_segments(v.audio_track)
     videos = list(videos_dict.values())
     return videos
 
@@ -141,7 +129,11 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
             video_track = b''
             # compose a full file out of the segments.
             for segment in video.video_track.segments:
-                # each segment has data and a start byte. Add the data starting at the start byte.
+                # if the segment's start byte is None, just append the data.
+                if segment.start is None:
+                    video_track += segment.data
+                    continue
+                # add the data starting at the start byte.
                 if len(video_track) < segment.end:
                     video_track += b'\x00' * (segment.end - len(video_track))
                 video_track = video_track[:segment.start] + segment.data + video_track[segment.end:]
@@ -210,12 +202,12 @@ def videos_from_har(har_path:Path, output_dir:Path=Path('temp_video_segments')):
     os.makedirs(output_dir, exist_ok=True)
     # Save the video segments as temporary files
     save_segments_as_files(videos, output_dir)
-    # Clean up corrupted files
+    print(f"Saved {len(videos)} videos to {output_dir}.")
 
 
 
 if __name__ == '__main__':
     # Provide the path to your .har file and desired output folder
-    har_file = input("Input path to HAR file")  # Replace with your actual HAR file
+    har_file = input("Input path to HAR file: ")  # Replace with your actual HAR file
 
     videos_from_har(Path(har_file))
