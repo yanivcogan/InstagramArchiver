@@ -23,8 +23,7 @@ class MediaTrack(BaseModel):
 
 class Video(BaseModel):
     xpv_asset_id: int
-    video_track: Optional[MediaTrack]
-    audio_track: Optional[MediaTrack]
+    tracks: dict[str, MediaTrack]
     location: Optional[str] = None
 
 
@@ -71,30 +70,17 @@ def extract_video_maps(har_path:Path) -> list[Video]:
                 if xpv_asset_id not in videos_dict:
                     videos_dict[xpv_asset_id] = Video(
                         xpv_asset_id=xpv_asset_id,
-                        video_track=None,
-                        audio_track=None
+                        tracks=dict(),
                     )
-                is_video = "o1/v/t2/f2" in url
-                if is_video:
-                    if videos_dict[xpv_asset_id].video_track is None:
-                        videos_dict[xpv_asset_id].video_track = MediaTrack(base_url=filename, segments=[])
-                    videos_dict[xpv_asset_id].video_track.segments.append(MediaSegment(start=start, end=end, data=response_content))
-                else:
-                    if videos_dict[xpv_asset_id].audio_track is None:
-                        videos_dict[xpv_asset_id].audio_track = MediaTrack(base_url=filename, segments=[])
-                    videos_dict[xpv_asset_id].audio_track.segments.append(MediaSegment(start=start, end=end, data=response_content))
+                if filename not in videos_dict[xpv_asset_id].tracks:
+                    videos_dict[xpv_asset_id].tracks[filename] = MediaTrack(base_url=filename, segments=[])
+                videos_dict[xpv_asset_id].tracks[filename].segments.append(MediaSegment(start=start, end=end, data=response_content))
         except Exception as e:
             print(f'Error processing entry: {e}')
             traceback.print_exc()
             continue
     videos = list(videos_dict.values())
     return videos
-
-
-class StoredVideo(BaseModel):
-    xpv_asset_id: int
-    video_track: list[str] = []
-    audio_track: list[str] = []
 
 
 def clean_segments(files_to_delete):
@@ -125,33 +111,39 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
         temp_video_file = None
         temp_audio_file = None
         merged_file = None
-        if video.video_track is not None:
-            video_track = b''
+        for track_name, track in video.tracks.items():
+            track_data = b''
             # compose a full file out of the segments.
-            for segment in video.video_track.segments:
+            for segment in track.segments:
                 # if the segment's start byte is None, just append the data.
                 if segment.start is None:
-                    video_track += segment.data
+                    track_data += segment.data
                     continue
                 # add the data starting at the start byte.
-                if len(video_track) < segment.end:
-                    video_track += b'\x00' * (segment.end - len(video_track))
-                video_track = video_track[:segment.start] + segment.data + video_track[segment.end:]
-            temp_video_file = f"video_{v_idx}_no_audio.mp4"
-            with open(output_dir / temp_video_file, 'wb') as f:
-                f.write(video_track)
+                if len(track_data) < segment.end:
+                    track_data += b'\x00' * (segment.end - len(track_data))
+                track_data = track_data[:segment.start] + segment.data + track_data[segment.end:]
+            single_track_file = f"track_{v_idx}_{track_name}.mp4"
+            with open(output_dir / single_track_file, 'wb') as f:
+                f.write(track_data)
+            valid_file = clean_corrupted_files(output_dir / single_track_file)
+            if not valid_file:
+                print(f"File {output_dir / single_track_file} is corrupted, skipping.")
+                clean_segments([output_dir / single_track_file])
+                continue
+            # determine whether the file is audio or video using ffprobe
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_type', '-of',
+                 'default=noprint_wrappers=1:nokey=1',
+                 str(output_dir / single_track_file)],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            if len(track_data) > 0:
+                if 'audio' in result.stdout:
+                    temp_audio_file = single_track_file
+                else:
+                    temp_video_file = single_track_file
 
-        if video.audio_track is not None:
-            audio_track = b''
-            # compose a full file out of the segments.
-            for segment in video.audio_track.segments:
-                # each segment has data and a start byte. Add the data starting at the start byte.
-                if len(audio_track) < segment.end:
-                    audio_track += b'\x00' * (segment.end - len(audio_track))
-                audio_track = audio_track[:segment.start] + segment.data + audio_track[segment.end:]
-            temp_audio_file = f"audio_{v_idx}_no_video.mp4"
-            with open(output_dir / temp_audio_file, 'wb') as f:
-                f.write(audio_track)
 
         if temp_audio_file is not None and temp_video_file is not None:
             merged_file = f"merged_{v_idx}.mp4"
