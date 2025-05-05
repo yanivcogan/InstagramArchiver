@@ -120,7 +120,7 @@ The script records the screen during this process, and also saves a HAR file of 
 None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
 MD5 hash of the sanitized HAR file: {metadata.sanitized_har_hash}
-Additional Notes: {input('notes about content') or '-'}"""
+Additional Notes: {input('Notes about the content: ') or '-'}"""
     return affidavit
 
 
