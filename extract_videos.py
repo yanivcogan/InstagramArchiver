@@ -59,8 +59,9 @@ def extract_video_maps(har_path:Path) -> list[Video]:
         try:
             if ".mp4" in entry['request']['url'] and "text" in entry['response']['content']:
                 url = entry['request']['url']
+                base_url = url.split(".mp4")[0]
                 xpv_asset_id = extract_xpv_asset_id(url)
-                filename = url.split(".mp4")[0].split("/")[-1]
+                filename = base_url.split("/")[-1]
                 start = end = None
                 if "bytestart=" in url:
                     start = int(url.split("bytestart=")[1].split("&")[0])
@@ -73,7 +74,7 @@ def extract_video_maps(har_path:Path) -> list[Video]:
                         tracks=dict(),
                     )
                 if filename not in videos_dict[xpv_asset_id].tracks:
-                    videos_dict[xpv_asset_id].tracks[filename] = MediaTrack(base_url=filename, segments=[])
+                    videos_dict[xpv_asset_id].tracks[filename] = MediaTrack(base_url=base_url, segments=[])
                 videos_dict[xpv_asset_id].tracks[filename].segments.append(MediaSegment(start=start, end=end, data=response_content))
         except Exception as e:
             print(f'Error processing entry: {e}')
@@ -100,7 +101,10 @@ def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path
              output_path],
             check=True
         )
-        clean_segments([video_path, audio_path])
+        # Check if the merge was successful
+        if os.path.exists(output_path):
+            print(f"Merged video and audio into {output_path}")
+            clean_segments([video_path, audio_path])
     except subprocess.CalledProcessError as e:
         print(f"Error merging video and audio: {e}")
 
@@ -113,16 +117,20 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
         merged_file = None
         for track_name, track in video.tracks.items():
             track_data = b''
+            # sort the segments by start byte
+            track.segments.sort(key=lambda s: s.start)
             # compose a full file out of the segments.
+            # Determine the total length needed for the track
+            max_end = max((segment.end for segment in track.segments if segment.end is not None), default=0)
+            track_data = bytearray(max_end)
+
             for segment in track.segments:
-                # if the segment's start byte is None, just append the data.
                 if segment.start is None:
-                    track_data += segment.data
-                    continue
-                # add the data starting at the start byte.
-                if len(track_data) < segment.end:
-                    track_data += b'\x00' * (segment.end - len(track_data))
-                track_data = track_data[:segment.start] + segment.data + track_data[segment.end:]
+                    # If no start, append at the end (rare, fallback)
+                    track_data = segment.data
+                else:
+                    # Overwrite the region with this segment's data
+                    track_data[segment.start:segment.end] = segment.data
             single_track_file = f"track_{v_idx}_{track_name}.mp4"
             with open(output_dir / single_track_file, 'wb') as f:
                 f.write(track_data)
