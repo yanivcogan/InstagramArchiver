@@ -24,20 +24,35 @@ def register_instagram_account():
 
     profile_name = input("Enter a name for this profile: ")
     profile_name = profile_name.strip()
-    if profile_name in [p.name for p in profiles_map]:
-        print(f"Profile '{profile_name}' already exists. Please choose a different name.")
-        return
     profile_path = profiles_dir / profile_name
+    if profile_name in [p.name for p in profiles_map]:
+        override = input(f"Profile '{profile_name}' already exists. Load and adjust existing profile? (y/n): ")
+        if override.lower() != 'y':
+            print("Registration canceled.")
+        else:
+            print(f"Loading existing profile '{profile_name}' for adjustment.")
+            with open(profile_path / "state.json", "r") as f:
+                storage_state = json.load(f)
+            # Load the existing storage state into the context
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context(storage_state=storage_state)
+                page = context.new_page()
+                page.goto("https://www.instagram.com/")
+                print("\n" + "=" * 50)
+                print("Please adjust your Instagram account settings in the browser.")
+                print("Once done, you can close the browser window.")
+                print("=" * 50 + "\n")
+                input("Press Enter to close the browser...")
+                storage_state = context.storage_state()
+                with open(profile_path / "state.json", "w") as f:
+                    json.dump(storage_state, f)
+                browser.close()
+        return
     profile_insta_username = input("Enter the username of the Instagram account affiliated with this profile: ")
     profile_insta_username = profile_insta_username.strip()
     profiles_map.append(Profile(name=profile_name, insta_username=profile_insta_username))
 
-
-    if profile_path.exists():
-        override = input(f"Profile '{profile_name}' already exists. Override? (y/n): ")
-        if override.lower() != 'y':
-            print("Registration canceled.")
-            return
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
