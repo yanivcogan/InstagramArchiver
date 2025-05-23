@@ -85,6 +85,8 @@ class ArchiveSessionMetadata(BaseModel):
     sanitized_har_hash: Optional[str] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = commit_id
+    signature: Optional[str] = None
+    notes: Optional[str] = None
 
 
 def screen_record(output_path, stop_event):
@@ -112,7 +114,7 @@ def screen_record(output_path, stop_event):
 
 
 def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
-    affidavit = f"""I, {input('Sign full name: ')}, have archived the Instagram content from {metadata.target_url} using the profile '{metadata.profile_name}'.
+    affidavit = f"""I, {metadata.signature}, have archived the Instagram content from {metadata.target_url} using the profile '{metadata.profile_name}'.
 The archiving process started at {metadata.archiving_start_timestamp} and was completed at {metadata.archiving_finished_timestamp} (timezone: {datetime.datetime.now().astimezone().tzname()}, UTC {datetime.datetime.now().astimezone().utcoffset()}).
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
@@ -120,7 +122,7 @@ The script records the screen during this process, and also saves a HAR file of 
 None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
 MD5 hash of the sanitized HAR file: {metadata.sanitized_har_hash}
-Additional Notes: {input('Notes about the content: ') or '-'}"""
+Additional Notes: {metadata.notes}"""
     return affidavit
 
 
@@ -136,6 +138,9 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
 
     archiving_finished_timestamp = datetime.datetime.now().isoformat()
     metadata.archiving_finished_timestamp = archiving_finished_timestamp
+
+    metadata.signature = input('Sign full name: ')
+    metadata.notes = input('Notes about the content: ') or '-'
 
     har_path = metadata.har_archive
     sanitized_har_path = archive_dir / "sanitized.har"
