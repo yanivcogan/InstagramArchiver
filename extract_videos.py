@@ -4,6 +4,8 @@ import os
 import subprocess
 import traceback
 import urllib
+import requests
+
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,7 @@ class MediaSegment(BaseModel):
 class MediaTrack(BaseModel):
     base_url: str
     segments: list[MediaSegment]
+    full_track: Optional[bytes] = None
 
 
 class Video(BaseModel):
@@ -47,7 +50,7 @@ def extract_xpv_asset_id(url):
         return None
 
 
-def extract_video_maps(har_path:Path) -> list[Video]:
+def extract_video_maps(har_path:Path, download_full_video: bool = False) -> list[Video]:
     """Extracts video segment data from the HAR file."""
     with open(har_path, 'rb') as file:  # Open the file in binary mode
         har_data = json.load(file)
@@ -75,6 +78,24 @@ def extract_video_maps(har_path:Path) -> list[Video]:
                     )
                 if filename not in videos_dict[xpv_asset_id].tracks:
                     videos_dict[xpv_asset_id].tracks[filename] = MediaTrack(base_url=base_url, segments=[])
+                    if download_full_video:
+                        try:
+                            full_track_url = urllib.parse.urlunparse(
+                                urllib.parse.urlparse(url)._replace(
+                                    query="&".join(
+                                        f"{k}={v[0]}" if len(v) == 1 else "&".join(f"{k}={i}" for i in v)
+                                        for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(url).query).items()
+                                        if k not in ("bytestart", "byteend")
+                                    )
+                                )
+                            )
+                            print("Downloading full track from:", full_track_url)
+                            resp = requests.get(full_track_url)
+                            if resp.status_code == 200:
+                                videos_dict[xpv_asset_id].tracks[filename].full_track = resp.content
+                        except Exception as e:
+                            print(f"Error downloading full track: {e}")
+                            pass
                 videos_dict[xpv_asset_id].tracks[filename].segments.append(MediaSegment(start=start, end=end, data=response_content))
         except Exception as e:
             print(f'Error processing entry: {e}')
@@ -117,20 +138,24 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
         merged_file = None
         for track_name, track in video.tracks.items():
             track_data = b''
-            # sort the segments by start byte
-            track.segments.sort(key=lambda s: s.start)
-            # compose a full file out of the segments.
-            # Determine the total length needed for the track
-            max_end = max((segment.end for segment in track.segments if segment.end is not None), default=0)
-            track_data = bytearray(max_end)
+            if track.full_track is not None:
+                # If full track is available, use it directly
+                track_data = track.full_track
+            else:
+                # sort the segments by start byte
+                track.segments.sort(key=lambda s: s.start)
+                # compose a full file out of the segments.
+                # Determine the total length needed for the track
+                max_end = max((segment.end for segment in track.segments if segment.end is not None), default=0)
+                track_data = bytearray(max_end)
 
-            for segment in track.segments:
-                if segment.start is None:
-                    # If no start, append at the end (rare, fallback)
-                    track_data = segment.data
-                else:
-                    # Overwrite the region with this segment's data
-                    track_data[segment.start:segment.end] = segment.data
+                for segment in track.segments:
+                    if segment.start is None:
+                        # If no start, append at the end (rare, fallback)
+                        track_data = segment.data
+                    else:
+                        # Overwrite the region with this segment's data
+                        track_data[segment.start:segment.end] = segment.data
             single_track_file = f"track_{v_idx}_{track_name}.mp4"
             with open(output_dir / single_track_file, 'wb') as f:
                 f.write(track_data)
@@ -193,7 +218,7 @@ def clean_corrupted_files(path_to_check: Path) -> bool:
 
 
 def videos_from_har(har_path:Path, output_dir:Path=Path('temp_video_segments')):
-    videos = extract_video_maps(har_path)
+    videos = extract_video_maps(har_path, download_full_video=True)
     if not videos:
         print("No video segments found in the HAR file.")
         return
