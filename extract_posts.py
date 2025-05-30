@@ -132,7 +132,6 @@ def extract_posts_from_html_response(html: str) -> List[Post]:
                     elif "display_url" in item:
                         media_urls = [item["display_url"]]
 
-                    mentions = extract_mentions_from_text(caption or "")
 
                     # Try matching comment data via post ID
                     raw_comments = []
@@ -151,7 +150,6 @@ def extract_posts_from_html_response(html: str) -> List[Post]:
                             text=c.get("text", ""),
                             timestamp=c.get("created_at"),
                         ))
-                        mentions.extend(extract_mentions_from_text(c.get("text", "")))
 
                     post = Post(
                         username=username,
@@ -161,7 +159,7 @@ def extract_posts_from_html_response(html: str) -> List[Post]:
                         media_urls=media_urls,
                         timestamp=timestamp,
                         comments=comments,
-                        mentions=list(set(mentions))
+                        mentions=[]
                     )
                     posts.append(post)
 
