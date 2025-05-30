@@ -83,24 +83,94 @@ def extract_posts_from_graphql_entries(entries: List[dict]) -> List[Post]:
     return posts
 
 
-def extract_posts_from_html_response(html_content: str) -> List[Post]:
-    soup = BeautifulSoup(html_content, "html.parser")
-    scripts = soup.find_all("script")
+def find_json_by_keyword(data: dict, keyword: str) -> List[dict]:
+    matches = []
+
+    def search(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if keyword in k and isinstance(v, dict):
+                    matches.append(v)
+                search(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                search(item)
+
+    search(data)
+    return matches
+
+
+
+
+def extract_posts_from_html_response(html: str) -> List[Post]:
+    soup = BeautifulSoup(html, "html.parser")
     posts = []
 
-    for script in scripts:
+    for script in soup.find_all("script", {"type": "application/json"}):
         if not script.string:
             continue
-
         try:
-            if 'window._sharedData' in script.string:
-                match = re.search(r"window\._sharedData\s*=\s*(\{.*\});", script.string)
-                if match:
-                    shared_data = json.loads(match.group(1))
-                    posts.extend(parse_shared_post_data(shared_data))
+            json_data = json.loads(script.string)
+
+            post_blobs = find_json_by_keyword(json_data, "xdt_api__v1__media__shortcode__web_info")
+            comment_blobs = find_json_by_keyword(json_data, "xdt_api__v1__media__media_id__comments__connection")
+
+            for post_data in post_blobs:
+                for item in post_data.get("items", []):
+                    post_id = item.get("id")
+                    user = item.get("user", {})
+                    username = user.get("username", "unknown_user")
+                    user_id = user.get("id", "unknown_id")
+
+                    caption_data = item.get("caption", {})
+                    caption = caption_data.get("text")
+                    timestamp = item.get("taken_at")
+
+                    media_urls = []
+                    if "image_versions2" in item:
+                        media_urls = [c.get("url") for c in item["image_versions2"].get("candidates", [])]
+                    elif "display_url" in item:
+                        media_urls = [item["display_url"]]
+
+                    mentions = extract_mentions_from_text(caption or "")
+
+                    # Try matching comment data via post ID
+                    raw_comments = []
+                    for comment_blob in comment_blobs:
+                        comment_items = comment_blob.get("edges", [])
+                        for comment in comment_items:
+                            node = comment.get("node")
+                            if node:
+                                raw_comments.append(node)
+
+                    comments = []
+                    for c in raw_comments:
+                        comments.append(Comment(
+                            username=c.get("user", {}).get("username", "unknown"),
+                            user_id=c.get("user", {}).get("id"),
+                            text=c.get("text", ""),
+                            timestamp=c.get("created_at"),
+                        ))
+                        mentions.extend(extract_mentions_from_text(c.get("text", "")))
+
+                    post = Post(
+                        username=username,
+                        user_id=user_id,
+                        post_id=post_id,
+                        caption=caption,
+                        media_urls=media_urls,
+                        timestamp=timestamp,
+                        comments=comments,
+                        mentions=list(set(mentions))
+                    )
+                    posts.append(post)
+
         except Exception as e:
-            print("Error parsing HTML post script:", e)
+            print("Failed to parse post from HTML:", e)
+            continue
+
     return posts
+
 
 
 def parse_shared_post_data(data: dict) -> List[Post]:
@@ -216,6 +286,6 @@ def main(har_path):
 
 if __name__ == '__main__':
     # Provide the path to your .har file and desired output folder
-    har_file = input("Input path to HAR file")  # Replace with your actual HAR file
+    har_file = 'C:/Users/yaniv/Documents/projects/InstagramArchiver/archives/fllf_20250530_135307/archive.har' #input("Input path to HAR file")  # Replace with your actual HAR file
 
     main(har_file)
