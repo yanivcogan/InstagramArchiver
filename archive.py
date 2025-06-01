@@ -22,8 +22,6 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 
 from har_sanitizer import sanitize_har
-from extractors.extract_photos import photos_from_har
-from extractors.extract_videos import videos_from_har
 from profile_registration import Profile
 from summarizers.archive_summary_generator import generate_summary
 
@@ -167,13 +165,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     with open(archive_dir / "affidavit.txt", "w") as f:
         f.write(affidavit_from_metadata(metadata))
 
-    videos = videos_from_har(har_path, archive_dir / "videos")
-    photos = photos_from_har(har_path, archive_dir / "photos")
-    structures = structures_from_har(har_path)
-    summary = generate_summary(structures, photos, videos, metadata_dict)
-
-    with open(archive_dir / "summary.html", "w") as f:
-        f.write(summary)
+    generate_summary(har_path, archive_dir, metadata_dict)
 
     print(f"Content archived successfully in {archive_dir}")
 

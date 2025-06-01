@@ -51,7 +51,7 @@ def extract_xpv_asset_id(url):
         return None
 
 
-def extract_video_maps(har_path:Path, download_full_video: bool = False) -> list[Video]:
+def extract_video_maps(har_path:Path, download_full_video: bool = True) -> list[Video]:
     """Extracts video segment data from the HAR file."""
     with open(har_path, 'rb') as file:  # Open the file in binary mode
         har_data = json.load(file)
@@ -119,7 +119,7 @@ def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path
     try:
         # Use ffmpeg to merge video and audio
         subprocess.run(
-            ['ffmpeg', '-i', video_path, '-i', audio_path, '-c:v', 'copy', '-c:a', 'aac', '-strict', 'experimental',
+            ['ffmpeg', '-y', '-i', video_path, '-i', audio_path, '-c:v', 'copy', '-c:a', 'aac', '-strict', 'experimental',
              output_path],
             check=True
         )
@@ -162,7 +162,8 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
                     else:
                         # Overwrite the region with this segment's data
                         track_data[segment.start:segment.end] = segment.data
-            single_track_file = f"track_{v_idx}_{track_name}.mp4"
+            source_type = "extracted_from_har" if track.full_track is None else "full_track_downloaded"
+            single_track_file = f"track_{video.xpv_asset_id}_{track_name}_{source_type}.mp4"
             with open(output_dir / single_track_file, 'wb') as f:
                 f.write(track_data)
             valid_file = clean_corrupted_files(output_dir / single_track_file)
@@ -186,7 +187,7 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
 
 
         if temp_audio_file is not None and temp_video_file is not None:
-            merged_file = f"{temp_video_file}_with_audio.mp4"
+            merged_file = f"{temp_video_file.split('.mp4')[0]}_with_audio.mp4"
             merge_success = merge_video_and_audio_tracks(
                 output_dir / temp_video_file,
                 output_dir / temp_audio_file,
@@ -198,11 +199,16 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
                 video.local_files.remove((output_dir / temp_audio_file).as_posix())
 
 
-        video.location = merged_file or temp_video_file or temp_audio_file or None
-        if video.location:
-            valid_file = clean_corrupted_files(output_dir / video.location)
+        video_location = merged_file or temp_video_file or temp_audio_file or None
+        if video_location:
+            valid_file = clean_corrupted_files(output_dir / video_location)
             if not valid_file:
                 video.location = None
+            else:
+                video.location = (output_dir / video_location).as_posix()
+        else:
+            print(f"No valid video or audio files found for video {video.xpv_asset_id}, skipping.")
+            video.location = None
     return videos
 
 
@@ -229,8 +235,8 @@ def clean_corrupted_files(path_to_check: Path) -> bool:
         return True
 
 
-def videos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments')) -> list[Video]:
-    videos = extract_video_maps(har_path, download_full_video=True)
+def videos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments'), download_full_video: bool = True) -> list[Video]:
+    videos = extract_video_maps(har_path, download_full_video=download_full_video)
     if not videos:
         print("No video segments found in the HAR file.")
         return []

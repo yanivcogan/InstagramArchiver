@@ -1,9 +1,7 @@
 import base64
 import json
 import os
-import subprocess
 import traceback
-import urllib
 from pathlib import Path
 from typing import Optional
 
