@@ -7,11 +7,10 @@ import json
 from bs4 import BeautifulSoup
 from typing import List, Optional
 
-from models import TimelineItem, \
-    HighlightsReelConnection, CommentsConnection, \
+from extractors.models import HighlightsReelConnection, CommentsConnection, \
     ProfileTimeline, MediaShortcode, \
     StoriesFeed  # assuming you've defined the models above in models.py
-from models_har import HarRequest
+from extractors.models_har import HarRequest
 
 
 

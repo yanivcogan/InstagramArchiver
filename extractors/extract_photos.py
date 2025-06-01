@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from extract_videos import extract_xpv_asset_id
+from extractors.extract_videos import extract_xpv_asset_id
 
 
 class Photo(BaseModel):
