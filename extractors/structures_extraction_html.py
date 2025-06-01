@@ -7,9 +7,9 @@ import json
 from bs4 import BeautifulSoup
 from typing import List, Optional
 
-from models import InstagramPost, PostComment, TimelineItem, \
+from models import TimelineItem, \
     HighlightsReelConnection, CommentsConnection, \
-    HighlightsReel, ProfileTimeline, MediaShortcode, \
+    ProfileTimeline, MediaShortcode, \
     StoriesFeed  # assuming you've defined the models above in models.py
 from models_har import HarRequest
 
@@ -49,7 +49,7 @@ def infer_post_type_from_url(url: str) -> Optional[supported_page_types]:
 class Page(BaseModel):
     posts: Optional[MediaShortcode]
     comments: Optional[CommentsConnection]
-    timelines: Optional[TimelineItem]
+    timelines: Optional[ProfileTimeline]
     highlight_reels: Optional[HighlightsReelConnection]
     stories: Optional[StoriesFeed]
 
@@ -70,7 +70,7 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[Page]:
             post_blobs = find_json_by_keyword(json_data, "xdt_api__v1__media__shortcode__web_info")
             timeline_blobs = find_json_by_keyword(json_data, "xdt_api__v1__profile_timeline")
             highlight_reels_blobs = find_json_by_keyword(json_data, "xdt_api__v1__feed__reels_media__connection")
-            stories = find_json_by_keyword(json_data, "xdt_api__v1__feed__reels_media")
+            story_feeds = find_json_by_keyword(json_data, "xdt_api__v1__feed__reels_media")
             comment_blobs = find_json_by_keyword(json_data, "xdt_api__v1__media__media_id__comments__connection")
 
             for post_data in post_blobs:
@@ -85,20 +85,27 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[Page]:
             for reel_data in highlight_reels_blobs:
                 highlight_reels = HighlightsReelConnection(**reel_data)
 
-            for story_data in stories:
+            for story_data in story_feeds:
                 stories = StoriesFeed(**story_data)
 
         except Exception as e:
             print("Failed to parse post from HTML:", e)
             continue
     if not post and not comments and not timeline and not highlight_reels and not stories:
-        return None
-    return Page(
-        posts=post, comments=comments, timelines=timeline, highlight_reels=highlight_reels, stories=stories
-    )
+        res = None
+    else:
+        res = Page(
+            posts=post,
+            comments=comments,
+            timelines=timeline,
+            highlight_reels=highlight_reels,
+            stories=stories
+        )
+    return res
 
 
 def extract_data_from_html_entry(html_data: str, req: HarRequest) -> Optional[Page]:
     soup = BeautifulSoup(html_data, "html.parser")
     #html_type = infer_post_type_from_url(req.url)
-    return extract_data_from_html_response(soup)
+    data = extract_data_from_html_response(soup)
+    return data

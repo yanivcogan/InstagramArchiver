@@ -18,6 +18,7 @@ class Photo(BaseModel):
     filename: str
     extension: str
     data: bytes
+    local_files: list[str] = []
 
 
 def extract_photos(har_path:Path) -> list[Photo]:
@@ -62,23 +63,24 @@ def save_photos(photos:list[Photo], output_dir:Path):
             file_path = output_dir / f"{photo.filename}.{photo.extension}"
             with open(file_path, 'wb') as file:
                 file.write(photo.data)
+            photo.local_files = [file_path.as_posix()]
             print(f"Saved {file_path}")
         except Exception as e:
             print(f"Error saving photo {photo.filename}: {e}")
             traceback.print_exc()
-    pass
+    return photos
 
 
-def photos_from_har(har_path:Path, output_dir:Path=Path('temp_video_segments')):
+def photos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments')) -> list[Photo]:
     photos = extract_photos(har_path)
     if not photos:
         print("No photos found in the HAR file.")
-        return
+        return []
 
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     # Save the video segments as temporary files
-    save_photos(photos, output_dir)
+    return save_photos(photos, output_dir)
 
 
 if __name__ == '__main__':

@@ -287,7 +287,7 @@ class PostCommentNode(BaseModel):
         extra = "allow"
 
 class CommentsConnection(BaseModel):
-    count: int
+    count: Optional[int]
     page_info: Optional[Any] = None # Could be a more specific PageInfo model if structure is known
     edges: List[PostCommentNode]
 
@@ -504,11 +504,11 @@ class StoryItem(BaseModel):
     media_overlay_info: Optional[Any] = None
     caption: Optional[Any] = None
     accessibility_caption: Optional[str] = None
-    organic_tracking_token: str
-    taken_at: int
-    is_dash_eligible: int
-    number_of_qualities: int
-    video_dash_manifest: str
+    organic_tracking_token: Optional[str] = None
+    taken_at: Optional[int] = None
+    is_dash_eligible: Optional[int] = None
+    number_of_qualities: Optional[int] = None
+    video_dash_manifest: Optional[str] = None
     video_versions: Optional[List[HighlightsReelVideoVersion]] = None # Reusing
     visual_comment_reply_sticker_info: Optional[Any] = None
     story_bloks_stickers: Optional[Any] = None
@@ -523,25 +523,25 @@ class StoryItem(BaseModel):
     story_cta: Optional[Any] = None
     link: Optional[Any] = None
     reel_media_background: Optional[Any] = None
-    video_duration: float # Example shows 15, could be int or float
+    video_duration: Optional[float] = None # Example shows 15, could be int or float
     preview: Optional[Any] = None
-    expiring_at: int
-    is_paid_partnership: bool
+    expiring_at: Optional[int] = None
+    is_paid_partnership: Optional[bool] = False
     sponsor_tags: Optional[Any] = None
     wearable_attribution_info: Optional[Any] = None
     reshared_story_media_author: Optional[Any] = None
     story_app_attribution: Optional[Any] = None
-    has_translation: bool
-    can_see_insights_as_brand: bool
+    has_translation: Optional[bool] = False
+    can_see_insights_as_brand: Optional[bool] = False
     audience: Optional[Any] = None
-    has_liked: bool
+    has_liked: Optional[bool] = False
     viewer_count: Optional[int] = None
     viewers: Optional[Any] = None
     sharing_friction_info: InstagramSharingFrictionInfo # Reusing
     can_viewer_reshare: Optional[bool] = None
-    ig_media_sharing_disabled: bool
-    can_reply: bool
-    can_reshare: bool
+    ig_media_sharing_disabled: Optional[bool] = False
+    can_reply: Optional[bool] = False
+    can_reshare: Optional[bool] = False
     typename: Optional[str] = Field(None, alias="__typename")
 
     class Config:

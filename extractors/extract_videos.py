@@ -28,6 +28,7 @@ class Video(BaseModel):
     xpv_asset_id: int
     tracks: dict[str, MediaTrack]
     location: Optional[str] = None
+    local_files: list[str] = []
 
 
 def extract_xpv_asset_id(url):
@@ -113,7 +114,7 @@ def clean_segments(files_to_delete):
             print(f"File {file} does not exist, skipping deletion.")
 
 
-def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path: Path):
+def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path: Path) -> bool:
     """Merge video and audio tracks into a single file."""
     try:
         # Use ffmpeg to merge video and audio
@@ -126,8 +127,13 @@ def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path
         if os.path.exists(output_path):
             print(f"Merged video and audio into {output_path}")
             clean_segments([video_path, audio_path])
+            return True
+        else:
+            print(f"Failed to create merged file at {output_path}")
+            return False
     except subprocess.CalledProcessError as e:
         print(f"Error merging video and audio: {e}")
+        return False
 
 
 def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]:
@@ -164,6 +170,7 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
                 print(f"File {output_dir / single_track_file} is corrupted, skipping.")
                 clean_segments([output_dir / single_track_file])
                 continue
+            video.local_files.append((output_dir / single_track_file).as_posix())
             # determine whether the file is audio or video using ffprobe
             result = subprocess.run(
                 ['ffprobe', '-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_type', '-of',
@@ -179,12 +186,17 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
 
 
         if temp_audio_file is not None and temp_video_file is not None:
-            merged_file = f"merged_{v_idx}.mp4"
-            merge_video_and_audio_tracks(
+            merged_file = f"{temp_video_file}_with_audio.mp4"
+            merge_success = merge_video_and_audio_tracks(
                 output_dir / temp_video_file,
                 output_dir / temp_audio_file,
                 output_dir / merged_file
             )
+            if merge_success:
+                video.local_files.append((output_dir / merged_file).as_posix())
+                video.local_files.remove((output_dir / temp_video_file).as_posix())
+                video.local_files.remove((output_dir / temp_audio_file).as_posix())
+
 
         video.location = merged_file or temp_video_file or temp_audio_file or None
         if video.location:
@@ -217,17 +229,18 @@ def clean_corrupted_files(path_to_check: Path) -> bool:
         return True
 
 
-def videos_from_har(har_path:Path, output_dir:Path=Path('temp_video_segments')):
+def videos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments')) -> list[Video]:
     videos = extract_video_maps(har_path, download_full_video=True)
     if not videos:
         print("No video segments found in the HAR file.")
-        return
+        return []
 
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     # Save the video segments as temporary files
-    save_segments_as_files(videos, output_dir)
+    stored_videos = save_segments_as_files(videos, output_dir)
     print(f"Saved {len(videos)} videos to {output_dir}.")
+    return stored_videos
 
 
 
