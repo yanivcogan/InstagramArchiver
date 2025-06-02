@@ -215,7 +215,13 @@ def generate_summary(har_path: Path, archive_dir: Path, metadata: dict, download
     with open(archive_dir / "summary.html", 'w', encoding='utf-8') as f:
         f.write(html)
     with open(archive_dir / "summary_anonymized_researchers.html", 'w', encoding='utf-8') as f:
-        anon_html = html.replace(metadata["profile_name"], "[ANONYMIZED]").replace(metadata["signature"], "[ANONYMIZED]").replace(metadata["my_ip"], "[ANONYMIZED]")
+        anon_html = html
+        if metadata.get("profile_name", None):
+            anon_html = anon_html.replace(metadata["profile_name"], "[ANONYMIZED]")
+        if metadata.get("signature", None):
+            anon_html = anon_html.replace(metadata["signature"], "[ANONYMIZED]")
+        if metadata.get("my_ip", None):
+            anon_html = anon_html.replace(metadata["my_ip"], "[ANONYMIZED]")
         anon_html = anon_html.replace("<h1>Instagram Archive Summary", """<h1>Instagram Archive Summary (Partially Anonymized)""")
         f.write(anon_html)
 
