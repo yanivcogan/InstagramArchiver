@@ -22,7 +22,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 
 from har_sanitizer import sanitize_har
-from profile_registration import Profile
+from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
 
 SCREEN_SIZE = tuple(pyautogui.size())
@@ -227,14 +227,22 @@ def archive_instagram_content(profile: Profile, target_url: str):
             print(f"Archiving content from {target_url}")
             page.wait_for_event("close", timeout=0)
         except Exception as e:
-            print(f"Error during archiving: {e}")
+            if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
+                print("Browser shutdown detected, wrapping up archiving session...")
+            else:
+                print(f"Error during archiving: {e}")
         finally:
             finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event)
 
 
 
 if __name__ == "__main__":
-    if has_uncommitted_changes():
+    # Check for Playwright Firefox installation
+    if not ensure_playwright_firefox():
+        print("Failed to ensure Playwright Firefox is installed. Exiting...")
+        sys.exit(1)
+
+    if (not is_bundled()) and has_uncommitted_changes():
         response = (input("You have may have uncommitted changes. Are you sure you want to proceed? (yes/no): ")
                     .strip().lower())
         if response not in {"yes", "y"}:
@@ -244,7 +252,9 @@ if __name__ == "__main__":
     print(f"Commit ID: {commit_id}")
     available_profiles_path = Path("profiles/map.json")
     if not available_profiles_path.exists():
-        print("No profiles found. Please register a profile first.")
+        if(input("No profiles found. Would you like to register a new profile? (yes/no): ")):
+            register_instagram_account()
+            print("Please run the script again to select the new profile.")
         sys.exit(1)
     with open(available_profiles_path, "r") as m:
         profile_dicts: list[dict] = json.loads(m.read())
@@ -252,9 +262,14 @@ if __name__ == "__main__":
     print("Available profiles:")
     for idx, profile in enumerate(profiles_map):
         print(f"{idx} {profile.name} (Instagram username: {profile.insta_username})")
+    print(f"+ new")
     profile_selection = input("Enter the profile name to use: ")
     profile_selection = profile_selection.strip()
     profile = None
+    if profile_selection == "+" or profile_selection.lower() == "new":
+        register_instagram_account()
+        print("Please run the script again to select the new profile.")
+        sys.exit(0)
     if profile_selection.isdigit():
         idx = int(profile_selection)
         if 0 <= idx < len(profiles_map):

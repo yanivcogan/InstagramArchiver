@@ -1,5 +1,11 @@
 import subprocess
 from typing import Optional
+import os
+import sys
+
+# Determine if we're running in a PyInstaller bundle
+def is_bundled():
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 
 def has_uncommitted_changes():
@@ -37,6 +43,14 @@ def has_uncommitted_changes():
 
 
 def get_current_commit_id() -> Optional[str]:
+    if is_bundled():
+        # When running as executable, use the pre-stored commit ID
+        commit_file = os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))), 'commit_id.txt')
+        try:
+            with open(commit_file, 'r') as f:
+                return f.read().strip()
+        except:
+            return "unknown-bundled"
     """Get the commit ID of the current HEAD."""
     try:
         result = subprocess.run(

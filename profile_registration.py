@@ -90,12 +90,16 @@ def register_instagram_account():
             input("Press Enter to close the browser...")
 
         except Exception as e:
-            print(f"Error during registration: {e}")
+            if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
+                print("Browser shutdown detected, wrapping up archiving session...")
+            else:
+                print(f"Error during archiving: {e}")
 
         finally:
             browser.close()
             with open(map_path, "w") as m:
                 json.dump([p.model_dump() for p in profiles_map], m)
+            print(f"Profile '{profile_name}' registered successfully.")
 
 if __name__ == "__main__":
     register_instagram_account()
