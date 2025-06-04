@@ -9,7 +9,7 @@ from hashlib import md5
 from typing import Literal, Optional
 
 from extractors.structures_extraction import structures_from_har
-from git_helper import has_uncommitted_changes, get_current_commit_id
+from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled
 
 import cv2
 import pyautogui
@@ -22,6 +22,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 
 from har_sanitizer import sanitize_har
+from playwright_helper import ensure_playwright_firefox
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
 

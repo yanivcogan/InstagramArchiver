@@ -6,3 +6,6 @@ temp/*
 profiles/*
 /extractors/__pycache__
 /summarizers/__pycache__
+build/*
+dist/*
+commit_id.txt

@@ -40,14 +40,18 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,           # Include binaries for onefile mode
+    a.zipfiles,           # Include zipfiles for onefile mode
+    a.datas,              # Include data files for onefile mode
     [],
-    exclude_binaries=True,
     name='InstagramArchiver',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,   # Recommended for onefile mode
+    console=False,         # Changed to False for windowed mode
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -55,13 +59,4 @@ exe = EXE(
     entitlements_file=None,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='InstagramArchiver',
-)
+# Remove COLLECT since we're using onefile mode
