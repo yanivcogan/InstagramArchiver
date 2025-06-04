@@ -1,3 +1,5 @@
+import sys
+
 def ensure_playwright_firefox():
     """Check if Playwright Firefox is installed, install if not."""
     try:
