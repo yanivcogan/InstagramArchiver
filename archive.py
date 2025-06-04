@@ -8,7 +8,6 @@ import datetime
 from hashlib import md5
 from typing import Literal, Optional
 
-from extractors.structures_extraction import structures_from_har
 from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled
 
 import cv2
@@ -22,7 +21,6 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 
 from har_sanitizer import sanitize_har
-from playwright_helper import ensure_playwright_firefox
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
 
@@ -106,9 +104,12 @@ def screen_record(output_path, stop_event):
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     while not stop_event.is_set():
-        img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
-        frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        out.write(frame)
+        try:
+            img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
+            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            out.write(frame)
+        except Exception as _:
+            pass
         time.sleep(1 / fps)  # Control FPS
 
     out.release()
@@ -238,11 +239,6 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
 
 if __name__ == "__main__":
-    # Check for Playwright Firefox installation
-    if not ensure_playwright_firefox():
-        print("Failed to ensure Playwright Firefox is installed. Exiting...")
-        sys.exit(1)
-
     if (not is_bundled()) and has_uncommitted_changes():
         response = (input("You have may have uncommitted changes. Are you sure you want to proceed? (yes/no): ")
                     .strip().lower())
