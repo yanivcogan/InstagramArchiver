@@ -23,6 +23,7 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from har_sanitizer import sanitize_har
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
+from utils import get_local_ip
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = get_current_commit_id()
@@ -170,7 +171,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
 
     print(f"Content archived successfully in {archive_dir}")
 
-    exit(0)  # Exit the script after archiving is complete
+    return
 
 
 def archive_instagram_content(profile: Profile, target_url: str):
@@ -187,7 +188,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
     archiving_start_timestamp = archiving_start_time.isoformat()
     archive_dir = Path("archives") / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    my_ip = os.popen('ipconfig').read().split('IPv4 Address')[1].split(':')[1].split('\n')[0].strip() if os.name == 'nt' else os.popen('hostname -I').read().split()[0]
+    my_ip = get_local_ip()
 
     with open(profile_path / "state.json", "r") as f:
         storage_state = json.load(f)
@@ -245,7 +246,7 @@ if __name__ == "__main__":
                     .strip().lower())
         if response not in {"yes", "y"}:
             print("Exiting...")
-            exit(0)
+            sys.exit(0)
     print("Proceeding with execution...")
     print(f"Commit ID: {commit_id}")
     available_profiles_path = Path("profiles/map.json")
@@ -284,3 +285,4 @@ if __name__ == "__main__":
     url = input("Enter the Instagram URL to archive: ")
 
     archive_instagram_content(profile, url)
+    sys.exit(0)
