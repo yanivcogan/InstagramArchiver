@@ -121,10 +121,9 @@ def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
 The archiving process started at {metadata.archiving_start_timestamp} and was completed at {metadata.archiving_finished_timestamp} (timezone: {datetime.datetime.now().astimezone().tzname()}, UTC {datetime.datetime.now().astimezone().utcoffset()}).
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
-The script records the screen during this process, and also saves a HAR file of the network traffic. The HAR file is then sanitized to remove sensitive information, and the screen recording is saved as a video file.
-None of the content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
+The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
+None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
-MD5 hash of the sanitized HAR file: {metadata.sanitized_har_hash}
 Additional Notes: {metadata.notes}"""
     return affidavit
 
@@ -146,19 +145,19 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     metadata.notes = input('Notes about the content: ') or '-'
 
     har_path = metadata.har_archive
-    sanitized_har_path = archive_dir / "sanitized.har"
+    # sanitized_har_path = archive_dir / "sanitized.har"
 
-    sanitize_har(har_path, sanitized_har_path)
+    # sanitize_har(har_path, sanitized_har_path)
 
     with open(har_path, 'rb') as file:
         har_content = file.read()
         har_hash = md5(har_content).hexdigest()
         metadata.har_hash = har_hash
 
-    with open(sanitized_har_path, 'rb') as file:
-        sanitized_har_content = file.read()
-        sanitized_har_hash = md5(sanitized_har_content).hexdigest()
-        metadata.sanitized_har_hash = sanitized_har_hash
+    # with open(sanitized_har_path, 'rb') as file:
+    #     sanitized_har_content = file.read()
+    #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
+    #     metadata.sanitized_har_hash = sanitized_har_hash
 
     with open(archive_dir / "metadata.json", "w") as f:
         metadata_dict = metadata.model_dump()
@@ -170,6 +169,8 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     generate_summary(har_path, archive_dir, metadata_dict)
 
     print(f"Content archived successfully in {archive_dir}")
+
+    exit(0)  # Exit the script after archiving is complete
 
 
 def archive_instagram_content(profile: Profile, target_url: str):
