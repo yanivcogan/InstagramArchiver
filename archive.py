@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from har_sanitizer import sanitize_har
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
-from utils import get_local_ip
+from utils import get_my_public_ip
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = get_current_commit_id()
@@ -188,7 +188,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
     archiving_start_timestamp = archiving_start_time.isoformat()
     archive_dir = Path("archives") / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    my_ip = get_local_ip()
+    my_public_ip = get_my_public_ip()
 
     with open(profile_path / "state.json", "r") as f:
         storage_state = json.load(f)
@@ -209,7 +209,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
             archiving_start_timestamp=archiving_start_timestamp,
             recording_start_timestamp=recording_start_timestamp,
             har_archive=archive_dir / "archive.har",
-            my_ip=my_ip
+            my_ip=my_public_ip
         )
         # Launch browser with the saved state
         browser = p.firefox.launch(headless=False)
