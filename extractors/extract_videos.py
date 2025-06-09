@@ -183,7 +183,13 @@ def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]
                 if 'audio' in result.stdout:
                     temp_audio_file = single_track_file
                 else:
-                    temp_video_file = single_track_file
+                    if temp_video_file is not None:
+                        existing_file = output_dir / temp_video_file
+                        new_file = output_dir / single_track_file
+                        if os.path.getsize(new_file) > os.path.getsize(existing_file):
+                            temp_video_file = single_track_file
+                    else:
+                        temp_video_file = single_track_file
 
 
         if temp_audio_file is not None and temp_video_file is not None:
