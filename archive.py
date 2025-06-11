@@ -8,6 +8,7 @@ import datetime
 from hashlib import md5
 from typing import Literal, Optional
 
+from ffmpeg_installer import ensure_ffmpeg_installed
 from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled
 
 import cv2
@@ -20,10 +21,9 @@ import numpy as np  # For the screen recorder
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 
-from har_sanitizer import sanitize_har
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
-from utils import get_my_public_ip
+from utils import get_my_public_ip, get_system_info
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = get_current_commit_id()
@@ -82,6 +82,7 @@ class ArchiveSessionMetadata(BaseModel):
     har_archive: Path
     warc_archive: Optional[Path] = None
     my_ip: Optional[str] = None
+    platform: Optional[str] = None
     har_hash: Optional[str] = None
     sanitized_har_hash: Optional[str] = None
     browser_build_id: Optional[str] = None
@@ -125,6 +126,7 @@ The script launches a Playwright-controlled Firefox browser ({metadata.browser_b
 The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
 None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
+OS and hardware details: {metadata.platform}
 Additional Notes: {metadata.notes}"""
     return affidavit
 
@@ -160,11 +162,11 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
     #     metadata.sanitized_har_hash = sanitized_har_hash
 
-    with open(archive_dir / "metadata.json", "w") as f:
+    with open(archive_dir / "metadata.json", "w", encoding="utf-8") as f:
         metadata_dict = metadata.model_dump()
         json.dump(metadata_dict, f, indent=2, default=str)
 
-    with open(archive_dir / "affidavit.txt", "w") as f:
+    with open(archive_dir / "affidavit.txt", "w", encoding="utf-8") as f:
         f.write(affidavit_from_metadata(metadata))
 
     generate_summary(har_path, archive_dir, metadata_dict)
@@ -209,7 +211,8 @@ def archive_instagram_content(profile: Profile, target_url: str):
             archiving_start_timestamp=archiving_start_timestamp,
             recording_start_timestamp=recording_start_timestamp,
             har_archive=archive_dir / "archive.har",
-            my_ip=my_public_ip
+            my_ip=my_public_ip,
+            platform=get_system_info()
         )
         # Launch browser with the saved state
         browser = p.firefox.launch(headless=False)
@@ -249,6 +252,10 @@ if __name__ == "__main__":
             sys.exit(0)
     print("Proceeding with execution...")
     print(f"Commit ID: {commit_id}")
+    print("Welcome to the Instagram Archiver!")
+    print("Ensuring FFMPEG is installed...")
+    ensure_ffmpeg_installed()
+    print("Fetching available profiles...")
     available_profiles_path = Path("profiles/map.json")
     if not available_profiles_path.exists():
         if(input("No profiles found. Would you like to register a new profile? (yes/no): ")):

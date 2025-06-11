@@ -1,4 +1,5 @@
-import socket
+import platform,socket,re,uuid,json,psutil,logging
+from typing import Optional
 
 import requests
 
@@ -23,8 +24,24 @@ def get_my_public_ip():
     except Exception:
         return '0.0.0.0'
 
+
+def get_system_info() -> Optional[str]:
+    try:
+        info = dict()
+        info['platform']=platform.system()
+        info['platform-release']=platform.release()
+        info['platform-version']=platform.version()
+        info['architecture']=platform.machine()
+        info['hostname']=socket.gethostname()
+        info['ip-address']=socket.gethostbyname(socket.gethostname())
+        info['mac-address']=':'.join(re.findall('..', '%012x' % uuid.getnode()))
+        info['processor']=platform.processor()
+        info['ram']=str(round(psutil.virtual_memory().total / (1024.0 **3)))+" GB"
+        return json.dumps(info)
+    except Exception as e:
+        print(str(e))
+        return None
+
+
 if __name__ == "__main__":
-    private_ip = get_my_private_ip()
-    public_ip = get_my_public_ip()
-    print(f"My Private IP: {private_ip}")
-    print(f"My Public IP: {public_ip}")
+    print(get_system_info)
