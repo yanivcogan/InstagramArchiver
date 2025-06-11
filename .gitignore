@@ -10,3 +10,4 @@ build/*
 dist/*
 commit_id.txt
 InstagramArchiver.exe
+ffmpeg/*
