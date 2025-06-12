@@ -157,6 +157,8 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
         har_hash = md5(har_content).hexdigest()
         metadata.har_hash = har_hash
 
+
+
     # with open(sanitized_har_path, 'rb') as file:
     #     sanitized_har_content = file.read()
     #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
