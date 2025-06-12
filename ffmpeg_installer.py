@@ -22,7 +22,7 @@ def ensure_ffmpeg_installed():
     ffmpeg_check = os.system("ffmpeg -version >nul 2>&1")
     if ffmpeg_check == 0:
         print("ffmpeg is already installed and accessible.")
-        # return
+        return
     ffmpeg_dir = os.path.join(os.getcwd(), "ffmpeg")
     ffmpeg_exe = find_ffmpeg_executable_in_dir(Path(ffmpeg_dir))
     if ffmpeg_exe:
