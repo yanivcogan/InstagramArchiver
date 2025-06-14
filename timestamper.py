@@ -15,17 +15,10 @@ class TsaCertsLocation(BaseModel):
     ca_cert: Path
 
 def get_tsa_certs() -> TsaCertsLocation:
-    # Check whether a folder named "tsa_certs" exists in the current directory
-    # If not, create it, and populate it with:
-    # https://freetsa.org/files/tsa.crt
-    # https://freetsa.org/files/cacert.pem
-
     tsa_certs_dir = Path("tsa_certs")
     if not tsa_certs_dir.exists():
         tsa_certs_dir.mkdir()
         print(f"Created directory: {tsa_certs_dir}")
-    else:
-        print(f"Directory already exists: {tsa_certs_dir}")
     # Download the TSA certificate and CA certificate if they are not present
     tsa_cert_url = "https://freetsa.org/files/tsa.crt"
     ca_cert_url = "https://freetsa.org/files/cacert.pem"
