@@ -11,3 +11,5 @@ dist/*
 commit_id.txt
 InstagramArchiver.exe
 ffmpeg/*
+/tsa_certs
+open_ssl_location.txt

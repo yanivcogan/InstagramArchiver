@@ -21,6 +21,7 @@ import numpy as np  # For the screen recorder
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 
+from timestamper import timestamp_file
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
 from utils import get_my_public_ip, get_system_info
@@ -157,7 +158,10 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
         har_hash = md5(har_content).hexdigest()
         metadata.har_hash = har_hash
 
-
+    har_hash_path = archive_dir / "har_hash.txt"
+    with open(har_hash_path, 'w', encoding='utf-8') as f:
+        f.write(metadata.har_hash)
+    timestamp_file(har_hash_path)
 
     # with open(sanitized_har_path, 'rb') as file:
     #     sanitized_har_content = file.read()
