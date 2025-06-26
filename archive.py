@@ -94,10 +94,12 @@ class ArchiveSessionMetadata(BaseModel):
 
 def screen_record(output_path, stop_event):
     # Screen recording using OpenCV, only capturing the Playwright browser window
-    time.sleep(5)
-    # Find the Playwright browser window (Firefox)
-    windows = [w for w in gw.getAllWindows() if "Nightly" in w.title]
-    if not windows:
+    for attempt in range(5):
+        time.sleep(5)
+        windows = [w for w in gw.getAllWindows() if "Nightly" in w.title]
+        if windows:
+            break
+    else:
         print("Could not find the Firefox browser window for screen recording.")
         return
     browser_window = windows[0]
