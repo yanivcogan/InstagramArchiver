@@ -147,8 +147,16 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     archiving_finished_timestamp = datetime.datetime.now().isoformat()
     metadata.archiving_finished_timestamp = archiving_finished_timestamp
 
-    metadata.signature = input('Sign full name: ')
-    metadata.notes = input('Notes about the content: ') or '-'
+    while True:
+        metadata.signature = input('Sign full name: ')
+        metadata.notes = input('Notes about the content (type reset to reinput signature): ') or '-'
+        if metadata.notes == "switch":
+            metadata.notes = metadata.signature
+            print(f"Notes set to {metadata.notes}.")
+            metadata.signature = input('Sign full name: ')
+        if not metadata.notes == "reset":
+            break
+
 
     har_path = metadata.har_archive
     # sanitized_har_path = archive_dir / "sanitized.har"
