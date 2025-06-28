@@ -1,5 +1,6 @@
 import base64
 import json
+import ijson
 import os
 import subprocess
 import traceback
@@ -51,57 +52,54 @@ def extract_xpv_asset_id(url):
         return None
 
 
-def extract_video_maps(har_path:Path, download_full_video: bool = True) -> list[Video]:
-    """Extracts video segment data from the HAR file."""
-    with open(har_path, 'rb') as file:  # Open the file in binary mode
-        har_data = json.load(file)
-
+def extract_video_maps(har_path: Path, download_full_video: bool = True) -> list[Video]:
+    """Extracts video segment data from the HAR file using streaming JSON parsing."""
     videos_dict: dict[int, Video] = dict()
 
-    # Find the API call to GraphQL and its response
-    for entry in har_data['log']['entries']:
-        try:
-            if ".mp4" in entry['request']['url'] and "text" in entry['response']['content']:
-                url = entry['request']['url']
-                base_url = url.split(".mp4")[0]
-                xpv_asset_id = extract_xpv_asset_id(url)
-                filename = base_url.split("/")[-1]
-                start = end = None
-                if "bytestart=" in url:
-                    start = int(url.split("bytestart=")[1].split("&")[0])
-                if "byteend=" in url:
-                    end = int(url.split("byteend=")[1].split("&")[0])
-                response_content = base64.b64decode(entry['response']['content']['text'])
-                if xpv_asset_id not in videos_dict:
-                    videos_dict[xpv_asset_id] = Video(
-                        xpv_asset_id=xpv_asset_id,
-                        tracks=dict(),
-                    )
-                if filename not in videos_dict[xpv_asset_id].tracks:
-                    videos_dict[xpv_asset_id].tracks[filename] = MediaTrack(base_url=base_url, segments=[])
-                    if download_full_video:
-                        try:
-                            full_track_url = urllib.parse.urlunparse(
-                                urllib.parse.urlparse(url)._replace(
-                                    query="&".join(
-                                        f"{k}={v[0]}" if len(v) == 1 else "&".join(f"{k}={i}" for i in v)
-                                        for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(url).query).items()
-                                        if k not in ("bytestart", "byteend")
+    with open(har_path, 'rb') as file:
+        for entry in ijson.items(file, 'log.entries.item'):
+            try:
+                if ".mp4" in entry['request']['url'] and "text" in entry['response']['content']:
+                    url = entry['request']['url']
+                    base_url = url.split(".mp4")[0]
+                    xpv_asset_id = extract_xpv_asset_id(url)
+                    filename = base_url.split("/")[-1]
+                    start = end = None
+                    if "bytestart=" in url:
+                        start = int(url.split("bytestart=")[1].split("&")[0])
+                    if "byteend=" in url:
+                        end = int(url.split("byteend=")[1].split("&")[0])
+                    response_content = base64.b64decode(entry['response']['content']['text'])
+                    if xpv_asset_id not in videos_dict:
+                        videos_dict[xpv_asset_id] = Video(
+                            xpv_asset_id=xpv_asset_id,
+                            tracks=dict(),
+                        )
+                    if filename not in videos_dict[xpv_asset_id].tracks:
+                        videos_dict[xpv_asset_id].tracks[filename] = MediaTrack(base_url=base_url, segments=[])
+                        if download_full_video:
+                            try:
+                                full_track_url = urllib.parse.urlunparse(
+                                    urllib.parse.urlparse(url)._replace(
+                                        query="&".join(
+                                            f"{k}={v[0]}" if len(v) == 1 else "&".join(f"{k}={i}" for i in v)
+                                            for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(url).query).items()
+                                            if k not in ("bytestart", "byteend")
+                                        )
                                     )
                                 )
-                            )
-                            print("Downloading full track from:", full_track_url)
-                            resp = requests.get(full_track_url)
-                            if resp.status_code == 200:
-                                videos_dict[xpv_asset_id].tracks[filename].full_track = resp.content
-                        except Exception as e:
-                            print(f"Error downloading full track: {e}")
-                            pass
-                videos_dict[xpv_asset_id].tracks[filename].segments.append(MediaSegment(start=start, end=end, data=response_content))
-        except Exception as e:
-            print(f'Error processing entry: {e}')
-            traceback.print_exc()
-            continue
+                                print("Downloading full track from:", full_track_url)
+                                resp = requests.get(full_track_url)
+                                if resp.status_code == 200:
+                                    videos_dict[xpv_asset_id].tracks[filename].full_track = resp.content
+                            except Exception as e:
+                                print(f"Error downloading full track: {e}")
+                                pass
+                    videos_dict[xpv_asset_id].tracks[filename].segments.append(MediaSegment(start=start, end=end, data=response_content))
+            except Exception as e:
+                print(f'Error processing entry: {e}')
+                traceback.print_exc()
+                continue
     videos = list(videos_dict.values())
     return videos
 

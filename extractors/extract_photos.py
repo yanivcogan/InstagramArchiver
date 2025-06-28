@@ -1,10 +1,10 @@
 import base64
-import json
 import os
 import traceback
 from pathlib import Path
 from typing import Optional
 
+import ijson
 from pydantic import BaseModel
 
 from extractors.extract_videos import extract_xpv_asset_id
@@ -19,36 +19,31 @@ class Photo(BaseModel):
     local_files: list[str] = []
 
 
-def extract_photos(har_path:Path) -> list[Photo]:
-    """Extracts video segment data from the HAR file."""
-    with open(har_path, 'rb') as file:  # Open the file in binary mode
-        har_data = json.load(file)
-
+def extract_photos(har_path: Path) -> list[Photo]:
+    """Extracts photo data from the HAR file using streaming JSON parsing."""
     photos: list[Photo] = []
-
     image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff']
 
-    # Find the API call to GraphQL and its response
-    for entry in har_data['log']['entries']:
-        try:
-            if any(f".{ext}" in entry['request']['url'] for ext in image_extensions) and "text" in entry['response']['content']:
-                url = entry['request']['url']
-                xpv_asset_id = extract_xpv_asset_id(url)
-                base_url = url.split("?")[0]
-                filename = base_url.split("/")[-1]
-                extension = filename.split(".")[-1]
-                photos.append(Photo(
-                    xpv_asset_id=xpv_asset_id,
-                    url=base_url,
-                    filename=filename,
-                    extension=extension,
-                    data=base64.b64decode(entry['response']['content']['text'])
-                ))
-
-        except Exception as e:
-            print(f'Error processing entry: {e}')
-            traceback.print_exc()
-            continue
+    with open(har_path, 'rb') as file:
+        for entry in ijson.items(file, 'log.entries.item'):
+            try:
+                if any(f".{ext}" in entry['request']['url'] for ext in image_extensions) and "text" in entry['response']['content']:
+                    url = entry['request']['url']
+                    xpv_asset_id = extract_xpv_asset_id(url)
+                    base_url = url.split("?")[0]
+                    filename = base_url.split("/")[-1]
+                    extension = filename.split(".")[-1]
+                    photos.append(Photo(
+                        xpv_asset_id=xpv_asset_id,
+                        url=base_url,
+                        filename=filename,
+                        extension=extension,
+                        data=base64.b64decode(entry['response']['content']['text'])
+                    ))
+            except Exception as e:
+                print(f'Error processing entry: {e}')
+                traceback.print_exc()
+                continue
     return photos
 
 

@@ -261,6 +261,8 @@ def _format_structure_data(structure: StructureType) -> str:
 def manual_summary_generation():
     # Provide the path to your .har file and desired output folder
     har_file = input("Input path to HAR file: ")  # Replace with your actual HAR file
+    # Strip leading and trailing whitespace as well as " " or " from the input
+    har_file = har_file.strip().strip('"').strip("'")
     har_path = Path(har_file)
     archive_dir = Path(har_path).parent
     metadata_path = archive_dir / "metadata.json"
@@ -268,7 +270,12 @@ def manual_summary_generation():
     if metadata_path.exists():
         with open(metadata_path, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
-    generate_summary(har_path, archive_dir, metadata, download_full_video=False)
+    download_full_video = input("Download full videos? (yes/no, default: yes): ").strip().lower()
+    if download_full_video in ["yes", "y", ""]:
+        download_full_video = True
+    else:
+        download_full_video = False
+    generate_summary(har_path, archive_dir, metadata, download_full_video=download_full_video)
 
 
 if __name__ == '__main__':
