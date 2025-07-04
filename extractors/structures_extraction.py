@@ -7,7 +7,7 @@ import ijson
 from extractors.structures_extraction_api_v1 import extract_data_from_api_v1_entry, ApiV1Response
 from extractors.structures_extraction_graphql import extract_data_from_graphql_entry, GraphQLResponse
 from extractors.structures_extraction_html import extract_data_from_html_entry, Page
-from models_har import HarRequest
+from extractors.models_har import HarRequest
 
 StructureType = Union[GraphQLResponse, ApiV1Response, Page]
 
