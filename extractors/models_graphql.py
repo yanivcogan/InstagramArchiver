@@ -36,12 +36,12 @@ class ProfileTimelineGraphQL(BaseModel):
 
 class FriendUser(BaseModel):
     friendship_status: Optional[Any] = None
-    full_name: str
-    is_verified: bool
-    pk: str
-    profile_pic_url: str
-    username: str
-    is_private: bool
+    full_name: Optional[str] = None
+    is_verified: Optional[bool] = None
+    pk: Optional[str] = None
+    profile_pic_url: Optional[str] = None
+    username: Optional[str] = None
+    is_private: Optional[bool] = None
     supervision_info: Optional[Any] = None
     social_context: Optional[str] = None
     live_broadcast_visibility: Optional[Any] = None

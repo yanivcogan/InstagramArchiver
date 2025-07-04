@@ -113,14 +113,14 @@ class CommentCaptionApiV1(BaseModel):
     did_report_as_spam: bool
     created_at: int
     created_at_utc: int
-    created_at_for_fb_app: int # Assuming this is an epoch timestamp
+    created_at_for_fb_app: Optional[int] = None # Assuming this is an epoch timestamp
     content_type: str
     status: str
     bit_flags: int
     share_enabled: bool
     is_ranked_comment: bool
     media_id: str
-    is_created_by_media_owner: bool
+    is_created_by_media_owner: Optional[bool] = None
     strong_id__: str = Field(alias="strong_id__")
     text: str
     is_covered: bool

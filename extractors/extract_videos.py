@@ -134,12 +134,29 @@ def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path
         return False
 
 
-def save_segments_as_files(videos: list[Video], output_dir: Path) -> list[Video]:
+def save_segments_as_files(videos: list[Video], output_dir: Path, existing_videos: Optional[dict[str, tuple[str, int]]] = None) -> list[Video]:
+    if existing_videos is None:
+        existing_videos = dict()
+    existing_videos_filenames = [v[0] for v in existing_videos.values()]
+
     """Extracts and saves each segment as a temporary video file."""
     for v_idx, video in enumerate(videos):
         temp_video_file = None
         temp_audio_file = None
         merged_file = None
+        xpv_asset_id = video.xpv_asset_id
+
+        file_exists = False
+        for existing_file in existing_videos_filenames:
+            if f"{xpv_asset_id}" in existing_file:
+                print(f"Skipping existing file {existing_file} for video {xpv_asset_id}.")
+                video.location = (output_dir / existing_file).as_posix()
+                video.local_files.append((output_dir / existing_file).as_posix())
+                file_exists = True
+                break
+        if file_exists:
+            continue
+
         for track_name, track in video.tracks.items():
             track_data = b''
             if track.full_track is not None:
@@ -240,15 +257,35 @@ def clean_corrupted_files(path_to_check: Path) -> bool:
 
 
 def videos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments'), download_full_video: bool = True) -> list[Video]:
+    # Create the output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Existing files in the output directory
+    existing_files_name_size_tuples = [
+        (file.name, file.stat().st_size) for file in output_dir.iterdir() if file.is_file()
+    ]
+
+    largest_version_of_files: dict[str, tuple[str, int]] = dict()
+
+    for file_name, file_size in existing_files_name_size_tuples:
+        print(f"Extracting {file_name}...")
+        try:
+            cleaned_file_name = file_name.split('track_')[1].split("_")[0]
+        except IndexError:
+            cleaned_file_name = file_name
+        if cleaned_file_name not in largest_version_of_files or file_size > largest_version_of_files[cleaned_file_name][1]:
+            largest_version_of_files[cleaned_file_name] = (file_name, file_size)
+
+
     videos = extract_video_maps(har_path, download_full_video=download_full_video)
     if not videos:
         print("No video segments found in the HAR file.")
         return []
 
-    # Create the output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    files_to_skip = largest_version_of_files if not download_full_video else dict()
+
     # Save the video segments as temporary files
-    stored_videos = save_segments_as_files(videos, output_dir)
+    stored_videos = save_segments_as_files(videos, output_dir, files_to_skip)
     print(f"Saved {len(videos)} videos to {output_dir}.")
     return stored_videos
 
