@@ -3,6 +3,7 @@ from pathlib import Path
 
 from entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media
 from models import MediaShortcode, HighlightsReelConnection, StoriesFeed, ProfileTimeline
+from models_api_v1 import MediaInfoApiV1
 from structures_extraction import StructureType
 from structures_extraction_api_v1 import ApiV1Response
 from structures_extraction_graphql import GraphQLResponse
@@ -22,17 +23,62 @@ def convert_structure_to_entities(structure: StructureType)-> ExtractedEntities:
 def graphql_to_entities(structure: GraphQLResponse)-> ExtractedEntities:
     pass
 
-def api_v1_to_entities(structure: ApiV1Response)-> ExtractedEntities:
-    pass
+
+def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntities:
+    entities = ExtractedEntities()
+    if structure.media_info:
+        extracted = api_v1_media_info_to_entities(structure.media_info)
+        entities.posts.extend(extracted.posts)
+        entities.accounts.extend(extracted.accounts)
+    return entities
+
+
+def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntities:
+    extracted_posts: list[ExtractedSinglePost] = []
+    extracted_accounts: list[Account] = []
+    for item in media_info.items:
+        post = Post(
+            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            account_url=f"https://www.instagram.com/{item.owner.username}/",
+            publication_date=datetime.fromtimestamp(item.taken_at),
+            caption=item.caption,
+            data=item.model_dump()
+        )
+        account = Account(
+            url=post.account_url,
+            display_name=item.owner.full_name,
+            bio=None,
+            data=item.owner.model_dump()
+        )
+        media: list[Media] = [Media(
+            url=canonical_cdn_url(item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            post_url=post.url,
+            local_url=None,
+            media_type="video" if item.video_versions else "image",
+            data=item.model_dump(exclude={'carousel_media'})
+        )]
+        for media_item in getattr(item, "carousel_media", []):
+            media.append(Media(
+                url=canonical_cdn_url(media_item.url),
+                post_url=post.url,
+                local_url=None,
+                media_type="image" if getattr(media_item, "media_type", "image") == "image" else "video",
+                data=media_item.model_dump()
+            ))
+        extracted_posts.append(ExtractedSinglePost(
+            post=post,
+            media=media,
+        ))
+        extracted_accounts.append(account)
+    return ExtractedEntities(
+        accounts=extracted_accounts,
+        posts=extracted_posts
+    )
 
 def page_to_entities(structure: PageResponse)-> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.posts:
         extracted = page_posts_to_entities(structure.posts)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
-    if structure.timelines:
-        extracted = page_timelines_to_entities(structure.timelines)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
     if structure.highlight_reels:
@@ -168,10 +214,6 @@ def page_stories_to_entities(structure: StoriesFeed)-> ExtractedEntities:
         accounts=extracted_accounts,
         posts=extracted_posts
     )
-
-def page_timelines_to_entities(structure: ProfileTimeline)-> ExtractedEntities:
-    pass
-
 
 def canonical_cdn_url(url: str) -> str:
     insta_filename= url.split("?")[0].split("/")[-1]
