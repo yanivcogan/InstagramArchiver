@@ -45,7 +45,7 @@ def infer_post_type_from_url(url: str) -> Optional[supported_page_types]:
     return "profile"
 
 
-class Page(BaseModel):
+class PageResponse(BaseModel):
     posts: Optional[MediaShortcode]
     comments: Optional[CommentsConnection]
     timelines: Optional[ProfileTimeline]
@@ -53,7 +53,7 @@ class Page(BaseModel):
     stories: Optional[StoriesFeed]
 
 
-def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[Page]:
+def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageResponse]:
     post = None
     comments = None
     timeline = None
@@ -93,7 +93,7 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[Page]:
     if not post and not comments and not timeline and not highlight_reels and not stories:
         res = None
     else:
-        res = Page(
+        res = PageResponse(
             posts=post,
             comments=comments,
             timelines=timeline,
@@ -103,7 +103,7 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[Page]:
     return res
 
 
-def extract_data_from_html_entry(html_data: str, req: HarRequest) -> Optional[Page]:
+def extract_data_from_html_entry(html_data: str, req: HarRequest) -> Optional[PageResponse]:
     soup = BeautifulSoup(html_data, "html.parser")
     #html_type = infer_post_type_from_url(req.url)
     data = extract_data_from_html_response(soup)

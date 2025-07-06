@@ -391,9 +391,40 @@ class HighlightsReelPageInfo(BaseModel):
         populate_by_name = True
         extra = "allow"
 
+class HighlightsReelUploader(BaseModel):
+    pk: str
+    id: str
+    interop_messaging_user_fbid: Optional[str] = None
+    username: str
+    user_id: Optional[str] = None
+    profile_pic_url: str = ""
+    is_verified: bool = False
+    transparency_label: Optional[Any] = None
+    transparency_product: Optional[Any] = None
+    transparency_product_enabled: bool = False
+    is_private: bool = False
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
+
+class HighlightsReelWrap(BaseModel):
+    id: str
+    title: str
+    items: list[HighlightsReel]
+    user: HighlightsReelUploader
+
+
+class HighlightsReelNode(BaseModel):
+    node: HighlightsReelWrap
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
 class HighlightsReelConnection(BaseModel):
     id: str
-    items: List[HighlightsReel]
+    edges: List[HighlightsReelNode]
     page_info: HighlightsReelPageInfo
 
     class Config:
