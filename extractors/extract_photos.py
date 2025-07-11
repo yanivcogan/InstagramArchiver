@@ -81,9 +81,11 @@ def save_photos(photos:list[Photo], output_dir:Path, files_to_skip: Optional[dic
 
 def photos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments'), reextract_existing_photos:bool=True) -> list[Photo]:
     # Existing files in the output directory
-    existing_files_name_size_tuples = [
-        (file.name, file.stat().st_size) for file in output_dir.iterdir() if file.is_file()
-    ]
+    existing_files_name_size_tuples = []
+    if output_dir.exists():
+        existing_files_name_size_tuples =  [
+            (file.name, file.stat().st_size) for file in output_dir.iterdir() if file.is_file()
+        ]
 
     largest_version_of_files: dict[str, tuple[str, int]] = dict()
 
