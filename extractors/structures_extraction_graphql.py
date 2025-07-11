@@ -29,7 +29,7 @@ def extract_data_from_graphql_entry(graphql_data: dict, req: HarRequest) -> Opti
         return None
     if (method_type == "PolarisProfilePostsTabContentQuery_connection" or
         method_type == "PolarisProfilePostsQuery"):
-        res.profile_timeline=graphql_data["data"]["xdt_api__v1__feed__user_timeline_graphql_connection"]
+        res.profile_timeline=ProfileTimelineGraphQL(**graphql_data["data"]["xdt_api__v1__feed__user_timeline_graphql_connection"])
     if method_type == "PolarisProfileSuggestedUsersWithPreloadableQuery":
         res.friends_list = FriendsListGraphQL(**graphql_data["data"]["xdt_api__v1__discover__chaining"])
     if method_type == "PolarisStoriesV3HighlightsPageQuery":

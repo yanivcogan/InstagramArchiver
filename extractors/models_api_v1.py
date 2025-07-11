@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Union
+
 
 class FriendshipUserApiV1(BaseModel):
     pk: str
@@ -340,12 +341,12 @@ class ImageVersions2ApiV1(BaseModel):
         extra = "allow"
 
 class VideoVersionApiV1(BaseModel):
-    bandwidth: Optional[int] = None # Made optional as not always present for all types
-    height: int
-    id: str
-    type: int
+    id: Optional[str] = None
     url: str
-    width: int
+    type: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    bandwidth: Optional[int] = None # Made optional as not always present for all types
 
     class Config:
         extra = "allow"
@@ -409,7 +410,7 @@ class MediaItemApiV1(BaseModel):
     code: str
     caption: Optional[CommentCaptionApiV1] = None # Reusing CommentCaptionApiV1
     sharing_friction_info: Optional[SharingFrictionInfoApiV1] = None
-    timeline_pinned_user_ids: Optional[List[str]] = Field(default_factory=list) # Assuming list of strings
+    timeline_pinned_user_ids: Optional[Union[List[str], List[int]]] = Field(default_factory=list) # Assuming list of strings
     play_count: Optional[int] = None
     has_views_fetching: Optional[bool] = None
     ig_play_count: Optional[int] = None

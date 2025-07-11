@@ -37,3 +37,8 @@ class ExtractedSinglePost(BaseModel):
 class ExtractedEntities(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
     posts: list[ExtractedSinglePost] = Field(default_factory=list)
+
+class ExtractedEntitiesFlattened(BaseModel):
+    accounts: list[Account] = Field(default_factory=list)
+    posts: list[Post] = Field(default_factory=list)
+    media: list[Media] = Field(default_factory=list)

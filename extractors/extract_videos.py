@@ -134,10 +134,10 @@ def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path
         return False
 
 
-def save_segments_as_files(videos: list[Video], output_dir: Path, existing_videos: Optional[dict[str, tuple[str, int]]] = None) -> list[Video]:
-    if existing_videos is None:
-        existing_videos = dict()
-    existing_videos_filenames = [v[0] for v in existing_videos.values()]
+def save_segments_as_files(videos: list[Video], output_dir: Path, files_to_skip: Optional[dict[str, tuple[str, int]]] = None) -> list[Video]:
+    if files_to_skip is None:
+        files_to_skip = dict()
+    existing_videos_filenames = [v[0] for v in files_to_skip.values()]
 
     """Extracts and saves each segment as a temporary video file."""
     for v_idx, video in enumerate(videos):

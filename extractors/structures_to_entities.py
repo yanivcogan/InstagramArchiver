@@ -1,35 +1,47 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media
-from extract_photos import photos_from_har
-from extract_videos import videos_from_har
-from models import MediaShortcode, HighlightsReelConnection, StoriesFeed
-from models_api_v1 import MediaInfoApiV1
-from models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection
-from structures_extraction import StructureType, structures_from_har
-from structures_extraction_api_v1 import ApiV1Response
-from structures_extraction_graphql import GraphQLResponse
-from structures_extraction_html import PageResponse
+import pyperclip
+from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
+    ExtractedEntitiesFlattened
+from extractors.extract_photos import photos_from_har
+from extractors.extract_videos import videos_from_har
+from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed
+from extractors.models_api_v1 import MediaInfoApiV1
+from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection
+from extractors.structures_extraction import StructureType, structures_from_har
+from extractors.structures_extraction_api_v1 import ApiV1Response
+from extractors.structures_extraction_graphql import GraphQLResponse
+from extractors.structures_extraction_html import PageResponse
+from reconcile_entities import reconcile_posts, reconcile_media, reconcile_accounts
 
 
-def extract_entities_from_har(har_path: Path) -> ExtractedEntities:
+def extract_entities_from_har(har_path: Path, archiving_session: Optional[str] = None) -> ExtractedEntitiesFlattened:
     archive_dir = har_path.parent
     videos = videos_from_har(har_path, archive_dir / "videos", download_full_video=False)
-    photos = photos_from_har(har_path, archive_dir / "photos")
+    photos = photos_from_har(har_path, archive_dir / "photos", reextract_existing_photos=False)
+
+    if not archiving_session:
+        archiving_session = f"har-archive-{archive_dir.name}"
+
     local_files_map = dict()
     for video in videos:
         for track in video.tracks.values():
-            local_files_map[canonical_cdn_url(track.base_url)] = video.local_files[0]
+            if len(video.local_files):
+                local_files_map[canonical_cdn_url(track.base_url)] = video.local_files[0]
     for photo in photos:
-        local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
+        if len(photo.local_files) > 0:
+            local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
     structures = structures_from_har(har_path)
     entities = ExtractedEntities()
     for structure in structures:
         extracted = extract_entities_from_structure(structure, local_files_map)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
-    return entities
+    flattened_entities = deduplicate_entities(entities)
+    flattened_entities = attach_archiving_session(flattened_entities, archiving_session)
+    return flattened_entities
 
 
 def extract_entities_from_structure(structure: StructureType, local_files_map: dict[str, Path]) -> ExtractedEntities:
@@ -38,10 +50,13 @@ def extract_entities_from_structure(structure: StructureType, local_files_map: d
         for media in post.media:
             if media.url in local_files_map:
                 media.local_url = str(local_files_map[media.url])
+        post.media = [media for media in post.media if media.local_url]
+    entities.posts = [post for post in entities.posts if
+                      len(post.media) > 0 or (post.post.caption and len(post.post.caption.strip()))]
     return entities
 
 
-def convert_structure_to_entities(structure: StructureType)-> ExtractedEntities:
+def convert_structure_to_entities(structure: StructureType) -> ExtractedEntities:
     if isinstance(structure, GraphQLResponse):
         return graphql_to_entities(structure)
     elif isinstance(structure, ApiV1Response):
@@ -52,7 +67,7 @@ def convert_structure_to_entities(structure: StructureType)-> ExtractedEntities:
         raise ValueError(f"Unsupported structure type: {type(structure)}")
 
 
-def graphql_to_entities(structure: GraphQLResponse)-> ExtractedEntities:
+def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.reels_media:
         extracted = graphql_reels_media_to_entities(structure.reels_media)
@@ -79,7 +94,7 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
                 url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
                 account_url=f"https://www.instagram.com/{highlight.user.username}/",
                 publication_date=datetime.fromtimestamp(item.taken_at),
-                caption=item.caption,
+                caption=item.caption.text if item.caption else None,
                 data=item.model_dump()
             )
             account = Account(
@@ -89,20 +104,22 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
                 data=highlight.user.model_dump()
             )
             media: list[Media] = [Media(
-                url=canonical_cdn_url(item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+                url=canonical_cdn_url(
+                    item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
                 post_url=post.url,
                 local_url=None,
                 media_type="video" if item.video_versions else "image",
                 data=item.model_dump(exclude={'carousel_media'})
             )]
-            for media_item in item.carousel_media:
-                media.append(Media(
-                    url=canonical_cdn_url(media_item.url),
-                    post_url=post.url,
-                    local_url=None,
-                    media_type="image" if media_item.media_type == 1 else "video",
-                    data=media_item.model_dump()
-                ))
+            if item.carousel_media:
+                for media_item in item.carousel_media:
+                    media.append(Media(
+                        url=canonical_cdn_url(media_item.url),
+                        post_url=post.url,
+                        local_url=None,
+                        media_type="image" if media_item.media_type == 1 else "video",
+                        data=media_item.model_dump()
+                    ))
             extracted_posts.append(ExtractedSinglePost(
                 post=post,
                 media=media,
@@ -123,7 +140,7 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
             url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
             account_url=f"https://www.instagram.com/{item.user.username}/",
             publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption,
+            caption=item.caption.text if item.caption else None,
             data=item.model_dump()
         )
         account = Account(
@@ -133,20 +150,24 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
             data=item.user.model_dump()
         )
         media: list[Media] = [Media(
-            url=canonical_cdn_url(item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            url=canonical_cdn_url(
+                item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
         )]
-        for media_item in item.carousel_media:
-            media.append(Media(
-                url=canonical_cdn_url(media_item.url),
-                post_url=post.url,
-                local_url=None,
-                media_type="image" if media_item.media_type == 1 else "video",
-                data=media_item.model_dump()
-            ))
+        if item.carousel_media:
+            for media_item in item.carousel_media:
+                media_url = media_item.video_versions[0].url if media_item.video_versions else \
+                media_item.image_versions2.candidates[0].url
+                media.append(Media(
+                    url=canonical_cdn_url(media_url),
+                    post_url=post.url,
+                    local_url=None,
+                    media_type="image" if media_item.media_type == 1 else "video",
+                    data=media_item.model_dump()
+                ))
         extracted_posts.append(ExtractedSinglePost(
             post=post,
             media=media,
@@ -175,7 +196,7 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
             url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
             account_url=f"https://www.instagram.com/{item.owner.username}/",
             publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption,
+            caption=item.caption.text if item.caption else None,
             data=item.model_dump()
         )
         account = Account(
@@ -185,20 +206,13 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
             data=item.owner.model_dump()
         )
         media: list[Media] = [Media(
-            url=canonical_cdn_url(item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            url=canonical_cdn_url(
+                item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
         )]
-        for media_item in getattr(item, "carousel_media", []):
-            media.append(Media(
-                url=canonical_cdn_url(media_item.url),
-                post_url=post.url,
-                local_url=None,
-                media_type="image" if media_item.media_type == 1 else "video",
-                data=media_item.model_dump()
-            ))
         extracted_posts.append(ExtractedSinglePost(
             post=post,
             media=media,
@@ -209,7 +223,8 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
         posts=extracted_posts
     )
 
-def page_to_entities(structure: PageResponse)-> ExtractedEntities:
+
+def page_to_entities(structure: PageResponse) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.posts:
         extracted = page_posts_to_entities(structure.posts)
@@ -225,15 +240,16 @@ def page_to_entities(structure: PageResponse)-> ExtractedEntities:
         entities.accounts.extend(extracted.accounts)
     return entities
 
-def page_posts_to_entities(structure: MediaShortcode)-> ExtractedEntities:
-    extracted_posts:list[ExtractedSinglePost] = []
+
+def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntities:
+    extracted_posts: list[ExtractedSinglePost] = []
     extracted_accounts: list[Account] = []
     for item in structure.items:
         post = Post(
             url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
             account_url=f"https://www.instagram.com/{item.owner.username}/",
             publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption,
+            caption=item.caption.text if item.caption else None,
             data=item.model_dump()
         )
         account: Account = Account(
@@ -243,15 +259,23 @@ def page_posts_to_entities(structure: MediaShortcode)-> ExtractedEntities:
             data=item.owner.model_dump()
         )
         media: list[Media] = [Media(
-            url=canonical_cdn_url(item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            url=canonical_cdn_url(
+                item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
         )]
         for media_item in item.carousel_media:
+            url = (media_item.video_versions[0].url
+                   if media_item.video_versions and len(media_item.video_versions)
+                   else (
+                media_item.image_versions2.candidates[0].url
+                if media_item.image_versions2 and len(media_item.image_versions2.candidates)
+                else None
+            ))
             media.append(Media(
-                url=canonical_cdn_url(media_item.url),
+                url=canonical_cdn_url(url),
                 post_url=post.url,
                 local_url=None,
                 media_type="image" if media_item == 1 else "video",
@@ -267,7 +291,8 @@ def page_posts_to_entities(structure: MediaShortcode)-> ExtractedEntities:
         posts=extracted_posts
     )
 
-def page_highlight_reels_to_entities(structure: HighlightsReelConnection)-> ExtractedEntities:
+
+def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> ExtractedEntities:
     extracted_posts: list[ExtractedSinglePost] = []
     extracted_accounts: list[Account] = []
     highlight = structure.edges[0].node if structure.edges else None
@@ -308,7 +333,8 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection)-> Extr
         posts=extracted_posts
     )
 
-def page_stories_to_entities(structure: StoriesFeed)-> ExtractedEntities:
+
+def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntities:
     extracted_posts: list[ExtractedSinglePost] = []
     extracted_accounts: list[Account] = []
     reels_media = structure.reels_media[0]
@@ -329,7 +355,7 @@ def page_stories_to_entities(structure: StoriesFeed)-> ExtractedEntities:
             url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
             account_url=account.url,
             publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption,
+            caption=item.caption.text if item.caption else None,
             data=item.model_dump()
         )
         media: list[Media] = [Media(
@@ -349,9 +375,11 @@ def page_stories_to_entities(structure: StoriesFeed)-> ExtractedEntities:
         posts=extracted_posts
     )
 
+
 def canonical_cdn_url(url: str) -> str:
-    insta_filename= url.split("?")[0].split("/")[-1]
+    insta_filename = url.split("?")[0].split("/")[-1]
     return f"https://scontent.cdninstagram.com/v/{insta_filename}"
+
 
 def media_id_to_shortcode(media_id: int) -> str:
     alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
@@ -360,3 +388,60 @@ def media_id_to_shortcode(media_id: int) -> str:
         media_id, remainder = divmod(media_id, 64)
         shortcode = alphabet[remainder] + shortcode
     return shortcode
+
+
+def deduplicate_entities(entities: ExtractedEntities) -> ExtractedEntitiesFlattened:
+    unique_accounts: dict[str, Account] = dict()
+    unique_posts: dict[str, Post] = dict()
+    unique_medias: dict[str, Media] = dict()
+
+    for post in entities.posts:
+        if post.post.url not in unique_posts:
+            unique_posts[post.post.url] = post.post
+        else:
+            existing_post = unique_posts[post.post.url]
+            unique_posts[post.post.url] = reconcile_posts(post.post, existing_post)
+        for media in post.media:
+            if media.url not in unique_medias:
+                unique_medias[media.url] = media
+            else:
+                existing_media = unique_medias[media.url]
+                unique_medias[media.url] = reconcile_media(media, existing_media)
+
+    for account in entities.accounts:
+        if account.url not in unique_accounts:
+            unique_accounts[account.url] = account
+        else:
+            existing_account = unique_accounts[account.url]
+            unique_accounts[account.url] = reconcile_accounts(account, existing_account)
+
+    return ExtractedEntitiesFlattened(
+        accounts=list(unique_accounts.values()),
+        posts=list(unique_posts.values()),
+        media=list(unique_medias.values())
+    )
+
+
+def attach_archiving_session(flattened_entities: ExtractedEntitiesFlattened,
+                             archiving_session: str) -> ExtractedEntitiesFlattened:
+    for account in flattened_entities.accounts:
+        account.sheet_entries = [archiving_session]
+    for post in flattened_entities.posts:
+        post.sheet_entries = [archiving_session]
+    for media in flattened_entities.media:
+        media.sheet_entries = [archiving_session]
+    return flattened_entities
+
+
+def manual_entity_extraction():
+    # Provide the path to your .har file and desired output folder
+    har_file = input("Input path to HAR file: ")  # Replace with your actual HAR file
+    # Strip leading and trailing whitespace as well as " " or " from the input
+    har_file = har_file.strip().strip('"').strip("'")
+    har_path = Path(har_file)
+    entities = extract_entities_from_har(har_path)
+    pyperclip.copy(entities.model_dump_json(indent=2))
+
+
+if __name__ == '__main__':
+    manual_entity_extraction()

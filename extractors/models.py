@@ -24,6 +24,17 @@ class InstagramImageCandidate(BaseModel):
 class InstagramImageVersions2(BaseModel):
     candidates: List[InstagramImageCandidate]
 
+class VideoVersion(BaseModel):
+    id: Optional[str] = None
+    url: str
+    type: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    bandwidth: Optional[int] = None # Made optional as not always present for all types
+
+    class Config:
+        extra = "allow"
+
 class InstagramSharingFrictionInfo(BaseModel):
     bloks_app_url: Optional[str] = None
     should_have_sharing_friction: bool
@@ -76,8 +87,8 @@ class InstagramCarouselMedia(BaseModel):
     media_type: int
     number_of_qualities: Optional[Any] = None
     organic_tracking_token: Optional[Any] = None
-    original_height: int
-    original_width: int
+    original_height: Optional[int] = None
+    original_width: Optional[int] = None
     owner: Optional[Any] = None # Could be a more specific User model if structure is known
     pk: str
     preview: Optional[str] = None
@@ -88,7 +99,7 @@ class InstagramCarouselMedia(BaseModel):
     user: Optional[Any] = None # Could be a more specific User model if structure is known
     usertags: Optional[InstagramUserTags] = None
     video_dash_manifest: Optional[Any] = None
-    video_versions: Optional[Any] = None
+    video_versions: Optional[List[VideoVersion]] = None
 
     class Config:
         populate_by_name = True
@@ -96,10 +107,10 @@ class InstagramCarouselMedia(BaseModel):
 
 class InstagramLocation(BaseModel):
     typename: Optional[str] = Field(None, alias="__typename")
-    lat: float
-    lng: float
-    name: str
-    pk: int
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    name: Optional[str] = None
+    pk: Optional[int] = None
     profile_pic_url: Optional[str] = None
 
     class Config:
@@ -136,11 +147,11 @@ class InstagramUser(BaseModel):
     ai_agent_owner_username: Optional[Any] = None
     friendship_status: InstagramFriendshipStatus
     id: str
-    is_private: bool
-    is_unpublished: bool
-    is_verified: bool
+    is_private: Optional[bool] = None
+    is_unpublished: Optional[bool] = None
+    is_verified: Optional[bool] = None
     pk: str
-    profile_pic_url: str
+    profile_pic_url: Optional[str] = None
     show_account_transparency_details: Optional[bool] = None
     transparency_label: Optional[Any] = None
     transparency_product: Optional[Any] = None
@@ -228,7 +239,7 @@ class InstagramPost(BaseModel):
     user: InstagramUser # This seems to be the same structure as owner in the example
     usertags: Optional[InstagramUserTags] = None
     video_dash_manifest: Optional[Any] = None
-    video_versions: Optional[Any] = None # Could be List[InstagramVideoVersion] if structure known
+    video_versions: Optional[List[VideoVersion]] = None # Could be List[InstagramVideoVersion] if structure known
     view_count: Optional[Any] = None
     wearable_attribution_info: Optional[Any] = None
 
@@ -246,12 +257,12 @@ class MediaShortcode(BaseModel):
 
 
 class PostCommentUser(BaseModel):
-    fbid_v2: str
+    fbid_v2: Optional[str] = None
     id: str
     is_unpublished: Optional[Any] = None
-    is_verified: bool
+    is_verified: Optional[bool] = None
     pk: str
-    profile_pic_url: str
+    profile_pic_url: Optional[str] = None
     username: str
 
     class Config:
@@ -261,13 +272,13 @@ class PostCommentUser(BaseModel):
 
 class PostComment(BaseModel):
     typename: Optional[str] = Field(None, alias="__typename")
-    child_comment_count: int
-    comment_like_count: int
+    child_comment_count: Optional[int] = None
+    comment_like_count: Optional[int] = None
     created_at: int
     giphy_media_info: Optional[Any] = None
-    has_liked_comment: bool
+    has_liked_comment: Optional[bool] = None
     has_translation: Optional[bool] = None
-    is_covered: bool
+    is_covered: Optional[bool] = None
     parent_comment_id: Optional[str] = None # Assuming parent_comment_id is a string if present
     pk: str
     restricted_status: Optional[Any] = None
@@ -287,9 +298,9 @@ class PostCommentNode(BaseModel):
         extra = "allow"
 
 class CommentsConnection(BaseModel):
-    count: Optional[int]
+    count: Optional[int] = None
     page_info: Optional[Any] = None # Could be a more specific PageInfo model if structure is known
-    edges: List[PostCommentNode]
+    edges: List[PostCommentNode] = Field(default_factory=list)
 
     class Config:
         populate_by_name = True
@@ -309,14 +320,6 @@ class HighlightsReelUser(BaseModel):
         populate_by_name = True
         extra = "allow"
 
-class HighlightsReelVideoVersion(BaseModel):
-    type: int
-    url: str
-
-    class Config:
-        populate_by_name = True
-        extra = "allow"
-
 class HighlightsReel(BaseModel):
     pk: str
     id: str
@@ -331,17 +334,17 @@ class HighlightsReel(BaseModel):
     carousel_media_count: Optional[Any] = None
     carousel_media: Optional[Any] = None # Could be List[InstagramCarouselMedia] if structure is known
     media_overlay_info: Optional[Any] = None
-    caption: Optional[Any] = None # Could be InstagramCaption if structure is known
+    caption: Optional[InstagramCaption] = None # Could be InstagramCaption if structure is known
     accessibility_caption: Optional[str] = None
     image_versions2: InstagramImageVersions2
-    organic_tracking_token: str
-    original_width: int
-    original_height: int
+    organic_tracking_token: Optional[str] = None
+    original_width: Optional[int] = None
+    original_height: Optional[int] = None
     taken_at: int
     is_dash_eligible: Optional[int] = None # Or bool, example shows int
     number_of_qualities: Optional[int] = None
     video_dash_manifest: Optional[str] = None
-    video_versions: Optional[List[HighlightsReelVideoVersion]] = None
+    video_versions: Optional[List[VideoVersion]] = None
     media_type: int
     visual_comment_reply_sticker_info: Optional[Any] = None
     story_bloks_stickers: Optional[Any] = None
@@ -397,7 +400,7 @@ class HighlightsReelUploader(BaseModel):
     interop_messaging_user_fbid: Optional[str] = None
     username: str
     user_id: Optional[str] = None
-    profile_pic_url: str = ""
+    profile_pic_url: Optional[str] = None
     is_verified: bool = False
     transparency_label: Optional[Any] = None
     transparency_product: Optional[Any] = None
@@ -410,7 +413,7 @@ class HighlightsReelUploader(BaseModel):
 
 class HighlightsReelWrap(BaseModel):
     id: str
-    title: str
+    title: Optional[str] = None
     items: list[HighlightsReel]
     user: HighlightsReelUploader
 
@@ -469,12 +472,12 @@ class TimelineItem(BaseModel):
     media_type: int
     carousel_media: Optional[Any] = None # Could be List[InstagramCarouselMedia] if structure is known
     image_versions2: InstagramImageVersions2
-    code: str
+    code: Optional[str] = None
     media_cropping_info: Optional[TimelineItemMediaCroppingInfo] = None
     profile_grid_thumbnail_fitting_style: Optional[str] = None
     media_overlay_info: Optional[Any] = None
     preview: Optional[Any] = None
-    product_type: str
+    product_type: Optional[str] = None
     thumbnails: Optional[Any] = None
     timeline_pinned_user_ids: Optional[List[str]] = None # Assuming list of user ID strings
     upcoming_event: Optional[Any] = None
@@ -507,7 +510,7 @@ class StoryFeedMediaItem(BaseModel):
     width: float
     height: float
     rotation: int
-    media_code: str
+    media_code: Optional[str] = None
     id: Optional[str] = None
     product_type: str
 
@@ -533,14 +536,14 @@ class StoryItem(BaseModel):
     carousel_media_count: Optional[int] = None
     carousel_media: Optional[Any] = None
     media_overlay_info: Optional[Any] = None
-    caption: Optional[Any] = None
+    caption: Optional[InstagramCaption] = None
     accessibility_caption: Optional[str] = None
     organic_tracking_token: Optional[str] = None
     taken_at: Optional[int] = None
     is_dash_eligible: Optional[int] = None
     number_of_qualities: Optional[int] = None
     video_dash_manifest: Optional[str] = None
-    video_versions: Optional[List[HighlightsReelVideoVersion]] = None # Reusing
+    video_versions: Optional[List[VideoVersion]] = None # Reusing
     visual_comment_reply_sticker_info: Optional[Any] = None
     story_bloks_stickers: Optional[Any] = None
     story_link_stickers: Optional[Any] = None

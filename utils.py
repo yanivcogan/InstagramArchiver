@@ -1,7 +1,9 @@
 import platform,socket,re,uuid,json,psutil,logging
 from typing import Optional
-
+import os
 import requests
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def get_my_private_ip():
