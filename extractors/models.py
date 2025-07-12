@@ -426,7 +426,7 @@ class HighlightsReelNode(BaseModel):
         extra = "allow"
 
 class HighlightsReelConnection(BaseModel):
-    id: str
+    id: Optional[str] = None
     edges: List[HighlightsReelNode]
     page_info: HighlightsReelPageInfo
 
@@ -446,7 +446,7 @@ class TimelineItemSquareCrop(BaseModel):
         extra = "allow"
 
 class TimelineItemMediaCroppingInfo(BaseModel):
-    square_crop: TimelineItemSquareCrop
+    square_crop: Optional[TimelineItemSquareCrop] = None
     four_by_three_crop: Optional[Any] = None
 
     class Config:

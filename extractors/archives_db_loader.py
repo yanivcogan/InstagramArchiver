@@ -74,5 +74,5 @@ def extract_entities():
 
 
 if __name__ == "__main__":
-    #register_archives()
+    # register_archives()
     extract_entities()

@@ -266,21 +266,22 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntities:
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
         )]
-        for media_item in item.carousel_media:
-            url = (media_item.video_versions[0].url
-                   if media_item.video_versions and len(media_item.video_versions)
-                   else (
-                media_item.image_versions2.candidates[0].url
-                if media_item.image_versions2 and len(media_item.image_versions2.candidates)
-                else None
-            ))
-            media.append(Media(
-                url=canonical_cdn_url(url),
-                post_url=post.url,
-                local_url=None,
-                media_type="image" if media_item == 1 else "video",
-                data=media_item.model_dump()
-            ))
+        if item.carousel_media:
+            for media_item in item.carousel_media:
+                url = (media_item.video_versions[0].url
+                       if media_item.video_versions and len(media_item.video_versions)
+                       else (
+                    media_item.image_versions2.candidates[0].url
+                    if media_item.image_versions2 and len(media_item.image_versions2.candidates)
+                    else None
+                ))
+                media.append(Media(
+                    url=canonical_cdn_url(url),
+                    post_url=post.url,
+                    local_url=None,
+                    media_type="image" if media_item == 1 else "video",
+                    data=media_item.model_dump()
+                ))
         extracted_posts.append(ExtractedSinglePost(
             post=post,
             media=media,
@@ -337,7 +338,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
 def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntities:
     extracted_posts: list[ExtractedSinglePost] = []
     extracted_accounts: list[Account] = []
-    reels_media = structure.reels_media[0]
+    reels_media = structure.reels_media[0] if structure.reels_media and len(structure.reels_media) > 0 else None
     if not reels_media:
         return ExtractedEntities(
             accounts=extracted_accounts,
