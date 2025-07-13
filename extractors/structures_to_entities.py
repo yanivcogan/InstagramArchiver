@@ -4,7 +4,7 @@ from typing import Optional
 
 import pyperclip
 from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
-    ExtractedEntitiesFlattened
+    ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount
 from extractors.extract_photos import photos_from_har
 from extractors.extract_videos import videos_from_har
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed
@@ -14,22 +14,19 @@ from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
-from reconcile_entities import reconcile_posts, reconcile_media, reconcile_accounts
+from reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
 
-def extract_entities_from_har(har_path: Path, archiving_session: Optional[str] = None) -> ExtractedEntitiesFlattened:
+def extract_entities_from_har(har_path: Path, download_full_video: bool = False) -> ExtractedEntitiesFlattened:
     archive_dir = har_path.parent
-    videos = videos_from_har(har_path, archive_dir / "videos", download_full_video=False)
-    photos = photos_from_har(har_path, archive_dir / "photos", reextract_existing_photos=False)
-
-    if not archiving_session:
-        archiving_session = f"har-archive-{archive_dir.name}"
+    videos = videos_from_har(har_path, archive_dir / "videos", download_full_video=download_full_video)
+    photos = photos_from_har(har_path, archive_dir / "photos", reextract_existing_photos=download_full_video)
 
     local_files_map = dict()
     for video in videos:
         for track in video.tracks.values():
             if len(video.local_files):
-                local_files_map[canonical_cdn_url(track.base_url)] = video.local_files[0]
+                local_files_map[canonical_cdn_url(track.base_url) + ".mp4"] = video.local_files[0]
     for photo in photos:
         if len(photo.local_files) > 0:
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
@@ -40,16 +37,48 @@ def extract_entities_from_har(har_path: Path, archiving_session: Optional[str] =
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
     flattened_entities = deduplicate_entities(entities)
-    flattened_entities = attach_archiving_session(flattened_entities, archiving_session)
     return flattened_entities
+
+
+def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNested:
+    nested_accounts: list[ExtractedSingleAccount] = []
+    orphaned_posts: list[ExtractedSinglePost] = []
+    orphaned_media: list[Media] = []
+
+    account_map: dict[str, ExtractedSingleAccount] = {}
+    for account in entities.accounts:
+        account_map[account.url] = ExtractedSingleAccount(account=account)
+        nested_accounts.append(account_map[account.url])
+
+    post_map: dict[str, ExtractedSinglePost] = {}
+    for post in entities.posts:
+        post_map[post.url] = ExtractedSinglePost(post=post, media=[])
+        account_url = post.account_url
+        if account_url in account_map:
+            account_map[account_url].posts.append(post_map[post.url])
+        else:
+            orphaned_posts.append(post_map[post.url])
+
+    for media in entities.media:
+        if media.post_url in post_map:
+            post_map[media.post_url].media.append(media)
+        else:
+            orphaned_media.append(media)
+
+    return ExtractedEntitiesNested(
+        accounts=nested_accounts,
+        orphaned_posts=orphaned_posts,
+        orphaned_media=orphaned_media
+    )
 
 
 def extract_entities_from_structure(structure: StructureType, local_files_map: dict[str, Path]) -> ExtractedEntities:
     entities = convert_structure_to_entities(structure)
     for post in entities.posts:
         for media in post.media:
-            if media.url in local_files_map:
-                media.local_url = str(local_files_map[media.url])
+            clean_media_url = media.url
+            if clean_media_url in local_files_map:
+                media.local_url = str(local_files_map[clean_media_url])
         post.media = [media for media in post.media if media.local_url]
     entities.posts = [post for post in entities.posts if
                       len(post.media) > 0 or (post.post.caption and len(post.post.caption.strip()))]

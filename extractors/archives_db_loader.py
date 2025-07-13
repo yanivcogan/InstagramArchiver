@@ -3,8 +3,8 @@ import traceback
 from pathlib import Path
 
 import db
-from extractors.structures_to_entities import extract_entities_from_har
-from extractors.reconcile_entities import incorporate_structure_into_db
+from extractors.structures_to_entities import extract_entities_from_har, attach_archiving_session
+from extractors.db_intake import incorporate_structure_into_db
 from utils import ROOT_DIR
 
 
@@ -65,6 +65,7 @@ def extract_entities():
             archive_name = entry_id.split("har-")[1]
             har_path = Path(ROOT_DIR) / "archives" / archive_name / "archive.har"
             entities = extract_entities_from_har(har_path, entry_id)
+            entities = attach_archiving_session(entities, entry_id)
             incorporate_structure_into_db(entities)
             db.execute_query("UPDATE sheet_entry SET extracted_entities = 1, extraction_error = NULL WHERE id = %(id)s", {"id": entry_id}, return_type="none")
         except Exception as e:

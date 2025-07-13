@@ -42,3 +42,12 @@ class ExtractedEntitiesFlattened(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
     posts: list[Post] = Field(default_factory=list)
     media: list[Media] = Field(default_factory=list)
+
+class ExtractedSingleAccount(BaseModel):
+    account: Account
+    posts: list[ExtractedSinglePost] = Field(default_factory=list)
+
+class ExtractedEntitiesNested(BaseModel):
+    accounts: list[ExtractedSingleAccount] = Field(default_factory=list)
+    orphaned_posts: list[ExtractedSinglePost] = Field(default_factory=list)
+    orphaned_media: list[Media] = Field(default_factory=list)

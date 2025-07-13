@@ -80,6 +80,7 @@ class ArchiveSessionMetadata(BaseModel):
     archiving_start_timestamp: str
     recording_start_timestamp: str
     archiving_finished_timestamp: Optional[str] = None
+    archiving_timezone: Optional[str] = None
     har_archive: Path
     warc_archive: Optional[Path] = None
     my_ip: Optional[str] = None
@@ -226,6 +227,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
             target_url=target_url,
             archiving_start_timestamp=archiving_start_timestamp,
             recording_start_timestamp=recording_start_timestamp,
+            archiving_timezone=datetime.datetime.now().astimezone().tzname(),
             har_archive=archive_dir / "archive.har",
             my_ip=my_public_ip,
             platform=get_system_info()
