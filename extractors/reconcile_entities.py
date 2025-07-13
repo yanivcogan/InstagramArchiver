@@ -1,7 +1,7 @@
 import json
 from typing import Optional
 
-from entity_types import Account, Post, Media
+from extractors.entity_types import Account, Post, Media
 
 
 def is_empty(value: Optional[any]) -> bool:

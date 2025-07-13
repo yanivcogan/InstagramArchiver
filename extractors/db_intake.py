@@ -3,7 +3,7 @@ from typing import Optional
 
 import db
 from extractors.entity_types import ExtractedEntitiesFlattened, Account, Post, Media
-from reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
+from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
 
 def incorporate_structure_into_db(structure: ExtractedEntitiesFlattened):

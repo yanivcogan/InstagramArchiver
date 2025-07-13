@@ -8,7 +8,6 @@ import datetime
 from hashlib import md5
 from typing import Literal, Optional
 
-from entities_summary_generator import generate_entities_summary
 from ffmpeg_installer import ensure_ffmpeg_installed
 from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled
 
@@ -25,6 +24,8 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from timestamper import timestamp_file
 from profile_registration import Profile, register_instagram_account
 from summarizers.archive_summary_generator import generate_summary
+from summarizers.entities_summary_generator import generate_entities_summary
+
 from utils import get_my_public_ip, get_system_info
 
 SCREEN_SIZE = tuple(pyautogui.size())

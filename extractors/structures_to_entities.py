@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import pyperclip
 from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
@@ -14,7 +13,7 @@ from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
-from reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
+from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
 
 def extract_entities_from_har(har_path: Path, download_full_video: bool = False) -> ExtractedEntitiesFlattened:

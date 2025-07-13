@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from playwright.sync_api import sync_playwright
 
-from entity_types import ExtractedSingleAccount, ExtractedSinglePost, Media, ExtractedEntitiesNested
-from structures_to_entities import extract_entities_from_har, nest_entities
+from extractors.entity_types import ExtractedSingleAccount, ExtractedSinglePost, Media, ExtractedEntitiesNested
+from extractors.structures_to_entities import extract_entities_from_har, nest_entities
 from bs4 import BeautifulSoup, Tag
 
 
