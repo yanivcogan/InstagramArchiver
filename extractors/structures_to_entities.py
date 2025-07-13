@@ -307,7 +307,7 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntities:
                     url=canonical_cdn_url(url),
                     post_url=post.url,
                     local_url=None,
-                    media_type="image" if media_item == 1 else "video",
+                    media_type="image" if media_item.media_type == 1 else "video",
                     data=media_item.model_dump()
                 ))
         extracted_posts.append(ExtractedSinglePost(
