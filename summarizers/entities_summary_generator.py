@@ -386,7 +386,8 @@ def generate_stylesheet() -> str:
 
 
 def summarize_nested_entities(nested_entities: ExtractedEntitiesNested, metadata: dict) -> str:
-    soup = BeautifulSoup("<html><head><title>Entities Summary</title></head><body></body></html>", "html.parser")
+    page_title = f"Summary of Entities Extracted from Archiving Session {metadata.get('archiving_start_timestamp', 'Unknown Date')}"
+    soup = BeautifulSoup(f"<html><head><title>{page_title}</title></head><body></body></html>", "html.parser")
     # Attach stylesheet to head
     style_tag = soup.new_tag("style")
     style_tag.string = generate_stylesheet()
@@ -394,7 +395,7 @@ def summarize_nested_entities(nested_entities: ExtractedEntitiesNested, metadata
     body = soup.body
     title = soup.new_tag("h1")
     title['class'] = "summary-title"
-    title.string = "Entities Summary"
+    title.string = page_title
     body.append(title)
     if len(nested_entities.accounts) > 0:
         accounts_section = soup.new_tag("div")
