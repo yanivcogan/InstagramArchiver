@@ -443,7 +443,7 @@ def summarize_nested_entities(nested_entities: ExtractedEntitiesNested, metadata
     return str(soup)
 
 
-def generate_summary(har_path: Path, archive_dir: Path, metadata: dict, download_full_video: bool = True):
+def generate_entities_summary(har_path: Path, archive_dir: Path, metadata: dict, download_full_video: bool = True):
     flattened_entities = extract_entities_from_har(har_path, download_full_video=download_full_video)
     nested_entities = nest_entities(flattened_entities)
     html = summarize_nested_entities(nested_entities, metadata)
@@ -480,7 +480,7 @@ def manual_entities_summary_generation():
     #    download_full_video = True
     # else:
     #    download_full_video = False
-    generate_summary(har_path, archive_dir, metadata, download_full_video=download_full_video)
+    generate_entities_summary(har_path, archive_dir, metadata, download_full_video=download_full_video)
 
 
 if __name__ == '__main__':

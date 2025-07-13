@@ -8,6 +8,7 @@ import datetime
 from hashlib import md5
 from typing import Literal, Optional
 
+from entities_summary_generator import generate_entities_summary
 from ffmpeg_installer import ensure_ffmpeg_installed
 from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled
 
@@ -186,7 +187,14 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     with open(archive_dir / "affidavit.txt", "w", encoding="utf-8") as f:
         f.write(affidavit_from_metadata(metadata))
 
-    generate_summary(har_path, archive_dir, metadata_dict)
+    try:
+        generate_summary(har_path, archive_dir, metadata_dict, download_full_video=True)
+    except Exception:
+        pass
+    try:
+        generate_entities_summary(har_path, archive_dir, metadata_dict, download_full_video=False)
+    except Exception:
+        pass
 
     print(f"Content archived successfully in {archive_dir}")
 
