@@ -184,6 +184,7 @@ def summarize_account(account: ExtractedSingleAccount, soup: BeautifulSoup) -> T
     # Bottom section: Posts
     posts_section = soup.new_tag("div")
     posts_section['class'] = "account-posts-section"
+    account.posts.sort(key=lambda x: x.publication_date, reverse=True)
     for post in account.posts:
         post_tag = summarize_post(post, soup)
         posts_section.append(post_tag)
