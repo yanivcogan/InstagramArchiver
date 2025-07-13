@@ -14,3 +14,4 @@ ffmpeg/*
 /tsa_certs
 open_ssl_location.txt
 /.env
+/packaged_archives/
