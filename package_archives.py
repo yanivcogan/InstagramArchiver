@@ -3,6 +3,8 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 from utils import ROOT_DIR
 import os
+import zstandard as zstd
+
 
 BATCH_SIZE_LIMIT = 5000 * 1024 * 1024
 
@@ -19,7 +21,7 @@ def get_size_bytes(start_path: Path):
     return total_size
 
 
-def package_archives():
+def package_archives_zip():
     root_archives = Path(ROOT_DIR) / "archives"
     archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
 
@@ -67,5 +69,57 @@ def package_archives():
             current_batch_size = 0
 
 
+def package_archives_zstd():
+    root_archives = Path(ROOT_DIR) / "archives"
+    archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
+
+    root_zips = Path(ROOT_DIR) / "packaged_archives"
+    packaged_list_path = root_zips / "packaged_list_zstd.txt"
+    if packaged_list_path.exists():
+        with packaged_list_path.open("r", encoding="utf-8") as f:
+            already_packaged = set(line.strip() for line in f if line.strip())
+    else:
+        already_packaged = set()
+    batch_counter_path = root_zips / "batch_counter_zstd.txt"
+    if batch_counter_path.exists():
+        with batch_counter_path.open("r", encoding="utf-8") as f:
+            batch_counter = int(f.readline().strip())
+    else:
+        batch_counter = 0
+
+    to_archive: list[Path] = [a for a in archive_dirs if a.name not in already_packaged]
+    current_batch: list[Path] = []
+    current_batch_size = 0
+    for i in range(len(to_archive)):
+        a = to_archive[i]
+        print(f"processing {a.name}")
+        a_size = get_size_bytes(a)
+        print(f"size of {a.name} = {a_size}")
+        current_batch.append(a)
+        current_batch_size += a_size
+        if current_batch_size >= BATCH_SIZE_LIMIT or i == (len(to_archive) - 1):
+            print("starting new zstd batch")
+            with (root_zips / f'batch_{batch_counter}.zst').open('wb') as zst_file:
+                cctx = zstd.ZstdCompressor(level=22)
+                with cctx.stream_writer(zst_file) as compressor:
+                    for p in current_batch:
+                        print(f"adding {p.name}")
+                        for root, dirs, files in os.walk(p):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                arcname = os.path.relpath(file_path, p)
+                                # Write file path and contents to the archive
+                                compressor.write(f"{os.path.join(p.name, arcname)}\n".encode('utf-8'))
+                                with open(file_path, 'rb') as f:
+                                    compressor.write(f.read())
+            batch_counter += 1
+            with batch_counter_path.open("w", encoding="utf-8") as f:
+                f.write(str(batch_counter))
+            with packaged_list_path.open("a", encoding="utf-8") as f:
+                f.writelines([p.name + "\n" for p in current_batch])
+            current_batch = []
+            current_batch_size = 0
+
+
 if __name__ == "__main__":
-    package_archives()
+    package_archives_zstd()
