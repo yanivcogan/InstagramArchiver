@@ -38,7 +38,6 @@ def package_archives():
         batch_counter = 0
 
     to_archive: list[Path] = [a for a in archive_dirs if a.name not in already_packaged]
-
     current_batch: list[Path] = []
     current_batch_size = 0
     for i in range(len(to_archive)):
@@ -63,7 +62,7 @@ def package_archives():
             with batch_counter_path.open("w", encoding="utf-8") as f:
                 f.write(str(batch_counter))
             with packaged_list_path.open("a", encoding="utf-8") as f:
-                f.writelines([p.name for p in current_batch])
+                f.writelines([p.name + "\n" for p in current_batch])
             current_batch = []
             current_batch_size = 0
 
