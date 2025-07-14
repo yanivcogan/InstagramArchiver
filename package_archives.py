@@ -1,6 +1,7 @@
 from pathlib import Path
+from typing import Optional
 from zipfile import ZipFile, ZIP_DEFLATED
-
+import tarfile
 from utils import ROOT_DIR
 import os
 import zstandard as zstd
@@ -99,19 +100,18 @@ def package_archives_zstd():
         current_batch_size += a_size
         if current_batch_size >= BATCH_SIZE_LIMIT or i == (len(to_archive) - 1):
             print("starting new zstd batch")
-            with (root_zips / f'batch_{batch_counter}.zst').open('wb') as zst_file:
-                cctx = zstd.ZstdCompressor(level=22)
-                with cctx.stream_writer(zst_file) as compressor:
+            with (root_zips / f'batch_{batch_counter}.tar').open('wb') as tar_file:
+                with tarfile.open(fileobj=tar_file, mode='w') as tar:
                     for p in current_batch:
                         print(f"adding {p.name}")
-                        for root, dirs, files in os.walk(p):
-                            for file in files:
-                                file_path = os.path.join(root, file)
-                                arcname = os.path.relpath(file_path, p)
-                                # Write file path and contents to the archive
-                                compressor.write(f"{os.path.join(p.name, arcname)}\n".encode('utf-8'))
-                                with open(file_path, 'rb') as f:
-                                    compressor.write(f.read())
+                        tar.add(p, arcname=p.name)
+            print(f"Created tar file for batch {batch_counter} with size {os.path.getsize(root_zips / f'batch_{batch_counter}.tar')} bytes")
+            with (root_zips / f'batch_{batch_counter}.tar').open('rb') as tar_file:
+                cctx = zstd.ZstdCompressor(level=22)
+                with (root_zips / f'batch_{batch_counter}.zst').open('wb') as zst_file:
+                    print(f"Compressing batch {batch_counter} to zstd")
+                    cctx.copy_stream(tar_file, zst_file)
+            os.remove(root_zips / f'batch_{batch_counter}.tar')
             batch_counter += 1
             with batch_counter_path.open("w", encoding="utf-8") as f:
                 f.write(str(batch_counter))
@@ -119,6 +119,20 @@ def package_archives_zstd():
                 f.writelines([p.name + "\n" for p in current_batch])
             current_batch = []
             current_batch_size = 0
+
+
+def decompress_zst(zstd_file: Path, output_dir: Optional[Path]):
+    if output_dir is None:
+        output_dir = zstd_file.parent
+    """Decompress a zstd file to the specified output directory."""
+    with zstd.open(zstd_file, 'rb') as f:
+        with open(output_dir / zstd_file.with_suffix('').name, 'wb') as out_f:
+            while True:
+                chunk = f.read(1024 * 1024)
+                if not chunk:
+                    break
+                out_f.write(chunk)
+    print(f"Decompressed {zstd_file.name} to {output_dir}")
 
 
 if __name__ == "__main__":
