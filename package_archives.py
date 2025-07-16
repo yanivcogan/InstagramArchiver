@@ -7,7 +7,7 @@ import os
 import zstandard as zstd
 
 
-BATCH_SIZE_LIMIT = 5000 * 1024 * 1024
+BATCH_SIZE_LIMIT = 10000 * 1024 * 1024
 
 
 def get_size_bytes(start_path: Path):
