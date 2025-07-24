@@ -174,7 +174,11 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     har_hash_path = archive_dir / "har_hash.txt"
     with open(har_hash_path, 'w', encoding='utf-8') as f:
         f.write(metadata.har_hash)
-    timestamp_file(har_hash_path)
+
+    try:
+        timestamp_file(har_hash_path)
+    except Exception as e:
+        print(f"❌ Error timestamping HAR hash file: {e}")
 
     # with open(sanitized_har_path, 'rb') as file:
     #     sanitized_har_content = file.read()

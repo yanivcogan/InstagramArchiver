@@ -107,7 +107,7 @@ def timestamp_file(filepath:Path):
     with open(certificate_paths.tsa_cert, "rb") as f:
         tsa_cert = f.read()
 
-    timestamper = RemoteTimestamper('http://freetsa.org/tsr', certificate=tsa_cert)
+    timestamper = RemoteTimestamper('https://freetsa.org/tsr', certificate=tsa_cert)
     tsr = timestamper(data=data, return_tsr=True)
 
     tsr_path = filepath.with_suffix(filepath.suffix + ".tsr")
@@ -175,8 +175,16 @@ def interactive_timestamp_ui():
     else:
         print("Invalid option. Please enter 't' for timestamping or 'v' for verification.")
 
+def test_timestamping():
+    certificate_paths = get_tsa_certs()
+    with open(certificate_paths.tsa_cert, "rb") as f:
+        tsa_cert = f.read()
+    timestamper = RemoteTimestamper('https://freetsa.org/tsr', certificate=tsa_cert)
+    tsr = timestamper(data=b"data", return_tsr=True)
+
 
 # Usage example
 if __name__ == "__main__":
+    # test_timestamping()
     interactive_timestamp_ui()
 
