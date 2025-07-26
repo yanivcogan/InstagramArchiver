@@ -64,7 +64,7 @@ def extract_entities():
             print("Extracting entities for entry", entry_id)
             archive_name = entry_id.split("har-")[1]
             har_path = Path(ROOT_DIR) / "archives" / archive_name / "archive.har"
-            entities = extract_entities_from_har(har_path, entry_id)
+            entities = extract_entities_from_har(har_path, False)
             entities = attach_archiving_session(entities, entry_id)
             incorporate_structure_into_db(entities)
             db.execute_query("UPDATE sheet_entry SET extracted_entities = 1, extraction_error = NULL WHERE id = %(id)s", {"id": entry_id}, return_type="none")

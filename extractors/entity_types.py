@@ -1,7 +1,7 @@
 from datetime import datetime
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any, Literal
+import json
 
 class Account(BaseModel):
     url: str = Field(..., max_length=200)
@@ -10,6 +10,43 @@ class Account(BaseModel):
     data: Optional[Any] = None
     notes: Optional[list[str]] = []
     sheet_entries: Optional[list[str]] = []
+
+    @field_validator('url', mode='before')
+    def normalize_url(cls, v, _):
+        if isinstance(v, str):
+            v = v.strip().rstrip('/')
+        return v
+
+    @field_validator('data', mode='before')
+    def parse_data(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = None
+        return v
+
+    @field_validator('notes', mode='before')
+    def parse_notes(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = []
+        elif v is None:
+            v = []
+        return v
+
+    @field_validator('sheet_entries', mode='before')
+    def parse_sheet_entries(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = []
+        elif v is None:
+            v = []
+        return v
 
 class Post(BaseModel):
     url: str = Field(..., max_length=250)
@@ -20,6 +57,49 @@ class Post(BaseModel):
     notes: Optional[list[str]] = []
     sheet_entries: Optional[list[str]] = []
 
+    @field_validator('url', mode='before')
+    def normalize_url(cls, v, _):
+        if isinstance(v, str):
+            v = v.strip().rstrip('/')
+        return v
+
+    @field_validator('account_url', mode='before')
+    def normalize_account_url(cls, v, _):
+        if isinstance(v, str):
+            v = v.strip().rstrip('/')
+        return v
+
+    @field_validator('data', mode='before')
+    def parse_data(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = None
+        return v
+
+    @field_validator('notes', mode='before')
+    def parse_notes(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = []
+        elif v is None:
+            v = []
+        return v
+
+    @field_validator('sheet_entries', mode='before')
+    def parse_sheet_entries(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = []
+        elif v is None:
+            v = []
+        return v
+
 t_media_type = Literal['video', 'audio', 'image']
 
 class Media(BaseModel):
@@ -29,6 +109,38 @@ class Media(BaseModel):
     media_type: t_media_type
     data: Optional[Any] = None
     sheet_entries: Optional[list[str]] = []
+
+    @field_validator('url', mode='before')
+    def normalize_url(cls, v, _):
+        if isinstance(v, str):
+            v = v.strip().rstrip('/')
+        return v
+
+    @field_validator('post_url', mode='before')
+    def normalize_post_url(cls, v, _):
+        if isinstance(v, str):
+            v = v.strip().rstrip('/')
+        return v
+
+    @field_validator('data', mode='before')
+    def parse_data(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = None
+        return v
+
+    @field_validator('sheet_entries', mode='before')
+    def parse_sheet_entries(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = []
+        elif v is None:
+            v = []
+        return v
 
 class ExtractedSinglePost(BaseModel):
     post: Post
