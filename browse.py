@@ -19,7 +19,7 @@ app.mount("/archives", StaticFiles(directory="archives"), name="archives")
 
 def get_account_by_url(url:str) -> Optional[Account]:
     account = db.execute_query(
-        """SELECT * FROM account WHERE url LIKE %(url)s""",
+        """SELECT * FROM account WHERE url = %(url)s""",
         {"url": url},
         return_type="single_row"
     )
@@ -30,7 +30,7 @@ def get_account_by_url(url:str) -> Optional[Account]:
 
 def get_posts_by_account(account: Account) -> list[Post]:
     post = db.execute_query(
-        """SELECT * FROM post WHERE account_url LIKE %(account_url)s""",
+        """SELECT * FROM post WHERE account_url = %(account_url)s""",
         {"account_url": f"{account.url}%"},
         return_type="rows"
     )
@@ -72,6 +72,8 @@ async def account_view(url: str, request: Request):
     html = html.replace(ROOT_DIR.replace("\\", "/"), "http://127.0.0.1:4444")
     html = html.replace('src="ytmb', 'src="https://glan-ytbm.fra1.cdn.digitaloceanspaces.com/ytmb')
     html = html.replace('href="ytmb', 'href="https://glan-ytbm.fra1.cdn.digitaloceanspaces.com/ytmb')
+    html = html.replace('src="pal', 'src="https://glan.fra1.cdn.digitaloceanspaces.com/pal')
+    html = html.replace('href="pal', 'href="https://glan.fra1.cdn.digitaloceanspaces.com/pal')
     return HTMLResponse(content=html)
 
 if __name__ == "__main__":
