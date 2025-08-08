@@ -254,7 +254,6 @@ def archive_instagram_content(profile: Profile, target_url: str):
         browser = p.firefox.launch(headless=False)
         browser_build_id = f"{browser.browser_type.name}_{browser.version}"
         metadata.browser_build_id = browser_build_id
-        # browser.on("disconnected", lambda b: finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event))
         context = browser.new_context(
             storage_state=storage_state,
             record_har_path=metadata.har_archive,

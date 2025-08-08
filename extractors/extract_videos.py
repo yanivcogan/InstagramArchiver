@@ -1,5 +1,7 @@
 import base64
 import json
+from hashlib import md5
+
 import ijson
 import os
 import subprocess
@@ -11,6 +13,8 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel
+
+from timestamper import timestamp_file
 
 
 class MediaSegment(BaseModel):
@@ -139,6 +143,8 @@ def save_segments_as_files(videos: list[Video], output_dir: Path, files_to_skip:
         files_to_skip = dict()
     existing_videos_filenames = [v[0] for v in files_to_skip.values()]
 
+    full_track_hashes = dict()
+
     """Extracts and saves each segment as a temporary video file."""
     for v_idx, video in enumerate(videos):
         temp_video_file = None
@@ -162,6 +168,11 @@ def save_segments_as_files(videos: list[Video], output_dir: Path, files_to_skip:
             if track.full_track is not None:
                 # If full track is available, use it directly
                 track_data = track.full_track
+                try:
+                    full_track_hashes[track_name] = md5(track_data).hexdigest()
+                except Exception as e:
+                    print(f"Error hashing full track {track_name} for video {xpv_asset_id}: {e}")
+                    full_track_hashes[track_name] = None
             else:
                 # sort the segments by start byte
                 track.segments.sort(key=lambda s: s.start)
@@ -230,6 +241,20 @@ def save_segments_as_files(videos: list[Video], output_dir: Path, files_to_skip:
         else:
             print(f"No valid video or audio files found for video {video.xpv_asset_id}, skipping.")
             video.location = None
+
+    try:
+        full_track_hashes_path = output_dir / "full_track_hashes.json"
+        full_track_hashes_str = json.dumps(full_track_hashes, indent=2, sort_keys=True)
+        with open(full_track_hashes_path, "w", encoding="utf-8") as f:
+            f.write(full_track_hashes_str)
+        full_track_hashes_md5 = md5(full_track_hashes_str.encode("utf-8")).hexdigest()
+        full_track_hashes_hash_path = output_dir / "full_track_hashes_hash.txt"
+        with open(full_track_hashes_hash_path, "w") as f:
+            f.write(full_track_hashes_md5)
+        timestamp_file(full_track_hashes_hash_path)
+    except Exception as e:
+        print(f"Error saving full track hashes: {e}")
+
     return videos
 
 
@@ -294,5 +319,6 @@ def videos_from_har(har_path:Path, output_dir:Path=Path('../temp_video_segments'
 if __name__ == '__main__':
     # Provide the path to your .har file and desired output folder
     har_file = input("Input path to HAR file: ")  # Replace with your actual HAR file
-
-    videos_from_har(Path(har_file))
+    har_file = har_file.strip().strip('"').strip("'")
+    har_file_path = Path(har_file)
+    videos_from_har(har_file_path, output_dir=har_file_path.parent / "videos", download_full_video=True)
