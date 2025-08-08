@@ -66,3 +66,15 @@ def get_current_commit_id() -> Optional[str]:
     except FileNotFoundError:
         print("Git is not installed or not available in the PATH.")
         return None
+
+def ensure_committed() -> str:
+    if (not is_bundled()) and has_uncommitted_changes():
+        proceed_despite_uncommited_changes = (input("You have may have uncommitted changes. Are you sure you want to proceed? (yes/no): ")
+                    .strip().lower())
+        if proceed_despite_uncommited_changes not in {"yes", "y"}:
+            print("Exiting...")
+            sys.exit(0)
+    print("Proceeding with execution...")
+    commit_id = get_current_commit_id()
+    print(f"Commit ID: {commit_id}")
+    return commit_id

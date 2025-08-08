@@ -6,7 +6,7 @@ import time
 import json
 import datetime
 from hashlib import md5
-from typing import Literal, Optional
+from typing import Optional
 
 from ffmpeg_installer import ensure_ffmpeg_installed
 from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled, ensure_committed
@@ -16,8 +16,7 @@ import pyautogui
 import threading
 
 from pydantic import BaseModel
-from har2warc.har2warc import har2warc
-import numpy as np
+import numpy as np  # For the screen recorder
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from dotenv import load_dotenv
@@ -25,73 +24,24 @@ from dotenv import load_dotenv
 from profile_selection import select_profile
 from timestamper import timestamp_file
 from profile_registration import Profile
-from summarizers.archive_summary_generator import generate_summary
-from summarizers.entities_summary_generator import generate_entities_summary
 
 from utils import get_my_public_ip, get_system_info
 
 SCREEN_SIZE = tuple(pyautogui.size())
-commit_id = None
 load_dotenv()
-
-def store_archive_as_warc(archive_dir: Path):
-    har_file = archive_dir / "archive.har"
-    if har_file.exists():
-        try:
-            warc_file = archive_dir / "archive.warc.gz"
-            har2warc(str(har_file), str(warc_file))
-            print(f"WARC file generated at: {warc_file}")
-        except Exception as e:
-            print(f"Error converting HAR to WARC: {e}")
-    else:
-        print("HAR file was not saved successfully.")
-
-class InstagramObject(BaseModel):
-    type: Literal["post", "story", "reel", "highlight", "profile"]
-    username: Optional[str] = None
-    url: str
-    id: str
-
-def get_instagram_object_type(item_url: str, username: Optional[str] = None) -> InstagramObject:
-    item_url = item_url.strip()
-    item_url = item_url.split("?")[0]  # Remove query parameters if any
-    item_url = item_url.rstrip("/")  # Remove trailing slash if any
-    item_url = item_url.replace("www.", "")  # Remove www. if present
-    item_url = item_url.split("://")[-1]  # Remove protocol if present
-    url_components = item_url.split("/")
-    if url_components[1] == "p":
-        return InstagramObject(type="post", url=item_url, id=item_url.split("/")[2], username=username)
-    elif url_components[1] == "reel":
-        return InstagramObject(type="reel", url=item_url, id=item_url.split("/")[2], username=username)
-    elif url_components[1] == "stories":
-        if len(url_components) > 3 and url_components[2] == "highlights":
-            return InstagramObject(type="highlight", url=item_url, id=item_url.split("/")[4], username=username)
-        else:
-            return InstagramObject(type="story", url=item_url, id=item_url.split("/")[2], username=username)
-    if username is None:
-        username = url_components[1]
-        url_stripped_of_username = item_url.replace(f"/{username}", "")
-        if len(url_stripped_of_username.split("/")) > 2:
-            return get_instagram_object_type(url_stripped_of_username, username=username)
-        else:
-            return InstagramObject(type="profile", url=item_url, id=username, username=username)
-    else:
-        return InstagramObject(type="profile", url=item_url, id=username, username=username)
+commit_id = None
 
 
-class ArchiveSessionMetadata(BaseModel):
+class StoriesFeedArchiveSessionMetadata(BaseModel):
     profile_name: str
-    target_url: str
     archiving_start_timestamp: str
     recording_start_timestamp: str
     archiving_finished_timestamp: Optional[str] = None
     archiving_timezone: Optional[str] = None
-    har_archive: Path
-    warc_archive: Optional[Path] = None
+    log_path: Path
+    log_hash: Optional[str] = None
     my_ip: Optional[str] = None
     platform: Optional[str] = None
-    har_hash: Optional[str] = None
-    sanitized_har_hash: Optional[str] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = None
     signature: Optional[str] = None
@@ -127,20 +77,20 @@ def screen_record(output_path, stop_event):
     print(f"Screen recording saved to {output_path}")
 
 
-def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
-    affidavit = f"""I, {metadata.signature}, have archived the Instagram content from {metadata.target_url} using the profile '{metadata.profile_name}'.
-The archiving process started at {metadata.archiving_start_timestamp} and was completed at {metadata.archiving_finished_timestamp} (timezone: {datetime.datetime.now().astimezone().tzname()}, UTC {datetime.datetime.now().astimezone().utcoffset()}).
+def affidavit_from_metadata(metadata: StoriesFeedArchiveSessionMetadata) -> str:
+    affidavit = f"""I, {metadata.signature}, have viewed the Instagram stories feed for '{metadata.profile_name}' in order to send a subset of them for archiving.
+The browsing session began at {metadata.archiving_start_timestamp} and was completed at {metadata.archiving_finished_timestamp} (timezone: {datetime.datetime.now().astimezone().tzname()}, UTC {datetime.datetime.now().astimezone().utcoffset()}).
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
-The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
-None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
-MD5 hash of the HAR file: {metadata.har_hash}
+The script records the screen during this process. The screen recording is saved as a video file. Server requests fetching the metadata of the browsed stories from Instagram's graphql API are monitored and their details are output into a log file.
+None of the log's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
+MD5 hash of the log file: {metadata.log_hash}
 OS and hardware details: {metadata.platform}
 Additional Notes: {metadata.notes}"""
     return affidavit
 
 
-def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
+def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: StoriesFeedArchiveSessionMetadata, stop_event=None):
     context.close()
     browser.close()
 
@@ -163,31 +113,11 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
             metadata.signature = input('Sign full name: ')
         if not metadata.notes == "reset":
             break
-
-
-    har_path = metadata.har_archive
-    # sanitized_har_path = archive_dir / "sanitized.har"
-
-    # sanitize_har(har_path, sanitized_har_path)
-
-    with open(har_path, 'rb') as file:
-        har_content = file.read()
-        har_hash = md5(har_content).hexdigest()
-        metadata.har_hash = har_hash
-
-    har_hash_path = archive_dir / "har_hash.txt"
-    with open(har_hash_path, 'w', encoding='utf-8') as f:
-        f.write(metadata.har_hash)
-
     try:
-        timestamp_file(har_hash_path)
+        # timestamp_file(har_hash_path)
+        pass
     except Exception as e:
         print(f"❌ Error timestamping HAR hash file: {e}")
-
-    # with open(sanitized_har_path, 'rb') as file:
-    #     sanitized_har_content = file.read()
-    #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
-    #     metadata.sanitized_har_hash = sanitized_har_hash
 
     with open(archive_dir / "metadata.json", "w", encoding="utf-8") as f:
         metadata_dict = metadata.model_dump()
@@ -196,21 +126,12 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     with open(archive_dir / "affidavit.txt", "w", encoding="utf-8") as f:
         f.write(affidavit_from_metadata(metadata))
 
-    try:
-        generate_summary(har_path, archive_dir, metadata_dict, download_full_video=True)
-    except Exception:
-        pass
-    try:
-        generate_entities_summary(har_path, archive_dir, metadata_dict, download_full_video=False)
-    except Exception:
-        pass
-
     print(f"Content archived successfully in {archive_dir}")
 
     return
 
 
-def archive_instagram_content(profile: Profile, target_url: str):
+def archive_instagram_content(profile: Profile):
     profiles_dir = Path("profiles")
     profile_name = profile.name
     profile_path = profiles_dir / profile_name
@@ -222,12 +143,37 @@ def archive_instagram_content(profile: Profile, target_url: str):
     # Create archive directory with timestamp
     archiving_start_time = datetime.datetime.now()
     archiving_start_timestamp = archiving_start_time.isoformat()
-    archive_dir = Path("archives") / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
+    archive_dir = Path("archives") / f"{profile_name}_stories_{archiving_start_time.strftime('%Y%m%d_%H%M')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
     my_public_ip = get_my_public_ip()
 
     with open(profile_path / "state.json", "r") as f:
         storage_state = json.load(f)
+
+    stories_to_keep = []
+
+    def log_story_request(request):
+        if (
+                request.url.startswith("https://www.instagram.com/graphql/query")
+                and request.headers.get("x-root-field-name") == "xdt_api__v1__feed__reels_media__connection"
+        ):
+            try:
+                response = request.response()
+                stories_to_keep.append({
+                    "request": {
+                        "url": request.url,
+                        "headers": dict(request.headers),
+                        "post_data": request.post_data
+                    },
+                    "response": {
+                        "status": response.status,
+                        "headers": dict(response.headers),
+                        "body": response.body()
+                    }
+                })
+            except Exception as e:
+                print(f"Error saving request/response: {e}")
+
 
     with sync_playwright() as p:
         # Start screen recording in a separate thread
@@ -239,16 +185,15 @@ def archive_instagram_content(profile: Profile, target_url: str):
         )
         recording_thread.start()
         recording_start_timestamp = datetime.datetime.now().isoformat()
-        metadata = ArchiveSessionMetadata(
+        metadata = StoriesFeedArchiveSessionMetadata(
             commit_id=commit_id,
             profile_name=profile.insta_username,
-            target_url=target_url,
             archiving_start_timestamp=archiving_start_timestamp,
             recording_start_timestamp=recording_start_timestamp,
             archiving_timezone=datetime.datetime.now().astimezone().tzname(),
-            har_archive=archive_dir / "archive.har",
             my_ip=my_public_ip,
-            platform=get_system_info()
+            platform=get_system_info(),
+            log_path=archive_dir / "captured_stories.json"
         )
         # Launch browser with the saved state
         browser = p.firefox.launch(headless=False)
@@ -257,17 +202,16 @@ def archive_instagram_content(profile: Profile, target_url: str):
         # browser.on("disconnected", lambda b: finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event))
         context = browser.new_context(
             storage_state=storage_state,
-            record_har_path=metadata.har_archive,
         )
+        context.on("requestfinished", log_story_request)
 
         page = context.new_page()
 
         try:
             # Navigate to the target URL
-            page.goto(target_url)
+            page.goto('https://www.instagram.com/')
 
             # Allow user to do whatever they want
-            print(f"Archiving content from {target_url}")
             page.wait_for_event("close", timeout=0)
         except Exception as e:
             if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
@@ -275,15 +219,19 @@ def archive_instagram_content(profile: Profile, target_url: str):
             else:
                 print(f"Error during archiving: {e}")
         finally:
+            try:
+                with open(metadata.log_path, "w", encoding="utf-8") as f:
+                    json.dump(stories_to_keep, f, indent=2, default=str)
+            except Exception as e:
+                pass
             finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event)
 
 
 
 if __name__ == "__main__":
     commit_id = ensure_committed()
+    print("Welcome to the Instagram Story Archiver!")
     ensure_ffmpeg_installed()
     profile = select_profile()
-    url = input("Enter the Instagram URL to archive: ")
-
-    archive_instagram_content(profile, url)
+    archive_instagram_content(profile)
     sys.exit(0)

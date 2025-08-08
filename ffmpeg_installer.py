@@ -18,6 +18,7 @@ def find_ffmpeg_executable_in_dir(ffmpeg_dir: Path)->Optional[Path]:
 
 
 def ensure_ffmpeg_installed():
+    print("Ensuring FFMPEG is installed...")
     # Check if ffmpeg is accessible by trying to run it
     ffmpeg_check = os.system("ffmpeg -version >nul 2>&1")
     if ffmpeg_check == 0:
