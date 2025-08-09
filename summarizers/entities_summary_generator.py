@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-
+from extract_videos import VideoAcquisitionConfig
 from extractors.entity_types import ExtractedSingleAccount, ExtractedSinglePost, Media, ExtractedEntitiesNested
 from extractors.structures_to_entities import extract_entities_from_har, nest_entities
 from bs4 import BeautifulSoup, Tag
@@ -444,8 +444,13 @@ def summarize_nested_entities(nested_entities: ExtractedEntitiesNested, metadata
     return str(soup)
 
 
-def generate_entities_summary(har_path: Path, archive_dir: Path, metadata: dict, download_full_video: bool = True):
-    flattened_entities = extract_entities_from_har(har_path, download_full_video=download_full_video)
+def generate_entities_summary(
+        har_path: Path,
+        archive_dir: Path,
+        metadata: dict,
+        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig()
+):
+    flattened_entities = extract_entities_from_har(har_path, video_acquisition_config)
     nested_entities = nest_entities(flattened_entities)
     html = summarize_nested_entities(nested_entities, metadata)
     # replace absolute paths under archive_dir with relative paths

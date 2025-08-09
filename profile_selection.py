@@ -2,6 +2,10 @@ import sys
 import json
 from pathlib import Path
 
+import toga
+from toga.style import Pack
+from toga.style.pack import COLUMN
+
 from profile_registration import Profile, register_instagram_account
 
 
@@ -41,3 +45,44 @@ def select_profile() -> Profile:
     if profile is None:
         raise Exception("No matching profile found for the given name.")
     return profile
+
+def select_profile_toga(app: toga.App):
+    available_profiles_path = Path("profiles/map.json")
+    if not available_profiles_path.exists():
+        dialog = toga.Window(title="No Profiles Found")
+        dialog.content = toga.Box(children=[
+            toga.Label("No profiles found."),
+            toga.Button("Register New Profile", on_press=lambda w: register_instagram_account() or app.exit()),
+            toga.Button("Exit", on_press=lambda w: app.exit())
+        ])
+        dialog.show()
+        return
+
+    with open(available_profiles_path, "r") as m:
+        profile_dicts = json.loads(m.read())
+        profiles_map = [Profile(**profile) for profile in profile_dicts]
+
+    def on_select_profile(widget):
+        selection = profile_combo.value
+        if selection == "+ new":
+            register_instagram_account()
+            toga.Window(title="Profile Registered", content=toga.Label("Please restart to select the new profile.")).show()
+            app.exit()
+        else:
+            for p in profiles_map:
+                if p.name == selection:
+                    app.selected_profile = p
+                    app.main_window.dialog(toga.InfoDialog("Profile Selected", f"Selected profile: {p.name}"))
+                    break
+
+    profile_names = [p.name for p in profiles_map]
+    profile_combo = toga.ComboBox(items=profile_names + ["+ new"])
+    select_button = toga.Button("Select", on_press=on_select_profile)
+
+    box = toga.Box(children=[
+        toga.Label("Select a profile:"),
+        profile_combo,
+        select_button
+    ], style=Pack(direction=COLUMN, margin=10))
+
+    app.main_window.content = box

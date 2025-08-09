@@ -8,6 +8,8 @@ import datetime
 from hashlib import md5
 from typing import Literal, Optional
 
+from dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
+from extract_videos import VideoAcquisitionConfig
 from ffmpeg_installer import ensure_ffmpeg_installed
 from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled, ensure_committed
 
@@ -153,17 +155,72 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     archiving_finished_timestamp = datetime.datetime.now().isoformat()
     metadata.archiving_finished_timestamp = archiving_finished_timestamp
 
-    while True:
-        metadata.signature = os.getenv('DEFAULT_SIGNATURE') or input('Sign full name: ')
-        print(f"Signed {metadata.signature}.")
-        metadata.notes = input("Notes about the content (type 'reset' to reinput signature): ") or '-'
-        if metadata.notes == "switch":
-            metadata.notes = metadata.signature
-            print(f"Notes set to {metadata.notes}.")
-            metadata.signature = input('Sign full name: ')
-        if not metadata.notes == "reset":
-            break
+    storage_config = show_dialog_form(
+        DialogForm(
+            title="Finish Archiving",
+            submit_button_text="Save Archive",
+            sections=[
+                FormSection(
+                    title="Summary",
+                    fields=[
+                        FormFieldText(
+                            title="Signature (Full Name)",
+                            key="signature",
+                            default_value=os.getenv('DEFAULT_SIGNATURE') or ""
+                        ),
+                        FormFieldText(
+                            title="Notes about the content",
+                            key="notes",
+                            default_value=""
+                        )
+                    ]
+                ),
+                FormSection(
+                    title="Video Downloading Configuration",
+                    fields=[
+                        FormFieldBool(
+                            title="Download Auxiliary Media (profile pictures of other users, thumbnails, etc.)",
+                            key="download_media_not_in_structures",
+                            default_value=False
+                        ),
+                        FormFieldBool(
+                            title="Download Related Media that Hasn't Been Fetched During the Session (e.g. videos from a post that wasn't opened)",
+                            key="download_unfetched_media",
+                            default_value=False
+                        ),
+                        FormFieldBool(
+                            title="Download Full Versions of Fetched Media (if set to false, videos which were only partially played might be corrupted)",
+                            key="download_full_versions_of_fetched_media",
+                            default_value=True
+                        ),
+                        FormFieldBool(
+                            title="Download Highest Quality Assets from Structures (if set to false, the videos will be downloaded in the quality they were displayed in during the session)",
+                            key="download_highest_quality_assets_from_structures",
+                            default_value=True
+                        )
+                    ]
+                ),
+            ]
+        )
+    )
 
+    if storage_config is None:
+        print("Archiving cancelled by user. Deleting archive directory.")
+        if archive_dir.exists():
+            for item in archive_dir.iterdir():
+                item.unlink(missing_ok=True)
+            archive_dir.rmdir()
+        return
+
+    # video downloading configuration
+    download_missing: bool = True
+    download_media_not_in_structures: bool = storage_config["download_media_not_in_structures"]
+    download_unfetched_media: bool = storage_config["download_unfetched_media"]
+    download_full_versions_of_fetched_media: bool = storage_config["download_full_versions_of_fetched_media"]
+    download_highest_quality_assets_from_structures: bool = storage_config["download_highest_quality_assets_from_structures"]
+
+    metadata.signature = storage_config["signature"]
+    metadata.notes = storage_config["notes"]
 
     har_path = metadata.har_archive
     # sanitized_har_path = archive_dir / "sanitized.har"
@@ -196,12 +253,23 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     with open(archive_dir / "affidavit.txt", "w", encoding="utf-8") as f:
         f.write(affidavit_from_metadata(metadata))
 
+    # try:
+    #     generate_summary(har_path, archive_dir, metadata_dict, download_full_video=True)
+    # except Exception:
+    #     pass
     try:
-        generate_summary(har_path, archive_dir, metadata_dict, download_full_video=True)
-    except Exception:
-        pass
-    try:
-        generate_entities_summary(har_path, archive_dir, metadata_dict, download_full_video=False)
+        generate_entities_summary(
+            har_path,
+            archive_dir,
+            metadata_dict,
+            VideoAcquisitionConfig(
+                download_missing=download_missing,
+                download_media_not_in_structures=download_media_not_in_structures,
+                download_unfetched_media=download_unfetched_media,
+                download_full_versions_of_fetched_media=download_full_versions_of_fetched_media,
+                download_highest_quality_assets_from_structures=download_highest_quality_assets_from_structures
+            )
+        )
     except Exception:
         pass
 

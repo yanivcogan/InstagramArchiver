@@ -11,7 +11,7 @@ import traceback
 from urllib import parse as urllib_parse
 import requests
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from extractors.models import VideoVersion
 from extractors.structures_extraction import StructureType, structures_from_har
@@ -435,16 +435,27 @@ def timestamp_downloaded_contents(downloaded_video_hashes: dict[int, str], outpu
         print(f"Error saving full track hashes: {e}")
 
 
+class VideoAcquisitionConfig(BaseModel):
+    download_missing: bool = True,
+    download_media_not_in_structures: bool = True,
+    download_unfetched_media: bool = True,
+    download_full_versions_of_fetched_media: bool = True,
+    download_highest_quality_assets_from_structures: bool = True,
+
+
 def acquire_videos(
         har_path: Path,
         output_dir: Path = Path('../temp_video_segments'),
         structures: Optional[list[StructureType]] = None,
-        download_missing: bool = True,
-        download_media_not_in_structures: bool = True,
-        download_unfetched_media: bool = True,
-        download_full_versions_of_fetched_media: bool = True,
-        download_highest_quality_assets_from_structures: bool = True,
+        config: VideoAcquisitionConfig = Field(default_factory=VideoAcquisitionConfig)
 ) -> list[Video]:
+    # unpack the config
+    download_missing = config.download_missing
+    download_media_not_in_structures = config.download_media_not_in_structures
+    download_unfetched_media = config.download_unfetched_media
+    download_full_versions_of_fetched_media = config.download_full_versions_of_fetched_media
+    download_highest_quality_assets_from_structures = config.download_highest_quality_assets_from_structures
+
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
