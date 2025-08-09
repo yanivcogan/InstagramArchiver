@@ -24,7 +24,7 @@ def extract_entities_from_har(har_path: Path, download_full_video: bool = False)
     videos = acquire_videos(
         har_path,
         archive_dir / "videos",
-        download_full_versions_of_fetched_media=download_full_video
+        structures = structures,
     )
 
     photos = photos_from_har(
@@ -35,9 +35,12 @@ def extract_entities_from_har(har_path: Path, download_full_video: bool = False)
 
     local_files_map = dict()
     for video in videos:
-        for track in video.fetched_tracks.values():
-            if len(video.local_files):
-                local_files_map[canonical_cdn_url(track.base_url) + ".mp4"] = video.local_files[0]
+        if video.fetched_tracks:
+            for track in video.fetched_tracks.values():
+                if len(video.local_files):
+                    local_files_map[canonical_cdn_url(track.base_url) + ".mp4"] = video.local_files[0]
+        if video.full_asset:
+            local_files_map[canonical_cdn_url(video.full_asset)] = video.local_files[0]
     for photo in photos:
         if len(photo.local_files) > 0:
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]

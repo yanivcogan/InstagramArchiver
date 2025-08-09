@@ -9,13 +9,15 @@ from pyasn1.codec.der import encoder
 from pydantic import BaseModel
 from rfc3161ng import RemoteTimestamper
 
+from utils import ROOT_DIR
+
 
 class TsaCertsLocation(BaseModel):
     tsa_cert: Path
     ca_cert: Path
 
 def get_tsa_certs() -> TsaCertsLocation:
-    tsa_certs_dir = Path("tsa_certs")
+    tsa_certs_dir = Path(ROOT_DIR) / "tsa_certs"
     if not tsa_certs_dir.exists():
         tsa_certs_dir.mkdir()
         print(f"Created directory: {tsa_certs_dir}")

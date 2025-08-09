@@ -1,6 +1,5 @@
 import base64
 import json
-from datetime import datetime
 from hashlib import md5
 from pathlib import Path
 from typing import Optional, Literal
@@ -192,6 +191,7 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
             # Download the full track as a single file
             track_data = download_file(track.full_url)
             if track_data is not None:
+                print("Downloaded full track data for", track_name)
                 download_type = "full_track"
         if track_data is None:
             # Attempt to compose the track from segments
@@ -213,7 +213,7 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
 
         source_type = "har_segments" if download_type == "har_segments" else "full_track"
         single_track_file = f"track_{xpv_asset_id}_{track_name}_{source_type}.mp4"
-        if track_data is not None and len(track_data) == 0:
+        if track_data is not None and len(track_data) > 0:
             with open(output_dir / single_track_file, 'wb') as f:
                 f.write(track_data)
 
@@ -264,7 +264,7 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
         if merge_success:
             merged_file = merged_file_path
 
-    most_complete_version = merged_file or temp_video_file or temp_audio_file
+    most_complete_version = merged_file or temp_video_file or temp_audio_file or None
 
     if most_complete_version is None:
         print(f"No valid video segments found for xpv_asset_id {video.xpv_asset_id}.")
@@ -291,15 +291,27 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
                     for item in edge.node.items:
                         if item.video_versions:
                             pk_video_versions_dict[item.pk] = item.video_versions
+                        if item.carousel_media:
+                            for carousel_item in item.carousel_media:
+                                if carousel_item.video_versions:
+                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.stories_feed:
                 for edge in s.stories_feed.reels_media:
                     for item in edge.items:
                         if item.video_versions:
                             pk_video_versions_dict[item.pk] = item.video_versions
+                        if item.carousel_media:
+                            for carousel_item in item.carousel_media:
+                                if carousel_item.video_versions:
+                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.profile_timeline:
                 for edge in s.profile_timeline.edges:
                     if edge.node.video_versions:
                         pk_video_versions_dict[edge.node.pk] = edge.node.video_versions
+                    if edge.node.carousel_media:
+                        for carousel_item in edge.node.carousel_media:
+                            if carousel_item.video_versions:
+                                pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.clips_user_connection:
                 for edge in s.clips_user_connection.edges:
                     if edge.node.media.video_versions:
@@ -314,20 +326,36 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
                 for post in s.posts.items:
                     if post.video_versions:
                         pk_video_versions_dict[post.pk] = post.video_versions
+                    if post.carousel_media:
+                        for carousel_item in post.carousel_media:
+                            if carousel_item.video_versions:
+                                pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.stories:
                 for story in s.stories.reels_media:
                     for item in story.items:
                         if item.video_versions:
                             pk_video_versions_dict[item.pk] = item.video_versions
+                        if item.carousel_media:
+                            for carousel_item in item.carousel_media:
+                                if carousel_item.video_versions:
+                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.highlight_reels:
                 for reel in s.highlight_reels.edges:
                     for item in reel.node.items:
                         if item.video_versions:
                             pk_video_versions_dict[item.pk] = item.video_versions
+                        if item.carousel_media:
+                            for carousel_item in item.carousel_media:
+                                if carousel_item.video_versions:
+                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.timelines:
                 for item in s.timelines.items:
                     if item.video_versions:
                         pk_video_versions_dict[item.pk] = item.video_versions
+                    if item.carousel_media:
+                        for carousel_item in item.carousel_media:
+                            if carousel_item.video_versions:
+                                pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
     videos: dict[int, Video] = dict()
     for pk, video_versions in pk_video_versions_dict.items():
         if video_versions:
@@ -351,15 +379,19 @@ def get_existing_videos(working_dir: Path) -> dict[str, Path]:
 
     for file_name, file_size in existing_files_name_size_tuples:
         print(f"Extracting {file_name}...")
+        asset_id = file_name
         try:
-            cleaned_file_name = file_name.split(r'track_|xpv_')[1].split("_")[0]
+            asset_id = asset_id.split('track_')[1] if 'track_' in asset_id else asset_id
+            asset_id = asset_id.split('xpv_')[1] if 'xpv_' in asset_id else asset_id
+            asset_id = asset_id.split('_')[0] if '_' in asset_id else asset_id
+            asset_id = asset_id.split('.mp4')[0] if '.mp4' in asset_id else asset_id
         except IndexError:
-            cleaned_file_name = file_name
+            pass
         if (
-                cleaned_file_name not in largest_version_of_files or
-                file_size > largest_version_of_files[cleaned_file_name][1]
+                asset_id not in largest_version_of_files or
+                file_size > largest_version_of_files[asset_id][1]
         ):
-            largest_version_of_files[cleaned_file_name] = (file_name, file_size)
+            largest_version_of_files[asset_id] = (file_name, file_size)
 
     return {track_name: Path(working_dir / file_name) for track_name, (file_name, _) in
             largest_version_of_files.items()}
