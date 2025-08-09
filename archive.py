@@ -9,9 +9,9 @@ from hashlib import md5
 from typing import Literal, Optional
 
 from dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
-from extract_videos import VideoAcquisitionConfig
+from extractors.extract_videos import VideoAcquisitionConfig
 from ffmpeg_installer import ensure_ffmpeg_installed
-from git_helper import has_uncommitted_changes, get_current_commit_id, is_bundled, ensure_committed
+from git_helper import ensure_committed
 
 import cv2
 import pyautogui
@@ -142,19 +142,8 @@ Additional Notes: {metadata.notes}"""
     return affidavit
 
 
-def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
-    context.close()
-    browser.close()
-
-    if stop_event is not None:
-        stop_event.set()
-    if recording_thread.is_alive():
-        recording_thread.join()
-        print("Recording finished.")
-
-    archiving_finished_timestamp = datetime.datetime.now().isoformat()
-    metadata.archiving_finished_timestamp = archiving_finished_timestamp
-
+def get_storage_config() -> Optional[dict]:
+    default_signature = os.getenv("DEFAULT_SIGNATURE", "")
     storage_config = show_dialog_form(
         DialogForm(
             title="Finish Archiving",
@@ -166,7 +155,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
                         FormFieldText(
                             title="Signature (Full Name)",
                             key="signature",
-                            default_value=os.getenv('DEFAULT_SIGNATURE') or ""
+                            default_value=default_signature
                         ),
                         FormFieldText(
                             title="Notes about the content",
@@ -203,6 +192,23 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
             ]
         )
     )
+    return storage_config
+
+
+def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
+    context.close()
+    browser.close()
+
+    if stop_event is not None:
+        stop_event.set()
+    if recording_thread.is_alive():
+        recording_thread.join()
+        print("Recording finished.")
+
+    archiving_finished_timestamp = datetime.datetime.now().isoformat()
+    metadata.archiving_finished_timestamp = archiving_finished_timestamp
+
+    storage_config = get_storage_config()
 
     if storage_config is None:
         print("Archiving cancelled by user. Deleting archive directory.")

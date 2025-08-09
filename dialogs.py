@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import tkinter as tk
 from tkinter import ttk
 
+
 class FormFieldBase(BaseModel):
     key: str
     title: str
@@ -11,24 +12,30 @@ class FormFieldBase(BaseModel):
     type: Literal["text", "bool", "select"]
     default_value: Optional[Any] = None
 
+
 class FormFieldText(FormFieldBase):
     type: Literal["text"] = "text"
     default_value: Optional[str] = None
 
+
 class FormFieldBool(FormFieldBase):
     type: Literal["bool"] = "bool"
     default_value: Optional[bool] = False
+
 
 class FormFieldSelect(FormFieldBase):
     type: Literal["select"] = "select"
     options: list[str]
     default_value: Optional[str] = None
 
+
 FormField = Union[FormFieldText, FormFieldBool, FormFieldSelect]
+
 
 class FormSection(BaseModel):
     title: str
     fields: List[FormField]
+
 
 class DialogForm(BaseModel):
     title: str
@@ -47,7 +54,8 @@ def show_dialog_form(dialog_form: DialogForm):
             self.widgets = {}
             row = 0
             for section in dialog_form.sections:
-                tk.Label(self, text=section.title, font=("Arial", 10, "bold")).grid(row=row, column=0, columnspan=2, sticky="w", pady=(10, 2))
+                tk.Label(self, text=section.title, font=("Arial", 10, "bold")).grid(row=row, column=0, columnspan=2,
+                                                                                    sticky="w", pady=(10, 2))
                 row += 1
                 for field in section.fields:
                     if not field.shown:
@@ -98,8 +106,8 @@ def show_dialog_form(dialog_form: DialogForm):
             self.destroy()
 
     root = tk.Tk()
-    root.overrideredirect(True)
-    root.attributes("-alpha", 0)
+    # root.overrideredirect(True)
+    # root.attributes("-alpha", 0)
     win = DialogFormWindow(root, dialog_form)
     root.wait_window(win)
     root.destroy()

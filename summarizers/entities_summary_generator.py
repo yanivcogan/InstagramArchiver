@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from extract_videos import VideoAcquisitionConfig
+from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.entity_types import ExtractedSingleAccount, ExtractedSinglePost, Media, ExtractedEntitiesNested
 from extractors.structures_to_entities import extract_entities_from_har, nest_entities
 from bs4 import BeautifulSoup, Tag
