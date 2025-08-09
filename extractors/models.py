@@ -21,8 +21,44 @@ class InstagramImageCandidate(BaseModel):
         populate_by_name = True
         extra = "allow"
 
+class ScrubberSpritesheetDefault(BaseModel):
+    file_size_kb: int
+    max_thumbnails_per_sprite: int
+    rendered_width: int
+    sprite_height: int
+    sprite_urls: List[str]
+    sprite_width: int
+    thumbnail_duration: float
+    thumbnail_height: int
+    thumbnail_width: int
+    thumbnails_per_row: int
+    total_thumbnail_num_per_sprite: int
+    video_length: float
+
+    class Config:
+        extra = "allow"
+
+class ScrubberSpritesheetInfoCandidates(BaseModel):
+    default: Optional[ScrubberSpritesheetDefault] = None
+
+    class Config:
+        extra = "allow"
+
+class AdditionalCandidates(BaseModel):
+    first_frame: Optional[InstagramImageCandidate] = None
+    igtv_first_frame: Optional[InstagramImageCandidate] = None
+    smart_frame: Optional[InstagramImageCandidate] = None # Assuming same structure or Any
+
+    class Config:
+        extra = "allow"
+
 class InstagramImageVersions2(BaseModel):
-    candidates: List[InstagramImageCandidate]
+    candidates: Optional[List[InstagramImageCandidate]] = Field(default_factory=list)
+    additional_candidates: Optional[AdditionalCandidates] = None
+    scrubber_spritesheet_info_candidates: Optional[ScrubberSpritesheetInfoCandidates] = None
+
+    class Config:
+        extra = "allow"
 
 class VideoVersion(BaseModel):
     id: Optional[str] = None
@@ -472,6 +508,7 @@ class TimelineItem(BaseModel):
     media_type: int
     carousel_media: Optional[Any] = None # Could be List[InstagramCarouselMedia] if structure is known
     image_versions2: InstagramImageVersions2
+    video_versions: Optional[List[VideoVersion]] = None
     code: Optional[str] = None
     media_cropping_info: Optional[TimelineItemMediaCroppingInfo] = None
     profile_grid_thumbnail_fitting_style: Optional[str] = None

@@ -2,12 +2,12 @@ import json
 from pathlib import Path
 
 from extractors.extract_photos import photos_from_har
-from extractors.extract_videos import videos_from_har
+from extractors.extract_videos import acquire_videos
 from extractors.structures_extraction import StructureType, structures_from_har
 
 
 def generate_summary(har_path: Path, archive_dir: Path, metadata: dict, download_full_video: bool = True) -> str:
-    videos = videos_from_har(har_path, archive_dir / "videos", download_full_video=download_full_video)
+    videos = acquire_videos(har_path, archive_dir / "videos", download_full_versions_of_fetched_media=download_full_video)
     photos = photos_from_har(har_path, archive_dir / "photos")
     structures = structures_from_har(har_path)
 
@@ -157,8 +157,8 @@ def generate_summary(har_path: Path, archive_dir: Path, metadata: dict, download
                     </video>
                     <div class="metadata">
                         <p><strong>Asset ID:</strong> <span class="metadata-value">{video.xpv_asset_id}</span></p>
-                        <p><strong>Tracks ({len(video.tracks)}):</strong></p>
-                        {"".join(f'<p class="metadata-value">{track}</p>' for track in video.tracks.keys())}
+                        <p><strong>Tracks ({len(video.fetched_tracks)}):</strong></p>
+                        {"".join(f'<p class="metadata-value">{track}</p>' for track in video.fetched_tracks.keys())}
                     </div>
                 </div>"""
         except Exception as e:

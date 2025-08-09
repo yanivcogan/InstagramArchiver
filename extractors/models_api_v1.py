@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Union
 
+from extractors.models import VideoVersion, InstagramImageVersions2
+
 
 class FriendshipUserApiV1(BaseModel):
     pk: str
@@ -293,64 +295,6 @@ class MediaUserApiV1(BaseModel):
         populate_by_name = True
         extra = "allow"
 
-class ImageCandidateApiV1(BaseModel):
-    height: int
-    url: str
-    width: int
-
-    class Config:
-        extra = "allow"
-
-class AdditionalCandidatesApiV1(BaseModel):
-    first_frame: Optional[ImageCandidateApiV1] = None
-    igtv_first_frame: Optional[ImageCandidateApiV1] = None
-    smart_frame: Optional[ImageCandidateApiV1] = None # Assuming same structure or Any
-
-    class Config:
-        extra = "allow"
-
-class ScrubberSpritesheetDefaultApiV1(BaseModel):
-    file_size_kb: int
-    max_thumbnails_per_sprite: int
-    rendered_width: int
-    sprite_height: int
-    sprite_urls: List[str]
-    sprite_width: int
-    thumbnail_duration: float
-    thumbnail_height: int
-    thumbnail_width: int
-    thumbnails_per_row: int
-    total_thumbnail_num_per_sprite: int
-    video_length: float
-
-    class Config:
-        extra = "allow"
-
-class ScrubberSpritesheetInfoCandidatesApiV1(BaseModel):
-    default: Optional[ScrubberSpritesheetDefaultApiV1] = None
-
-    class Config:
-        extra = "allow"
-
-class ImageVersions2ApiV1(BaseModel):
-    additional_candidates: Optional[AdditionalCandidatesApiV1] = None
-    candidates: Optional[List[ImageCandidateApiV1]] = Field(default_factory=list)
-    scrubber_spritesheet_info_candidates: Optional[ScrubberSpritesheetInfoCandidatesApiV1] = None
-
-    class Config:
-        extra = "allow"
-
-class VideoVersionApiV1(BaseModel):
-    id: Optional[str] = None
-    url: str
-    type: Optional[int] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    bandwidth: Optional[int] = None # Made optional as not always present for all types
-
-    class Config:
-        extra = "allow"
-
 class FbDownstreamUseXpostMetadataApiV1(BaseModel):
     downstream_use_xpost_deny_reason: Optional[str] = None
 
@@ -408,33 +352,33 @@ class MediaItemApiV1(BaseModel):
     can_see_insights_as_brand: Optional[bool] = None
     media_type: int
     code: str
-    caption: Optional[CommentCaptionApiV1] = None # Reusing CommentCaptionApiV1
+    caption: Optional[CommentCaptionApiV1] = None
     sharing_friction_info: Optional[SharingFrictionInfoApiV1] = None
-    timeline_pinned_user_ids: Optional[Union[List[str], List[int]]] = Field(default_factory=list) # Assuming list of strings
+    timeline_pinned_user_ids: Optional[Union[List[str], List[int]]] = None
     play_count: Optional[int] = None
     has_views_fetching: Optional[bool] = None
     ig_play_count: Optional[int] = None
-    creator_viewer_insights: Optional[List[Any]] = Field(default_factory=list)
-    fb_user_tags: Optional[UserTagsApiV1] = None # Similar to usertags, using UserTagsApiV1
-    coauthor_producers: Optional[List[Any]] = Field(default_factory=list)
+    creator_viewer_insights: Optional[List[Any]] = None
+    fb_user_tags: Optional[UserTagsApiV1] = None
+    coauthor_producers: Optional[List[Any]] = None
     coauthor_producer_can_see_organic_insights: Optional[bool] = None
-    invited_coauthor_producers: Optional[List[Any]] = Field(default_factory=list)
+    invited_coauthor_producers: Optional[List[Any]] = None
     is_in_profile_grid: Optional[bool] = None
     profile_grid_control_enabled: Optional[bool] = None
     media_cropping_info: Optional[Any] = None # Structure unknown
     user: MediaUserApiV1
     owner: MediaUserApiV1 # Structure is identical to user in the example
-    image_versions2: Optional[ImageVersions2ApiV1] = None
+    image_versions2: Optional[InstagramImageVersions2] = None
     original_width: Optional[int] = None
     original_height: Optional[int] = None
     is_artist_pick: Optional[bool] = None
-    media_notes: Optional[dict] = Field(default_factory=dict) # e.g. {"items": []}
+    media_notes: Optional[dict] = None
     media_reposter_bottomsheet_enabled: Optional[bool] = None
     enable_media_notes_production: Optional[bool] = None
     product_type: str
     is_paid_partnership: Optional[bool] = None
     music_metadata: Optional[Any] = None # Structure unknown
-    social_context: Optional[List[Any]] = Field(default_factory=list)
+    social_context: Optional[List[Any]] = None
     organic_tracking_token: Optional[str] = None
     is_third_party_downloads_eligible: Optional[bool] = None
     ig_media_sharing_disabled: Optional[bool] = None
@@ -445,9 +389,9 @@ class MediaItemApiV1(BaseModel):
     boost_unavailable_reason_v2: Optional[Any] = None
     subscribe_cta_visible: Optional[bool] = None
     is_cutout_sticker_allowed: Optional[bool] = None
-    cutout_sticker_info: Optional[List[Any]] = Field(default_factory=list)
+    cutout_sticker_info: Optional[List[Any]] = None
     gen_ai_detection_method: Optional[GenAIDetectionMethodApiV1] = None
-    community_notes_info: Optional[dict] = Field(default_factory=dict)
+    community_notes_info: Optional[dict] = None
     report_info: Optional[ReportInfoApiV1] = None
     fb_aggregated_like_count: Optional[int] = None
     fb_aggregated_comment_count: Optional[int] = None
@@ -458,36 +402,36 @@ class MediaItemApiV1(BaseModel):
     is_eligible_for_media_note_recs_nux: Optional[bool] = None
     is_social_ufi_disabled: Optional[bool] = None
     is_eligible_for_meta_ai_share: Optional[bool] = None
-    meta_ai_suggested_prompts: Optional[List[Any]] = Field(default_factory=list)
+    meta_ai_suggested_prompts: Optional[List[Any]] = None
     can_reply: Optional[bool] = None
-    floating_context_items: Optional[List[Any]] = Field(default_factory=list)
+    floating_context_items: Optional[List[Any]] = None
     is_eligible_content_for_post_roll_ad: Optional[bool] = None
     related_ads_pivots_media_info: Optional[str] = None
     is_open_to_public_submission: Optional[bool] = None
     hidden_likes_string_variant: Optional[int] = None
     can_view_more_preview_comments: Optional[bool] = None
-    preview_comments: Optional[List[Any]] = Field(default_factory=list) # Define structure if known
+    preview_comments: Optional[List[Any]] = None
     comment_count: Optional[int] = None
     hide_view_all_comment_entrypoint: Optional[bool] = None
     inline_composer_display_condition: Optional[str] = None
     is_comments_gif_composer_enabled: Optional[bool] = None
-    comment_inform_treatment: Optional[dict] = Field(default_factory=dict)
+    comment_inform_treatment: Optional[dict] = None
     has_more_comments: Optional[bool] = None
     max_num_visible_preview_comments: Optional[int] = None
     explore_hide_comments: Optional[bool] = None
     has_liked: Optional[bool] = None
     like_count: Optional[int] = None
-    facepile_top_likers: Optional[List[Any]] = Field(default_factory=list) # Define structure if known
-    top_likers: Optional[List[Any]] = Field(default_factory=list) # Define structure if known
-    video_sticker_locales: Optional[List[Any]] = Field(default_factory=list)
+    facepile_top_likers: Optional[List[Any]] = None
+    top_likers: Optional[List[Any]] = None
+    video_sticker_locales: Optional[List[Any]] = None
     is_dash_eligible: Optional[int] = None # 0 or 1, can be bool
     video_dash_manifest: Optional[str] = None
     number_of_qualities: Optional[int] = None
-    video_versions: Optional[List[VideoVersionApiV1]] = Field(default_factory=list)
+    video_versions: Optional[List[VideoVersion]] = None
     video_duration: Optional[float] = None
     has_audio: Optional[bool] = None
-    clips_tab_pinned_user_ids: Optional[List[Any]] = Field(default_factory=list) # Assuming list of user IDs (str or int)
-    clips_metadata: Optional[dict] = Field(default_factory=dict)
+    clips_tab_pinned_user_ids: Optional[List[Any]] = None
+    clips_metadata: Optional[dict] = None
 
     class Config:
         populate_by_name = True

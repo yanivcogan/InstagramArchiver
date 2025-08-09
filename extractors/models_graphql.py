@@ -2,7 +2,8 @@ from typing import Optional, List, Any
 
 from pydantic import BaseModel, Field
 
-from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo
+from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo, VideoVersion, \
+    InstagramImageVersions2
 
 
 class ProfileTimelinePageInfo(BaseModel):
@@ -143,11 +144,6 @@ class ReelsMediaConnection(BaseModel):
         populate_by_name = True
         extra = "allow"
 
-class InstagramImageVersions2(BaseModel): # Placeholder
-    candidates: List[Any] # Replace Any with actual InstagramImageCandidate if defined
-    class Config:
-        extra = "allow"
-
 class HighlightsReelUser(BaseModel): # Placeholder
     pk: str
     id: str
@@ -180,11 +176,12 @@ class ClipsUserMedia(BaseModel):
     comment_count: int
     like_count: int
     audience: Optional[Any] = None
-    clips_tab_pinned_user_ids: Optional[List[str]] = Field(default_factory=list)
+    clips_tab_pinned_user_ids: Optional[List[str]] = None
     has_views_fetching: Optional[bool] = None
     media_type: int
     carousel_media: Optional[Any] = None
-    image_versions2: InstagramImageVersions2 # Reusing InstagramImageVersions2
+    image_versions2: InstagramImageVersions2
+    video_versions: Optional[List[VideoVersion]] = None
     preview: Optional[Any] = None
     original_height: int
     original_width: int
