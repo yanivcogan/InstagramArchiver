@@ -3,7 +3,7 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 
 from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo, VideoVersion, \
-    InstagramImageVersions2
+    InstagramImageVersions2, InstagramCarouselMedia
 
 
 class ProfileTimelinePageInfo(BaseModel):
@@ -179,7 +179,7 @@ class ClipsUserMedia(BaseModel):
     clips_tab_pinned_user_ids: Optional[List[str]] = None
     has_views_fetching: Optional[bool] = None
     media_type: int
-    carousel_media: Optional[Any] = None
+    carousel_media: Optional[List[InstagramCarouselMedia]] = None
     image_versions2: InstagramImageVersions2
     video_versions: Optional[List[VideoVersion]] = None
     preview: Optional[Any] = None

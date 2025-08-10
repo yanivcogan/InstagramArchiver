@@ -486,7 +486,7 @@ def manual_entities_summary_generation():
     #    download_full_video = True
     # else:
     #    download_full_video = False
-    generate_entities_summary(har_path, archive_dir, metadata, download_full_video=download_full_video)
+    generate_entities_summary(har_path, archive_dir, metadata)
 
 
 if __name__ == '__main__':

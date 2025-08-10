@@ -129,7 +129,7 @@ class InstagramCarouselMedia(BaseModel):
     pk: str
     preview: Optional[str] = None
     previous_submitter: Optional[Any] = None
-    sharing_friction_info: InstagramSharingFrictionInfo
+    sharing_friction_info: Optional[InstagramSharingFrictionInfo] = None
     story_cta: Optional[Any] = None
     taken_at: int
     user: Optional[Any] = None # Could be a more specific User model if structure is known
@@ -368,7 +368,7 @@ class HighlightsReel(BaseModel):
     boost_unavailable_reason: Optional[Any] = None
     product_type: str
     carousel_media_count: Optional[Any] = None
-    carousel_media: Optional[Any] = None # Could be List[InstagramCarouselMedia] if structure is known
+    carousel_media: Optional[List[InstagramCarouselMedia]] = None # Could be List[InstagramCarouselMedia] if structure is known
     media_overlay_info: Optional[Any] = None
     caption: Optional[InstagramCaption] = None # Could be InstagramCaption if structure is known
     accessibility_caption: Optional[str] = None
@@ -506,7 +506,7 @@ class TimelineItem(BaseModel):
     carousel_media_count: Optional[int] = None
     display_uri: Optional[str] = None
     media_type: int
-    carousel_media: Optional[Any] = None # Could be List[InstagramCarouselMedia] if structure is known
+    carousel_media: Optional[List[InstagramCarouselMedia]] = None # Could be List[InstagramCarouselMedia] if structure is known
     image_versions2: InstagramImageVersions2
     video_versions: Optional[List[VideoVersion]] = None
     code: Optional[str] = None
@@ -571,7 +571,7 @@ class StoryItem(BaseModel):
     boost_unavailable_reason: Optional[Any] = None
     product_type: str
     carousel_media_count: Optional[int] = None
-    carousel_media: Optional[Any] = None
+    carousel_media: Optional[List[InstagramCarouselMedia]] = None
     media_overlay_info: Optional[Any] = None
     caption: Optional[InstagramCaption] = None
     accessibility_caption: Optional[str] = None
