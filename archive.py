@@ -331,6 +331,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
         context = browser.new_context(
             storage_state=storage_state,
             record_har_path=metadata.har_archive,
+            record_video_dir=archive_dir / "screen_recordings",
         )
 
         page = context.new_page()
