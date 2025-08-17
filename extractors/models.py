@@ -109,29 +109,29 @@ class InstagramUserTags(BaseModel):
 
 class InstagramCarouselMedia(BaseModel):
     accessibility_caption: Optional[str] = None
-    carousel_parent_id: str
+    carousel_parent_id: Optional[str] = None
     display_uri: Optional[str] = None
     has_liked: Optional[bool] = None
-    id: str
-    image_versions2: InstagramImageVersions2
+    id: Optional[str] = None
+    image_versions2: Optional[InstagramImageVersions2] = None
     inventory_source: Optional[Any] = None
     is_dash_eligible: Optional[Any] = None
     like_count: Optional[int] = None
     link: Optional[Any] = None
     logging_info_token: Optional[Any] = None
     media_overlay_info: Optional[Any] = None
-    media_type: int
+    media_type: Optional[int] = None
     number_of_qualities: Optional[Any] = None
     organic_tracking_token: Optional[Any] = None
     original_height: Optional[int] = None
     original_width: Optional[int] = None
     owner: Optional[Any] = None # Could be a more specific User model if structure is known
-    pk: str
+    pk: Optional[str] = None
     preview: Optional[str] = None
     previous_submitter: Optional[Any] = None
     sharing_friction_info: Optional[InstagramSharingFrictionInfo] = None
     story_cta: Optional[Any] = None
-    taken_at: int
+    taken_at: Optional[int] = None
     user: Optional[Any] = None # Could be a more specific User model if structure is known
     usertags: Optional[InstagramUserTags] = None
     video_dash_manifest: Optional[Any] = None

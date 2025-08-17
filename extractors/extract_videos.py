@@ -1,4 +1,5 @@
 import base64
+import datetime
 import json
 from hashlib import md5
 from pathlib import Path
@@ -11,7 +12,7 @@ import traceback
 from urllib import parse as urllib_parse
 import requests
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from extractors.models import VideoVersion
 from extractors.structures_extraction import StructureType, structures_from_har
@@ -422,12 +423,13 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
 
 def timestamp_downloaded_contents(downloaded_video_hashes: dict[int, str], output_dir: Path):
     try:
-        full_track_hashes_path = output_dir / "full_track_hashes.json"
+        now_timestamp = int(datetime.datetime.timestamp(datetime.datetime.now()))
+        full_track_hashes_path = output_dir / f"full_track_hashes_{now_timestamp}.json"
         full_track_hashes_str = json.dumps(downloaded_video_hashes, indent=2, sort_keys=True)
         with open(full_track_hashes_path, "w", encoding="utf-8") as f:
             f.write(full_track_hashes_str)
         full_track_hashes_md5 = md5(full_track_hashes_str.encode("utf-8")).hexdigest()
-        full_track_hashes_hash_path = output_dir / "full_track_hashes_hash.txt"
+        full_track_hashes_hash_path = output_dir / f"full_track_hashes_hash_{now_timestamp}.txt"
         with open(full_track_hashes_hash_path, "w") as f:
             f.write(full_track_hashes_md5)
         timestamp_file(full_track_hashes_hash_path)
@@ -447,7 +449,7 @@ def acquire_videos(
         har_path: Path,
         output_dir: Path = Path('../temp_video_segments'),
         structures: Optional[list[StructureType]] = None,
-        config: VideoAcquisitionConfig = Field(default_factory=VideoAcquisitionConfig)
+        config: VideoAcquisitionConfig = VideoAcquisitionConfig()
 ) -> list[Video]:
     # unpack the config
     download_missing = config.download_missing

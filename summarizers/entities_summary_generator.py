@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.entity_types import ExtractedSingleAccount, ExtractedSinglePost, Media, ExtractedEntitiesNested
 from extractors.structures_to_entities import extract_entities_from_har, nest_entities
@@ -448,9 +449,10 @@ def generate_entities_summary(
         har_path: Path,
         archive_dir: Path,
         metadata: dict,
-        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig()
+        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(),
+        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig()
 ):
-    flattened_entities = extract_entities_from_har(har_path, video_acquisition_config)
+    flattened_entities = extract_entities_from_har(har_path, video_acquisition_config, photo_acquisition_config)
     nested_entities = nest_entities(flattened_entities)
     html = summarize_nested_entities(nested_entities, metadata)
     # replace absolute paths under archive_dir with relative paths

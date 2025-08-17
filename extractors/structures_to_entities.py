@@ -4,7 +4,7 @@ from pathlib import Path
 import pyperclip
 from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
     ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount
-from extractors.extract_photos import photos_from_har
+from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig
 from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed
 from extractors.models_api_v1 import MediaInfoApiV1
@@ -19,6 +19,7 @@ from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, r
 def extract_entities_from_har(
         har_path: Path,
         video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(),
+        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig()
 ) -> ExtractedEntitiesFlattened:
     archive_dir = har_path.parent
 
@@ -31,10 +32,10 @@ def extract_entities_from_har(
         config=video_acquisition_config
     )
 
-    photos = photos_from_har(
+    photos = acquire_photos(
         har_path,
         archive_dir / "photos",
-        reextract_existing_photos=False
+        config=photo_acquisition_config
     )
 
     local_files_map = dict()
@@ -49,7 +50,7 @@ def extract_entities_from_har(
         if len(photo.local_files) > 0:
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
 
-    entities = ExtractedEntities()
+    entities = ExtractedEntities(accounts=[], posts=[])
     for structure in structures:
         extracted = extract_entities_from_structure(structure, local_files_map)
         entities.posts.extend(extracted.posts)
