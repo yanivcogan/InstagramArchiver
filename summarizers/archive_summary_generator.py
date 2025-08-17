@@ -1,14 +1,14 @@
 import json
 from pathlib import Path
 
-from extractors.extract_photos import photos_from_har
+from extractors.extract_photos import acquire_photos
 from extractors.extract_videos import acquire_videos
 from extractors.structures_extraction import StructureType, structures_from_har
 
 
 def generate_summary(har_path: Path, archive_dir: Path, metadata: dict, download_full_video: bool = True) -> str:
     videos = acquire_videos(har_path, archive_dir / "videos", download_full_versions_of_fetched_media=download_full_video)
-    photos = photos_from_har(har_path, archive_dir / "photos")
+    photos = acquire_photos(har_path, archive_dir / "photos")
     structures = structures_from_har(har_path)
 
     html = """<!DOCTYPE html>

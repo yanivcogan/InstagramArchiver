@@ -9,7 +9,7 @@ from hashlib import md5
 from typing import Literal, Optional
 
 from dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
-from extract_photos import PhotoAcquisitionConfig
+from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from ffmpeg_installer import ensure_ffmpeg_installed
 from git_helper import ensure_committed
