@@ -35,6 +35,7 @@ def extract_entities_from_har(
     photos = acquire_photos(
         har_path,
         archive_dir / "photos",
+        structures = structures,
         config=photo_acquisition_config
     )
 
