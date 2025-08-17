@@ -488,7 +488,24 @@ def manual_entities_summary_generation():
     #    download_full_video = True
     # else:
     #    download_full_video = False
-    generate_entities_summary(har_path, archive_dir, metadata)
+    generate_entities_summary(
+        har_path,
+        archive_dir,
+        metadata,
+        VideoAcquisitionConfig(
+            download_missing=True,
+            download_media_not_in_structures=False,
+            download_unfetched_media=False,
+            download_full_versions_of_fetched_media=True,
+            download_highest_quality_assets_from_structures=True
+        ),
+        PhotoAcquisitionConfig(
+            download_missing=True,
+            download_media_not_in_structures=False,
+            download_unfetched_media=False,
+            download_highest_quality_assets_from_structures=True
+        )
+    )
 
 
 if __name__ == '__main__':

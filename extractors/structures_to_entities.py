@@ -53,7 +53,7 @@ def extract_entities_from_har(
 
     entities = ExtractedEntities(accounts=[], posts=[])
     for structure in structures:
-        extracted = extract_entities_from_structure(structure, local_files_map)
+        extracted = extract_entities_from_structure(structure, local_files_map, archive_dir)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
     flattened_entities = deduplicate_entities(entities)
@@ -92,13 +92,19 @@ def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNest
     )
 
 
-def extract_entities_from_structure(structure: StructureType, local_files_map: dict[str, Path]) -> ExtractedEntities:
+def extract_entities_from_structure(
+        structure: StructureType,
+        local_files_map: dict[str, Path],
+        archive_dir: Path
+) -> ExtractedEntities:
     entities = convert_structure_to_entities(structure)
     for post in entities.posts:
         for media in post.media:
             clean_media_url = media.url
             if clean_media_url in local_files_map:
-                media.local_url = str(local_files_map[clean_media_url])
+                local_media_url = local_files_map[clean_media_url]
+                relative_path = local_media_url.relative_to(archive_dir)
+                media.local_url = str(relative_path)
         post.media = [media for media in post.media if media.local_url]
     entities.posts = [post for post in entities.posts if
                       len(post.media) > 0 or (post.post.caption and len(post.post.caption.strip()))]
