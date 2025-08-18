@@ -267,7 +267,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     p_download_highest_quality_assets_from_structures: bool = storage_config.p_download_highest_quality_assets_from_structures
 
 
-    metadata.signature = storage_config.notes
+    metadata.signature = storage_config.signature
     metadata.notes = storage_config.notes
 
     har_path = metadata.har_archive
