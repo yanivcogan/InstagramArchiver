@@ -2,14 +2,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from models_graphql import ReelsMediaConnection
+
 supported_page_types = Literal["highlight", "story", "reel", "post", "profile"]
 import json
 from bs4 import BeautifulSoup
 from typing import List, Optional
 
 from extractors.models import HighlightsReelConnection, CommentsConnection, \
-    ProfileTimeline, MediaShortcode, \
-    StoriesFeed  # assuming you've defined the models above in models.py
+    ProfileTimeline, MediaShortcode
 from extractors.models_har import HarRequest
 
 
@@ -50,7 +51,7 @@ class PageResponse(BaseModel):
     comments: Optional[CommentsConnection]
     timelines: Optional[ProfileTimeline]
     highlight_reels: Optional[HighlightsReelConnection]
-    stories: Optional[StoriesFeed]
+    stories: Optional[ReelsMediaConnection]
 
 
 def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageResponse]:
@@ -85,7 +86,7 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageRespons
                 highlight_reels = HighlightsReelConnection(**reel_data)
 
             for story_data in story_feeds:
-                stories = StoriesFeed(**story_data)
+                stories = ReelsMediaConnection(**story_data)
 
         except Exception as e:
             print("Failed to parse post from HTML:", e)

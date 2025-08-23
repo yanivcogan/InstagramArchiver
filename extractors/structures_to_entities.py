@@ -28,14 +28,14 @@ def extract_entities_from_har(
     videos = acquire_videos(
         har_path,
         archive_dir / "videos",
-        structures = structures,
+        structures=structures,
         config=video_acquisition_config
     )
 
     photos = acquire_photos(
         har_path,
         archive_dir / "photos",
-        structures = structures,
+        structures=structures,
         config=photo_acquisition_config
     )
 
@@ -160,7 +160,9 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
             )
             media: list[Media] = [Media(
                 url=canonical_cdn_url(
-                    item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+                    item.video_versions[0].url if item.video_versions
+                    else item.image_versions2.candidates[0].url
+                ),
                 post_url=post.url,
                 local_url=None,
                 media_type="video" if item.video_versions else "image",
@@ -169,7 +171,10 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
             if item.carousel_media:
                 for media_item in item.carousel_media:
                     media.append(Media(
-                        url=canonical_cdn_url(media_item.url),
+                        url=canonical_cdn_url(
+                            item.video_versions[0].url if item.video_versions
+                            else item.image_versions2.candidates[0].url
+                        ),
                         post_url=post.url,
                         local_url=None,
                         media_type="image" if media_item.media_type == 1 else "video",
@@ -215,7 +220,7 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
         if item.carousel_media:
             for media_item in item.carousel_media:
                 media_url = media_item.video_versions[0].url if media_item.video_versions else \
-                media_item.image_versions2.candidates[0].url
+                    media_item.image_versions2.candidates[0].url
                 media.append(Media(
                     url=canonical_cdn_url(media_url),
                     post_url=post.url,
@@ -290,7 +295,7 @@ def page_to_entities(structure: PageResponse) -> ExtractedEntities:
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
     if structure.stories:
-        extracted = page_stories_to_entities(structure.stories)
+        extracted = graphql_reels_media_to_entities(structure.stories)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
     return entities
