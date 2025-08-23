@@ -546,7 +546,7 @@ class StoryFeedMediaItem(BaseModel):
     y: float
     width: float
     height: float
-    rotation: int
+    rotation: float
     media_code: Optional[str] = None
     id: Optional[str] = None
     product_type: str
