@@ -2,7 +2,6 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from models_graphql import ReelsMediaConnection
 
 supported_page_types = Literal["highlight", "story", "reel", "post", "profile"]
 import json
@@ -11,6 +10,7 @@ from typing import List, Optional
 
 from extractors.models import HighlightsReelConnection, CommentsConnection, \
     ProfileTimeline, MediaShortcode
+from extractors.models_graphql import ReelsMediaConnection
 from extractors.models_har import HarRequest
 
 
