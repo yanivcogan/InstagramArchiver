@@ -360,13 +360,17 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
     videos: dict[int, Video] = dict()
     for pk, video_versions in pk_video_versions_dict.items():
         if video_versions:
-            xpv_asset_id = extract_xpv_asset_id(video_versions[0].url)
-            video = Video(
-                xpv_asset_id=xpv_asset_id,
-                full_asset=video_versions[0].url,
-                fetched_tracks=None
-            )
-            videos[xpv_asset_id] = video
+            try:
+                xpv_asset_id = extract_xpv_asset_id(video_versions[0].url)
+                video = Video(
+                    xpv_asset_id=xpv_asset_id,
+                    full_asset=video_versions[0].url,
+                    fetched_tracks=None
+                )
+                videos[xpv_asset_id] = video
+            except Exception as e:
+                print(f"Error extracting xpv_asset_id from video version URL {video_versions[0].url}: {e}")
+                continue
     return list(videos.values())
 
 
