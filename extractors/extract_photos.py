@@ -277,6 +277,8 @@ def download_full_asset(photo: Photo, output_dir: Path) -> AssetSaveResult:
 
 
 def timestamp_downloaded_hashes(downloaded_hashes: dict[str, str], output_dir: Path):
+    if not downloaded_hashes or len(downloaded_hashes.items()) == 0:
+        return
     try:
         now_timestamp = int(datetime.datetime.timestamp(datetime.datetime.now()))
         hashes_path = output_dir / f"photo_hashes_{now_timestamp}.json"

@@ -49,16 +49,25 @@ def extract_xpv_asset_id(url) -> Optional[int]:
     # Get the `efg` parameter (it may be URL-encoded)
     efg_encoded = query_params.get('efg')
     if not efg_encoded:
-        return None
+        try:
+            return int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16)
+        except Exception:
+            return None
 
     # Base64-decode the efg value
     try:
         efg_json = base64.urlsafe_b64decode(efg_encoded[0] + '==')  # Add padding if missing
         efg_data = json.loads(efg_json.decode('utf-8'))
-        return efg_data.get('xpv_asset_id')
+        xpv_asset_id =efg_data.get('xpv_asset_id')
+        if not xpv_asset_id:
+            raise ValueError("xpv_asset_id not found in efg data")
+        return xpv_asset_id
     except Exception as e:
         print(f"Error decoding efg: {e}")
-        return None
+        try:
+            return int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16)
+        except Exception:
+            return None
 
 
 def extract_video_maps(har_path: Path) -> list[Video]:
@@ -426,6 +435,8 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
 
 
 def timestamp_downloaded_contents(downloaded_video_hashes: dict[int, str], output_dir: Path):
+    if not downloaded_video_hashes or len(downloaded_video_hashes.items()) == 0:
+        return
     try:
         now_timestamp = int(datetime.datetime.timestamp(datetime.datetime.now()))
         full_track_hashes_path = output_dir / f"full_track_hashes_{now_timestamp}.json"
