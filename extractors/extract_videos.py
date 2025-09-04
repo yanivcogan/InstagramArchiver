@@ -358,6 +358,15 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
                             for carousel_item in item.carousel_media:
                                 if carousel_item.video_versions:
                                     pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+            if s.stories_direct:
+                for story in s.stories_direct.reels_media:
+                    for item in story.items:
+                        if item.video_versions:
+                            pk_video_versions_dict[item.pk] = item.video_versions
+                        if item.carousel_media:
+                            for carousel_item in item.carousel_media:
+                                if carousel_item.video_versions:
+                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
             if s.timelines:
                 for item in s.timelines.items:
                     if item.video_versions:

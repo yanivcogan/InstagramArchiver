@@ -186,6 +186,15 @@ def extract_photos_from_structures(structures: list[StructureType]) -> list[Phot
                                 for c in item.carousel_media:
                                     if c.image_versions2 and c.image_versions2.candidates:
                                         register(c.pk, c.image_versions2.candidates[0].url)
+                if s.stories_direct:
+                    for reel in s.stories_direct.reels_media:
+                        for item in reel.items:
+                            if item.image_versions2 and item.image_versions2.candidates:
+                                register(item.pk, item.image_versions2.candidates[0].url)
+                            if item.carousel_media:
+                                for c in item.carousel_media:
+                                    if c.image_versions2 and c.image_versions2.candidates:
+                                        register(c.pk, c.image_versions2.candidates[0].url)
                 if s.highlight_reels:
                     for reel in s.highlight_reels.edges:
                         for item in reel.node.items:

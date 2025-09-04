@@ -298,6 +298,10 @@ def page_to_entities(structure: PageResponse) -> ExtractedEntities:
         extracted = graphql_reels_media_to_entities(structure.stories)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
+    if structure.stories_direct:
+        extracted = page_stories_to_entities(structure.stories_direct)
+        entities.posts.extend(extracted.posts)
+        entities.accounts.extend(extracted.accounts)
     return entities
 
 

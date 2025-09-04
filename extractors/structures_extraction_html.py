@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from typing import List, Optional
 
 from extractors.models import HighlightsReelConnection, CommentsConnection, \
-    ProfileTimeline, MediaShortcode
+    ProfileTimeline, MediaShortcode, StoriesFeed
 from extractors.models_graphql import ReelsMediaConnection
 from extractors.models_har import HarRequest
 
@@ -52,6 +52,7 @@ class PageResponse(BaseModel):
     timelines: Optional[ProfileTimeline]
     highlight_reels: Optional[HighlightsReelConnection]
     stories: Optional[ReelsMediaConnection]
+    stories_direct: Optional[StoriesFeed]
 
 
 def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageResponse]:
@@ -60,6 +61,7 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageRespons
     timeline = None
     highlight_reels = None
     stories = None
+    stories_direct = None
 
     for script in soup.find_all("script", {"type": "application/json"}):
         if not script.string:
@@ -86,12 +88,15 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageRespons
                 highlight_reels = HighlightsReelConnection(**reel_data)
 
             for story_data in story_feeds:
-                stories = ReelsMediaConnection(**story_data)
+                if story_data.get("edges"):
+                    stories = ReelsMediaConnection(**story_data)
+                elif story_data.get("reels_media"):
+                    stories_direct = StoriesFeed(**story_data)
 
         except Exception as e:
             print("Failed to parse post from HTML:", e)
             continue
-    if not post and not comments and not timeline and not highlight_reels and not stories:
+    if not post and not comments and not timeline and not highlight_reels and not stories and not stories_direct:
         res = None
     else:
         res = PageResponse(
@@ -99,7 +104,8 @@ def extract_data_from_html_response(soup: BeautifulSoup) -> Optional[PageRespons
             comments=comments,
             timelines=timeline,
             highlight_reels=highlight_reels,
-            stories=stories
+            stories=stories,
+            stories_direct=stories_direct
         )
     return res
 
