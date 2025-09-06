@@ -35,7 +35,7 @@ def register_instagram_account():
                 storage_state = json.load(f)
             # Load the existing storage state into the context
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=False)
+                browser = p.firefox.launch(headless=False)
                 context = browser.new_context(storage_state=storage_state)
                 page = context.new_page()
                 page.goto("https://www.instagram.com/")
@@ -55,7 +55,7 @@ def register_instagram_account():
 
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.firefox.launch(headless=False)
         context = browser.new_context(storage_state=None)
         page = context.new_page()
 
