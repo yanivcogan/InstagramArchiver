@@ -178,8 +178,8 @@ def extract_photos_from_structures(structures: list[StructureType]) -> list[Phot
                                 if c.image_versions2 and c.image_versions2.candidates:
                                     register(c.pk, c.image_versions2.candidates[0].url)
                 if s.stories:
-                    for story in s.stories.reels_media:
-                        for item in story.items:
+                    for edge in s.stories.edges:
+                        for item in edge.node.items:
                             if item.image_versions2 and item.image_versions2.candidates:
                                 register(item.pk, item.image_versions2.candidates[0].url)
                             if item.carousel_media:
