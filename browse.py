@@ -19,7 +19,7 @@ app.mount("/archives", StaticFiles(directory="archives"), name="archives")
 
 def get_account_by_url(url:str) -> Optional[Account]:
     account = db.execute_query(
-        """SELECT * FROM account WHERE url = %(url)s""",
+        """SELECT * FROM account WHERE url LIKE %(url)s""",
         {"url": url},
         return_type="single_row"
     )
@@ -30,7 +30,7 @@ def get_account_by_url(url:str) -> Optional[Account]:
 
 def get_posts_by_account(account: Account) -> list[Post]:
     post = db.execute_query(
-        """SELECT * FROM post WHERE account_url = %(account_url)s""",
+        """SELECT * FROM post WHERE account_url LIKE %(account_url)s""",
         {"account_url": f"{account.url}%"},
         return_type="rows"
     )
