@@ -1,13 +1,14 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional
 
 import pyperclip
 from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
-    ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount
+    ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount, Comment
 from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig
 from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig
-from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed
-from extractors.models_api_v1 import MediaInfoApiV1
+from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed, CommentsConnection
+from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1
 from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection
 from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response
@@ -51,11 +52,12 @@ def extract_entities_from_har(
         if len(photo.local_files) > 0:
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
 
-    entities = ExtractedEntities(accounts=[], posts=[])
+    entities = ExtractedEntities(accounts=[], posts=[], comments=[])
     for structure in structures:
         extracted = extract_entities_from_structure(structure, local_files_map, archive_dir)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
+        entities.comments.extend(extracted.comments)
     flattened_entities = deduplicate_entities(entities)
     return flattened_entities
 
@@ -122,6 +124,7 @@ def convert_structure_to_entities(structure: StructureType) -> ExtractedEntities
         raise ValueError(f"Unsupported structure type: {type(structure)}")
 
 
+
 def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.reels_media:
@@ -136,6 +139,8 @@ def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntities:
         extracted = graphql_profile_timeline_to_entities(structure.profile_timeline)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
+    if structure.comments_connection:
+        extracted = graphql_comments_to_entities(structure.comments_connection, structure.context)
     return entities
 
 
@@ -239,12 +244,36 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
     )
 
 
+def graphql_comments_to_entities(structure: CommentsConnection, context: Any) -> ExtractedEntities:
+    variables = context.get('variables', {}) if isinstance(context, dict) else {}
+    post_pk: Optional[int] = variables.get('media_id', None)
+    post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
+    extracted_comments: list[Comment] = []
+    for e in structure.edges:
+        c = e.node
+        comment = Comment(
+            post_url=post_url,
+            url=f"{post_url}c/{c.pk}/" if post_url else None,
+            account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
+            text=c.text,
+            publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
+            data=c.model_dump()
+        )
+        extracted_comments.append(comment)
+    return ExtractedEntities(
+        comments=extracted_comments
+    )
+
+
 def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.media_info:
         extracted = api_v1_media_info_to_entities(structure.media_info)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
+    if structure.comments:
+        extracted = api_v1_comments_to_entities(structure.comments)
+        entities.comments.extend(extracted.comments)
     return entities
 
 
@@ -284,6 +313,27 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
     )
 
 
+def api_v1_comments_to_entities(comments_insta: CommentsApiV1) -> ExtractedEntities:
+    comments: list[Comment] = []
+    if not comments_insta:
+        return ExtractedEntities()
+    post_pk = comments_insta.caption.media_id
+    post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
+    for c in comments_insta.comments:
+        comment = Comment(
+            post_url=post_url,
+            url=f"{post_url}c/{c.pk}/" if post_url else None,
+            account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
+            text=c.text,
+            publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
+            data=c.model_dump()
+        )
+        comments.append(comment)
+    return ExtractedEntities(
+        comments=comments
+    )
+
+
 def page_to_entities(structure: PageResponse) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.posts:
@@ -302,6 +352,9 @@ def page_to_entities(structure: PageResponse) -> ExtractedEntities:
         extracted = page_stories_to_entities(structure.stories_direct)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
+    # if structure.comments:
+    #     extracted = graphql_comments_to_entities(structure.comments, {})
+    #     entities.comments.extend(extracted.comments)
     return entities
 
 

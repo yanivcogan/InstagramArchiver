@@ -3,7 +3,7 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 
 from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo, VideoVersion, \
-    InstagramImageVersions2, InstagramCarouselMedia
+    InstagramImageVersions2, InstagramCarouselMedia, PostComment
 
 
 class ProfileTimelinePageInfo(BaseModel):
@@ -150,7 +150,7 @@ class HighlightsReelUser(BaseModel): # Placeholder
     class Config:
         extra = "allow"
 
-class ProfileTimelinePageInfo(BaseModel): # Placeholder
+class GenericCursorInfo(BaseModel): # Placeholder
     end_cursor: Optional[str] = None
     has_next_page: bool
     has_previous_page: Optional[bool] = None
@@ -208,7 +208,7 @@ class ClipsUserEdge(BaseModel):
 
 class ClipsUserConnection(BaseModel):
     edges: List[ClipsUserEdge]
-    page_info: ProfileTimelinePageInfo # Reusing ProfileTimelinePageInfo
+    page_info: GenericCursorInfo
 
     class Config:
         populate_by_name = True

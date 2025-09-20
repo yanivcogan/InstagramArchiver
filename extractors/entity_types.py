@@ -142,18 +142,31 @@ class Media(BaseModel):
             v = []
         return v
 
+
+class Comment(BaseModel):
+    url: str = Field(..., max_length=250)
+    post_url: Optional[str] = Field(None, max_length=250)
+    account_url: Optional[str] = Field(None, max_length=200)
+    text: Optional[str] = None
+    publication_date: Optional[datetime] = None
+    data: Optional[Any] = None
+
+
 class ExtractedSinglePost(BaseModel):
     post: Post
     media: list[Media] = Field(default_factory=list)
+    comments: list[Comment] = Field(default_factory=list)
 
 class ExtractedEntities(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
     posts: list[ExtractedSinglePost] = Field(default_factory=list)
+    comments: list[Comment] = Field(default_factory=list)
 
 class ExtractedEntitiesFlattened(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
     posts: list[Post] = Field(default_factory=list)
     media: list[Media] = Field(default_factory=list)
+    comments: list[Comment] = Field(default_factory=list)
 
 class ExtractedSingleAccount(BaseModel):
     account: Account

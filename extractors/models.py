@@ -315,7 +315,7 @@ class PostComment(BaseModel):
     has_liked_comment: Optional[bool] = None
     has_translation: Optional[bool] = None
     is_covered: Optional[bool] = None
-    parent_comment_id: Optional[str] = None # Assuming parent_comment_id is a string if present
+    parent_comment_id: Optional[str] = None # refers to the parent comment's pk value if it's a reply
     pk: str
     restricted_status: Optional[Any] = None
     text: str
