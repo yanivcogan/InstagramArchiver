@@ -4,14 +4,14 @@ from typing import Any, Optional
 
 import pyperclip
 from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
-    ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount, Comment
+    ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount, Comment, Like
 from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig
 from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed, CommentsConnection
-from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1
+from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1, LikersApiV1
 from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection
 from extractors.structures_extraction import StructureType, structures_from_har
-from extractors.structures_extraction_api_v1 import ApiV1Response
+from extractors.structures_extraction_api_v1 import ApiV1Response, ApiV1Context
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
@@ -58,6 +58,8 @@ def extract_entities_from_har(
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
         entities.comments.extend(extracted.comments)
+        entities.likes.extend(extracted.likes)
+        entities.followers.extend(extracted.followers)
     flattened_entities = deduplicate_entities(entities)
     return flattened_entities
 
@@ -124,7 +126,6 @@ def convert_structure_to_entities(structure: StructureType) -> ExtractedEntities
         raise ValueError(f"Unsupported structure type: {type(structure)}")
 
 
-
 def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.reels_media:
@@ -141,6 +142,10 @@ def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntities:
         entities.accounts.extend(extracted.accounts)
     if structure.comments_connection:
         extracted = graphql_comments_to_entities(structure.comments_connection, structure.context)
+        entities.comments.extend(extracted.comments)
+    if structure.likes:
+        extracted = graphql_likes_to_entities(structure.likes, structure.context)
+        entities.comments.extend(extracted.comments)
     return entities
 
 
@@ -265,6 +270,25 @@ def graphql_comments_to_entities(structure: CommentsConnection, context: Any) ->
     )
 
 
+def graphql_likes_to_entities(structure: LikersApiV1, context: Any) -> ExtractedEntities:
+    variables = context.get('variables', {}) if isinstance(context, dict) else {}
+    post_pk: Optional[int] = variables.get('media_id', None)
+    post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
+    extracted_likes: list[Like] = []
+    for u in structure.users:
+        like = Like(
+            id=u.pk,
+            post_url=post_url,
+            account_url=f"https://www.instagram.com/{u.username}/",
+            data=u.model_dump(),
+            sheet_entries=[]
+        )
+        extracted_likes.append(like)
+    return ExtractedEntities(
+        likes=extracted_likes
+    )
+
+
 def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.media_info:
@@ -274,6 +298,9 @@ def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntities:
     if structure.comments:
         extracted = api_v1_comments_to_entities(structure.comments)
         entities.comments.extend(extracted.comments)
+    if structure.likers:
+        extracted = api_v1_likes_to_entities(structure.likers, structure.context)
+        entities.likes.extend(extracted.likes)
     return entities
 
 
@@ -334,6 +361,24 @@ def api_v1_comments_to_entities(comments_insta: CommentsApiV1) -> ExtractedEntit
     )
 
 
+def api_v1_likes_to_entities(structure: LikersApiV1, context: ApiV1Context) -> ExtractedEntities:
+    post_pk: Optional[int] = context.media_id
+    post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
+    extracted_likes: list[Like] = []
+    for u in structure.users:
+        like = Like(
+            id=u.pk,
+            post_url=post_url,
+            account_url=f"https://www.instagram.com/{u.username}/",
+            data=u.model_dump(),
+            sheet_entries=[]
+        )
+        extracted_likes.append(like)
+    return ExtractedEntities(
+        likes=extracted_likes
+    )
+
+
 def page_to_entities(structure: PageResponse) -> ExtractedEntities:
     entities = ExtractedEntities()
     if structure.posts:
@@ -352,9 +397,9 @@ def page_to_entities(structure: PageResponse) -> ExtractedEntities:
         extracted = page_stories_to_entities(structure.stories_direct)
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
-    # if structure.comments:
-    #     extracted = graphql_comments_to_entities(structure.comments, {})
-    #     entities.comments.extend(extracted.comments)
+    if structure.comments:
+        extracted = page_comments_to_entities(structure.comments, structure.posts)
+        entities.comments.extend(extracted.comments)
     return entities
 
 
@@ -491,6 +536,29 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntities:
     return ExtractedEntities(
         accounts=extracted_accounts,
         posts=extracted_posts
+    )
+
+
+def page_comments_to_entities(comments_structure: CommentsConnection, post_structure: MediaShortcode) -> ExtractedEntities:
+    extracted_comments: list[Comment] = []
+    try:
+        post_pk: Optional[int] = int(post_structure.items[0].pk)
+        post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
+        for e in comments_structure.edges:
+            c = e.node
+            comment = Comment(
+                post_url=post_url,
+                url=f"{post_url}c/{c.pk}/" if post_url else None,
+                account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
+                text=c.text,
+                publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
+                data=c.model_dump()
+            )
+            extracted_comments.append(comment)
+    except Exception as ex:
+        print(f"Error extracting comments from page: {ex}")
+    return ExtractedEntities(
+        comments=extracted_comments
     )
 
 

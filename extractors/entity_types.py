@@ -153,21 +153,42 @@ class Comment(BaseModel):
     sheet_entries: list[str] = Field(default_factory=list)
 
 
+class Like(BaseModel):
+    id: Optional[str] = None
+    post_url: Optional[str] = Field(None, max_length=250)
+    account_url: Optional[str] = Field(None, max_length=200)
+    data: Optional[Any] = None
+    sheet_entries: list[str] = Field(default_factory=list)
+
+
+class Follower(BaseModel):
+    follower_account_url: str
+    following_account_url: str
+    data: Optional[Any] = None
+    sheet_entries: list[str] = Field(default_factory=list)
+
+
 class ExtractedSinglePost(BaseModel):
     post: Post
     media: list[Media] = Field(default_factory=list)
     comments: list[Comment] = Field(default_factory=list)
+    likes: list[Like] = Field(default_factory=list)
+    followers: list[Follower] = Field(default_factory=list)
 
 class ExtractedEntities(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
     posts: list[ExtractedSinglePost] = Field(default_factory=list)
     comments: list[Comment] = Field(default_factory=list)
+    likes: list[Like] = Field(default_factory=list)
+    followers: list[Follower] = Field(default_factory=list)
 
 class ExtractedEntitiesFlattened(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
     posts: list[Post] = Field(default_factory=list)
     media: list[Media] = Field(default_factory=list)
     comments: list[Comment] = Field(default_factory=list)
+    likes: list[Like] = Field(default_factory=list)
+    followers: list[Follower] = Field(default_factory=list)
 
 class ExtractedSingleAccount(BaseModel):
     account: Account

@@ -63,9 +63,9 @@ class FriendshipStatusApiV1(BaseModel):
 
 class LikerUserApiV1(BaseModel):
     pk: str
-    pk_id: str
+    pk_id: Optional[str] = None
     full_name: str
-    is_private: bool
+    is_private: Optional[bool] = None
     strong_id__: Optional[str] = Field(None, alias="strong_id__")
     id: str
     username: str
@@ -75,6 +75,12 @@ class LikerUserApiV1(BaseModel):
     account_badges: Optional[List[Any]] = Field(default_factory=list)
     friendship_status: Optional[FriendshipStatusApiV1] = None
     latest_reel_media: Optional[int] = None
+    social_context: Optional[Any] = None
+    supervision_info: Optional[Any] = None
+    live_broadcast_visibility: Optional[Any] = None
+    live_broadcast_id: Optional[Any] = None
+    hd_profile_pic_url_info: Optional[Any] = None
+    is_unpublished: Optional[Any] = None
 
     class Config:
         populate_by_name = True
@@ -85,7 +91,7 @@ class LikersApiV1(BaseModel):
     users: List[LikerUserApiV1]
     user_count: Optional[int] = None
     follow_ranking_token: Optional[str] = None
-    status: str
+    status: Optional[str] = None
 
     class Config:
         extra = "allow"

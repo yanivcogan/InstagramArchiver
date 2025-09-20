@@ -6,6 +6,7 @@ from extractors.models import StoriesFeed, CommentsConnection
 from extractors.models_graphql import ProfileTimelineGraphQL, FriendsListGraphQL, ReelsMediaConnection, \
     ClipsUserConnection
 from extractors.models_har import HarRequest
+from extractors.models_api_v1 import LikersApiV1
 
 
 class GraphQLResponse(BaseModel):
@@ -16,6 +17,7 @@ class GraphQLResponse(BaseModel):
     clips_user_connection: Optional[ClipsUserConnection] = None
     stories_feed: Optional[StoriesFeed] = None
     comments_connection: Optional[CommentsConnection] = None
+    likes: Optional[LikersApiV1] = None
 
 
 def extract_data_from_graphql_entry(graphql_data: dict, req: HarRequest) -> Optional[GraphQLResponse]:
@@ -41,11 +43,14 @@ def extract_data_from_graphql_entry(graphql_data: dict, req: HarRequest) -> Opti
         res.clips_user_connection = ClipsUserConnection(**graphql_data["data"]["xdt_api__v1__clips__user__connection_v2"])
     if method_type == "PolarisPostCommentsContainerQuery":
         res.comments_connection = CommentsConnection(**graphql_data["data"]["xdt_api__v1__media__media_id__comments__connection"])
+    if method_type == "PolarisPostLikedByListDialogQuery":
+        res.likes = LikersApiV1(**graphql_data["data"]["xdt_api__v1__likes__media_id__likers"])
     return res if any([
         res.profile_timeline,
         res.friends_list,
         res.reels_media,
         res.clips_user_connection,
         res.stories_feed,
-        res.comments_connection
+        res.comments_connection,
+        res.likes
     ]) else None

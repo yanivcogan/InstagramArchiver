@@ -5,6 +5,9 @@ from pydantic import BaseModel
 from extractors.models_api_v1 import FriendshipsApiV1, CommentsApiV1, LikersApiV1, MediaInfoApiV1
 from extractors.models_har import HarRequest
 
+class ApiV1Context(BaseModel):
+    url: Optional[str] = None
+    media_id: Optional[int] = None
 
 class ApiV1Response(BaseModel):
     context: Optional[Any] = None
@@ -16,6 +19,7 @@ class ApiV1Response(BaseModel):
 
 def extract_data_from_api_v1_entry(api_data: dict, req: HarRequest) -> Optional[ApiV1Response]:
     res = ApiV1Response(context=req.postData)
+    res.context = ApiV1Context(url=req.url, media_id=int(req.url.split('media/')[1].split('/')[0]) if 'media/' in req.url else None)
     if "/friendships/" in req.url:
         res.friendships = FriendshipsApiV1(**api_data)
     elif "/likers/" in req.url:
