@@ -512,6 +512,7 @@ def deduplicate_entities(entities: ExtractedEntities) -> ExtractedEntitiesFlatte
     unique_accounts: dict[str, Account] = dict()
     unique_posts: dict[str, Post] = dict()
     unique_medias: dict[str, Media] = dict()
+    unique_comments: dict[str, Comment] = dict()
 
     for post in entities.posts:
         if post.post.url not in unique_posts:
@@ -525,6 +526,8 @@ def deduplicate_entities(entities: ExtractedEntities) -> ExtractedEntitiesFlatte
             else:
                 existing_media = unique_medias[media.url]
                 unique_medias[media.url] = reconcile_media(media, existing_media)
+        for comment in post.comments:
+            unique_comments[comment.url] = comment  # For now, just keep the latest comment with the same URL
 
     for account in entities.accounts:
         if account.url not in unique_accounts:
@@ -533,21 +536,29 @@ def deduplicate_entities(entities: ExtractedEntities) -> ExtractedEntitiesFlatte
             existing_account = unique_accounts[account.url]
             unique_accounts[account.url] = reconcile_accounts(account, existing_account)
 
+    for comment in entities.comments:
+        unique_comments[comment.url] = comment  # For now, just keep the latest comment with the same URL
+
     return ExtractedEntitiesFlattened(
         accounts=list(unique_accounts.values()),
         posts=list(unique_posts.values()),
-        media=list(unique_medias.values())
+        media=list(unique_medias.values()),
+        comments=list(unique_comments.values())
     )
 
 
-def attach_archiving_session(flattened_entities: ExtractedEntitiesFlattened,
-                             archiving_session: str) -> ExtractedEntitiesFlattened:
+def attach_archiving_session(
+        flattened_entities: ExtractedEntitiesFlattened,
+        archiving_session: str
+) -> ExtractedEntitiesFlattened:
     for account in flattened_entities.accounts:
         account.sheet_entries = [archiving_session]
     for post in flattened_entities.posts:
         post.sheet_entries = [archiving_session]
     for media in flattened_entities.media:
         media.sheet_entries = [archiving_session]
+    for comment in flattened_entities.comments:
+        comment.sheet_entries = [archiving_session]
     return flattened_entities
 
 

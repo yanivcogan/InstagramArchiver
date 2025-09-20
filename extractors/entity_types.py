@@ -8,8 +8,8 @@ class Account(BaseModel):
     display_name: Optional[str] = Field(None, max_length=100)
     bio: Optional[str] = Field(None, max_length=200)
     data: Optional[Any] = None
-    notes: Optional[list[str]] = []
-    sheet_entries: Optional[list[str]] = []
+    notes: list[str] = Field(default_factory=list)
+    sheet_entries: list[str] = Field(default_factory=list)
 
     @field_validator('url', mode='before')
     def normalize_url(cls, v, _):
@@ -54,8 +54,8 @@ class Post(BaseModel):
     publication_date: Optional[datetime] = None
     caption: Optional[str] = None
     data: Optional[Any] = None
-    notes: Optional[list[str]] = []
-    sheet_entries: Optional[list[str]] = []
+    notes: list[str] = Field(default_factory=list)
+    sheet_entries: list[str] = Field(default_factory=list)
 
     @field_validator('url', mode='before')
     def normalize_url(cls, v, _):
@@ -108,7 +108,7 @@ class Media(BaseModel):
     local_url: Optional[str] = None
     media_type: t_media_type
     data: Optional[Any] = None
-    sheet_entries: Optional[list[str]] = []
+    sheet_entries: list[str] = Field(default_factory=list)
 
     @field_validator('url', mode='before')
     def normalize_url(cls, v, _):
@@ -150,6 +150,7 @@ class Comment(BaseModel):
     text: Optional[str] = None
     publication_date: Optional[datetime] = None
     data: Optional[Any] = None
+    sheet_entries: list[str] = Field(default_factory=list)
 
 
 class ExtractedSinglePost(BaseModel):
