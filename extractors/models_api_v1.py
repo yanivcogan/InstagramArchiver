@@ -229,8 +229,8 @@ class TaggedUserInTagApiV1(BaseModel):
         extra = "allow"
 
 class UserTagInApiV1(BaseModel):
-    position: List[float] # Expecting [0, 0] as [float, float]
-    user: TaggedUserInTagApiV1
+    position: Optional[List[float]] = None # Expecting [0, 0] as [float, float]
+    user: Optional[TaggedUserInTagApiV1] = None
 
     class Config:
         extra = "allow"
