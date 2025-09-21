@@ -296,7 +296,7 @@ def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntities:
         entities.posts.extend(extracted.posts)
         entities.accounts.extend(extracted.accounts)
     if structure.comments:
-        extracted = api_v1_comments_to_entities(structure.comments)
+        extracted = api_v1_comments_to_entities(structure.comments, structure.context)
         entities.comments.extend(extracted.comments)
     if structure.likers:
         extracted = api_v1_likes_to_entities(structure.likers, structure.context)
@@ -340,11 +340,11 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
     )
 
 
-def api_v1_comments_to_entities(comments_insta: CommentsApiV1) -> ExtractedEntities:
+def api_v1_comments_to_entities(comments_insta: CommentsApiV1, context: ApiV1Context) -> ExtractedEntities:
+    post_pk: Optional[int] = context.media_id
     comments: list[Comment] = []
     if not comments_insta:
         return ExtractedEntities()
-    post_pk = comments_insta.caption.media_id
     post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
     for c in comments_insta.comments:
         comment = Comment(
