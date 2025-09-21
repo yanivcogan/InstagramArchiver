@@ -64,7 +64,22 @@ def extract_entities():
             print("Extracting entities for entry", entry_id)
             archive_name = entry_id.split("har-")[1]
             har_path = Path(ROOT_DIR) / "archives" / archive_name / "archive.har"
-            entities = extract_entities_from_har(har_path, False)
+            entities = extract_entities_from_har(
+                har_path,
+                VideoAcquisitionConfig(
+                    download_missing=False,
+                    download_media_not_in_structures=False,
+                    download_unfetched_media=False,
+                    download_full_versions_of_fetched_media=False,
+                    download_highest_quality_assets_from_structures=False
+                ),
+                PhotoAcquisitionConfig(
+                    download_missing=False,
+                    download_media_not_in_structures=False,
+                    download_unfetched_media=False,
+                    download_highest_quality_assets_from_structures=False
+                )
+            )
             entities = attach_archiving_session(entities, entry_id)
             incorporate_structure_into_db(entities)
             db.execute_query("UPDATE sheet_entry SET extracted_entities = 1, extraction_error = NULL WHERE id = %(id)s", {"id": entry_id}, return_type="none")
@@ -75,5 +90,5 @@ def extract_entities():
 
 
 if __name__ == "__main__":
-    # register_archives()
-    extract_entities()
+    register_archives()
+    # extract_entities()
