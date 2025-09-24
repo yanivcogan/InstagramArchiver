@@ -51,6 +51,9 @@ def register_archives():
         print(f"Registered archive {archive_name}.")
 
 
+PROCESSING_ALGORITHM_VERSION = 1
+
+
 def extract_entities():
     while True:
         entry = db.execute_query(
@@ -84,10 +87,18 @@ def extract_entities():
             )
             entities = attach_archiving_session(entities, entry_id)
             incorporate_structure_into_db(entities)
-            db.execute_query("UPDATE archive_session SET extracted_entities = 1, extraction_error = NULL WHERE external_id = %(id)s", {"id": entry_id}, return_type="none")
+            db.execute_query(
+                "UPDATE archive_session SET extracted_entities = 1, extraction_error = NULL, parsing_code_version = %(v)s WHERE external_id = %(id)s",
+                {"id": entry_id, "v": PROCESSING_ALGORITHM_VERSION},
+                return_type="none"
+            )
         except Exception as e:
             print(f"Error extracting entities for {entry_id}: {e}")
-            db.execute_query("UPDATE archive_session SET extracted_entities = 2, extraction_error = %(extraction_error)s WHERE external_id = %(id)s", {"id": entry_id, "extraction_error": str(e)}, return_type="none")
+            db.execute_query(
+                "UPDATE archive_session SET extracted_entities = 2, extraction_error = %(extraction_error)s, parsing_code_version = %(v)s WHERE external_id = %(id)s",
+                {"id": entry_id, "extraction_error": str(e), "v": PROCESSING_ALGORITHM_VERSION},
+                return_type="none"
+            )
             traceback.print_exc()
 
 
