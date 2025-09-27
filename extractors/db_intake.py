@@ -1,80 +1,101 @@
 import json
-from typing import Optional
+from typing import Optional, TypeVar, Generic, Callable
+from pydantic import BaseModel
 
 import db
 from extractors.entity_types import ExtractedEntitiesFlattened, Account, Post, Media
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
-
-def incorporate_structure_into_db(structure: ExtractedEntitiesFlattened, archive_session: Optional[int] = None) -> None:
-    for account in structure.accounts:
-        existing_account = get_existing_account(account.url)
-        if existing_account:
-            account = reconcile_accounts(account, existing_account)
-            update = True
-        else:
-            update = False
-        store_account(account, update)
-
-    for post in structure.posts:
-        existing_post = get_existing_post(post.url)
-        if existing_post:
-            post = reconcile_posts(post, existing_post)
-            update = True
-        else:
-            update = False
-        store_post(post, update)
-
-    for media in structure.media:
-        existing_media = get_existing_media(media.url)
-        if existing_media:
-            media = reconcile_media(media, existing_media)
-            update = True
-        else:
-            update = False
-        store_media(media, update)
+EntityType = TypeVar("EntityType")
+class EntityProcessingConfig(BaseModel, Generic[EntityType]):
+    key: str
+    table: str
+    data_type: EntityType
+    get_entity_within_archive: Callable[[EntityType], Optional[EntityType]]
+    get_entity: Callable[[EntityType], Optional[EntityType]]
+    merge: Callable[[EntityType, EntityType], Optional[EntityType]]
 
 
-def get_existing_account(url: str) -> Optional[Account]:
+def incorporate_structure_into_db(structure: ExtractedEntitiesFlattened, archive_session_id: int) -> None:
+    entity_types: list[EntityProcessingConfig] = [
+        EntityProcessingConfig(
+            key="accounts",
+            table="account",
+        ),
+        EntityProcessingConfig(
+            key="posts",
+            table="post",
+            identifier_keys=[["url"], ["id_on_platform"]]
+        ),
+        EntityProcessingConfig(
+            key="media",
+            table="media",
+            identifier_keys=[["url"], ["id_on_platform"]]
+        ),
+        EntityProcessingConfig(
+            key="suggested_accounts",
+            table="account_relation",
+            identifier_keys=[["followed_account_id", "follower_account_id"]]
+        ),
+        EntityProcessingConfig(
+            key="followers",
+            table="account_relation",
+            identifier_keys=[["followed_account_id", "follower_account_id"]]
+        ),
+        EntityProcessingConfig(
+            key="likes",
+            table="post_engagement",
+            identifier_keys=[["url"], ["url", "post_id", "account_id"]]
+        ),
+        EntityProcessingConfig(
+            key="tagged_accounts",
+            table="post_engagement",
+            identifier_keys=[["url"], ["url", "post_id", "account_id"]]
+        ),
+        EntityProcessingConfig(
+            key="comments",
+            table="post_engagement",
+            identifier_keys=[["url"], ["url", "post_id", "account_id"]]
+        ),
+    ]
+
+
+def get_existing_account_archive(account: Account, archive_session_id: int) -> Optional[Account]:
     account_row = db.execute_query(
-        "SELECT * FROM account WHERE url=%(url)s",
-        {"url": url},
+        "SELECT * FROM account WHERE url=%(url)s AND archive_session_id=%(archive_session_id)s",
+        {
+            "url": account.url,
+            "id_on_platform": account.id_on_platform,
+            "archive_session_id": archive_session_id
+        },
         return_type="single_row"
     )
     if not account_row:
         return None
-    account_row['data'] = json.loads(account_row['data']) if account_row['data'] else None
-    account_row['notes'] = json.loads(account_row['notes']) if account_row['notes'] else []
-    account_row['sheet_entries'] = json.loads(account_row['sheet_entries']) if account_row['sheet_entries'] else []
     return Account(**account_row)
 
-def get_existing_post(url: str) -> Optional[Post]:
+def get_existing_post(post: Post, archive_session_id: int) -> Optional[Post]:
     post_row = db.execute_query(
         "SELECT * FROM post WHERE url=%(url)s",
-        {"url": url},
+        {"url": post.url, "archive_session_id": archive_session_id},
         return_type="single_row"
     )
     if not post_row:
         return None
-    post_row['data'] = json.loads(post_row['data']) if post_row['data'] else None
-    post_row['notes'] = json.loads(post_row['notes']) if post_row['notes'] else []
-    post_row['sheet_entries'] = json.loads(post_row['sheet_entries']) if post_row['sheet_entries'] else []
     return Post(**post_row)
 
-def get_existing_media(url: str) -> Optional[Media]:
+def get_existing_media(media: Media, archive_session_id: int) -> Optional[Media]:
     media_row = db.execute_query(
         "SELECT * FROM media WHERE url=%(url)s",
-        {"url": url},
+        {"url": media.url, "archive_session_id": archive_session_id},
         return_type="single_row"
     )
     if not media_row:
         return None
-    media_row['data'] = json.loads(media_row['data']) if media_row['data'] else None
-    media_row['sheet_entries'] = json.loads(media_row['sheet_entries']) if media_row['sheet_entries'] else []
     return Media(**media_row)
 
 
-def store_account(account: Account, update: bool) -> bool:
+def store_account(account: Account, update: bool, archive_session_id: int) -> bool:
     try:
         account.notes = account.notes or []
         account.notes = [note.strip() for note in account.notes if len(note.strip()) > 0]
@@ -116,7 +137,7 @@ def store_account(account: Account, update: bool) -> bool:
         print(f"Error storing account {account.url}: {e}")
         return False
 
-def store_post(post: Post, update: bool) -> bool:
+def store_post(post: Post, update: bool, archive_session_id: int) -> bool:
     try:
         post.notes = post.notes or []
         post.notes = [note.strip() for note in post.notes if len(note.strip()) > 0]
@@ -161,7 +182,7 @@ def store_post(post: Post, update: bool) -> bool:
         print(f"Error storing post {post.url}: {e}")
         return False
 
-def store_media(media: Media, update: bool) -> bool:
+def store_media(media: Media, update: bool, archive_session_id: int) -> bool:
     try:
         if update:
             db.execute_query(

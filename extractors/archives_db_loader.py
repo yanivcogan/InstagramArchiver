@@ -57,7 +57,7 @@ def parse_archives():
             FROM archive_session
             WHERE 
                 parsed_content IS NULL AND 
-                processing_error IS NULL AND
+                extraction_error IS NULL AND
                 source_type = 1 
             LIMIT 1
             ''',
@@ -112,7 +112,7 @@ def parse_archives():
                         parsed_content = %(parsing_code_version)s,
                         structures = %(structures)s,
                         metadata = %(metadata)s,
-                        processing_error = NULL
+                        extraction_error = NULL
                     WHERE id = %(id)s
                     ''',
                     {
@@ -128,8 +128,8 @@ def parse_archives():
                 raise Exception(f"Error saving parsed content to database for archive {entry['external_id'] or entry['id']}: {e}")
         except Exception as e:
             db.execute_query(
-                'UPDATE archive_session SET processing_error = %(processing_error)s WHERE id = %(id)s',
-                {"processing_error": str(e), "id": entry['id']},
+                'UPDATE archive_session SET extraction_error = %(extraction_error)s WHERE id = %(id)s',
+                {"extraction_error": str(e), "id": entry['id']},
                 return_type="none"
             )
             print(f"Error processing archive {entry['external_id'] or entry['id']}: {e}")
@@ -144,7 +144,7 @@ def extract_entities():
         entry = db.execute_query(
             '''SELECT *
                FROM archive_session 
-               WHERE extracted_entities IS NULL AND source_type = 1 AND processing_error IS NULL AND parsed_content IS NOT NULL
+               WHERE extracted_entities IS NULL AND source_type = 1 AND extraction_error IS NULL AND parsed_content IS NOT NULL
                LIMIT 1''',
             {},
             return_type="single_row"
@@ -167,7 +167,7 @@ def extract_entities():
             )
             incorporate_structure_into_db(entities, entry['id'])
             db.execute_query(
-                "UPDATE archive_session SET extracted_entities = 1, extraction_error = NULL, extracted_entities = %(v)s WHERE external_id = %(id)s",
+                "UPDATE archive_session SET extraction_error = NULL, extracted_entities = %(v)s WHERE external_id = %(id)s",
                 {"id": entry_id, "v": ENTITY_EXTRACTION_ALGORITHM_VERSION},
                 return_type="none"
             )
