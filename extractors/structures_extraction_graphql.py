@@ -22,7 +22,7 @@ class GraphQLResponse(BaseModel):
 
 def extract_data_from_graphql_entry(graphql_data: dict, req: HarRequest) -> Optional[GraphQLResponse]:
     payload = req.postData
-    res = GraphQLResponse(context=payload)
+    res = GraphQLResponse(context={p['name']: p['value'] for p in payload.params} if payload and payload.params else dict())
     method_type = None
     for h in req.headers:
         if h.name == 'X-FB-Friendly-Name':

@@ -19,7 +19,7 @@ class Account(BaseModel):
     @field_validator('url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().rstrip('/')
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -49,7 +49,7 @@ class Post(BaseModel):
     @field_validator('url', 'account_url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().rstrip('/')
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -81,7 +81,7 @@ class Media(BaseModel):
     @field_validator('url', 'post_url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().rstrip('/')
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -114,7 +114,7 @@ class Comment(BaseModel):
     @field_validator('url', 'post_url', 'account_url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().rstrip('/')
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -144,7 +144,7 @@ class Like(BaseModel):
     @field_validator('post_url', 'account_url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().rstrip('/')
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -203,7 +203,7 @@ class TaggedAccount(BaseModel):
     @field_validator('context_post_url', 'context_media_url', 'tagged_account_url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().rstrip('/')
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -226,23 +226,20 @@ class ExtractedEntitiesFlattened(BaseModel):
     suggested_accounts: list[SuggestedAccount] = Field(default_factory=list)
     tagged_accounts: list[TaggedAccount] = Field(default_factory=list)
 
-class MediaAndAssociatedEntities(BaseModel):
-    media: Media
-    parent_post: Optional['PostAndAssociatedEntities'] = None
+class MediaAndAssociatedEntities(Media):
+    media_parent_post: Optional['PostAndAssociatedEntities'] = None
 
-class PostAndAssociatedEntities(BaseModel):
-    post: Post
-    author: Optional['AccountAndAssociatedEntities'] = None
-    media: list['MediaAndAssociatedEntities'] = Field(default_factory=list)
-    comments: list[Comment] = Field(default_factory=list)
-    likes: list[Like] = Field(default_factory=list)
-    tagged_accounts: list[TaggedAccount] = Field(default_factory=list)
+class PostAndAssociatedEntities(Post):
+    post_author: Optional['AccountAndAssociatedEntities'] = None
+    post_media: list['MediaAndAssociatedEntities'] = Field(default_factory=list)
+    post_comments: list[Comment] = Field(default_factory=list)
+    post_likes: list[Like] = Field(default_factory=list)
+    post_tagged_accounts: list[TaggedAccount] = Field(default_factory=list)
 
-class AccountAndAssociatedEntities(BaseModel):
-    account: Account
-    posts: list['PostAndAssociatedEntities'] = Field(default_factory=list)
-    followers: list[Follower] = Field(default_factory=list)
-    suggested_accounts: list[SuggestedAccount] = Field(default_factory=list)
+class AccountAndAssociatedEntities(Account):
+    account_posts: list['PostAndAssociatedEntities'] = Field(default_factory=list)
+    account_followers: list[Follower] = Field(default_factory=list)
+    account_suggested_accounts: list[SuggestedAccount] = Field(default_factory=list)
 
 class ExtractedEntitiesNested(BaseModel):
     accounts: list[AccountAndAssociatedEntities] = Field(default_factory=list)

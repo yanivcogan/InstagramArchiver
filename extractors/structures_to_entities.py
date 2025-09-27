@@ -1,3 +1,5 @@
+import json
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Callable, TypeVar
@@ -85,7 +87,12 @@ def har_data_to_entities(
         accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
     )
     for structure in structures:
-        extend_flattened_entities(entities, convert_structure_to_entities(structure))
+        try:
+            extend_flattened_entities(entities, convert_structure_to_entities(structure))
+        except Exception as e:
+            print(f"Error converting structure to entities: {e}")
+            print(traceback.format_exc())
+            continue
     flattened_entities = deduplicate_entities(entities)
     attach_media_to_entities(flattened_entities, local_files_map, archive_dir)
     return flattened_entities
@@ -123,25 +130,42 @@ def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNest
 
     account_map: dict[str, AccountAndAssociatedEntities] = {}
     for account in entities.accounts:
-        account_map[account.url] = AccountAndAssociatedEntities(account=account, posts=[], followers=[],
-                                                                suggested_accounts=[])
+        account_map[account.url] = AccountAndAssociatedEntities(
+            **account.model_dump(),
+            account_posts=[],
+            account_followers=[],
+            account_suggested_accounts=[]
+        )
         nested_accounts.append(account_map[account.url])
 
     post_map: dict[str, PostAndAssociatedEntities] = {}
     for post in entities.posts:
-        post_map[post.url] = PostAndAssociatedEntities(post=post, media=[], comments=[], likes=[], tagged_accounts=[],
-                                                       author=None)
+        post_map[post.url] = PostAndAssociatedEntities(
+            **post.model_dump(),
+            post_media=[],
+            post_comments=[],
+            post_likes=[],
+            post_tagged_accounts=[],
+            post_author=None
+        )
         account_url = post.account_url
         if account_url in account_map:
-            account_map[account_url].posts.append(post_map[post.url])
+            post_map[post.url].post_author = account_map[account_url]
+            account_map[account_url].account_posts.append(post_map[post.url])
         else:
             orphaned_posts.append(post_map[post.url])
 
     for media in entities.media:
         if media.post_url in post_map:
-            post_map[media.post_url].media.append(media)
+            post_map[media.post_url].post_media.append(MediaAndAssociatedEntities(
+                **media.model_dump(),
+                media_parent_post=post_map[media.post_url]
+            ))
         else:
-            orphaned_media.append(MediaAndAssociatedEntities(media=media, parent_post=None))
+            orphaned_media.append(MediaAndAssociatedEntities(
+                **media.model_dump(),
+                media_parent_post=None
+            ))
 
     return ExtractedEntitiesNested(
         accounts=nested_accounts,
@@ -453,7 +477,8 @@ def graphql_likes_to_entities(structure: LikersApiV1, context: Any) -> Extracted
 
 
 def graphql_friends_to_entities(structure: FriendsListGraphQL, context: Any) -> ExtractedEntitiesFlattened:
-    variables = context.get('variables', {}) if isinstance(context, dict) else {}
+    variables = context.get('variables', '{}') if isinstance(context, dict) else '{}'
+    variables = json.loads(variables)
     target_account_id: Optional[str] = variables.get('target_id', None)
     extracted_suggested_accounts: list[SuggestedAccount] = []
     extracted_accounts: list[Account] = []

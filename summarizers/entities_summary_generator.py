@@ -47,10 +47,9 @@ def generate_table_rec(data: Any, soup: BeautifulSoup) -> Tag:
         return leaf
 
 
-def summarize_media(media_wrap: MediaAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
+def summarize_media(media: MediaAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     container = soup.new_tag("div")
     container['class'] = "media-container"
-    media = media_wrap.media
     # Preview element
     if media.media_type == "image":
         preview = soup.new_tag("img", src=media.local_url)
@@ -107,7 +106,7 @@ def summarize_post(post: PostAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     details['class'] = "post-details"
     detail_url = soup.new_tag("div")
     detail_url['class'] = "post-url"
-    detail_url.string = f"URL: {post.post.url}"
+    detail_url.string = f"URL: {post.url}"
     details.append(detail_url)
 
     # detail_account_url = soup.new_tag("div")
@@ -117,12 +116,12 @@ def summarize_post(post: PostAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
 
     detail_pub_date = soup.new_tag("div")
     detail_pub_date['class'] = "post-publication-date"
-    detail_pub_date.string = f"Publication Date: {post.post.publication_date}"
+    detail_pub_date.string = f"Publication Date: {post.publication_date}"
     details.append(detail_pub_date)
 
     detail_caption = soup.new_tag("div")
     detail_caption['class'] = "post-caption"
-    detail_caption.string = f"Caption: {post.post.caption}"
+    detail_caption.string = f"Caption: {post.caption}"
     details.append(detail_caption)
 
     json_header = soup.new_tag("div")
@@ -131,7 +130,7 @@ def summarize_post(post: PostAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     json_body = soup.new_tag("pre")
     json_body['class'] = "collapsible-body"
     json_body['style'] = "display: none;"
-    json_body.string = json.dumps(post.post.data, ensure_ascii=False, default=str)
+    json_body.string = json.dumps(post.data, ensure_ascii=False, default=str)
     collapsible_json = generate_collapsible_section(json_header, json_body, soup)
     details.append(collapsible_json)
 
@@ -140,7 +139,7 @@ def summarize_post(post: PostAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     # Right: Media items
     media_box = soup.new_tag("div")
     media_box['class'] = "post-media-box"
-    for media in post.media:
+    for media in post.post_media:
         media_tag = summarize_media(media, soup)
         media_box.append(media_tag)
     container.append(media_box)
@@ -157,17 +156,17 @@ def summarize_account(account: AccountAndAssociatedEntities, soup: BeautifulSoup
     details['class'] = "account-details"
     detail_url = soup.new_tag("div")
     detail_url['class'] = "account-url"
-    detail_url.string = f"Url: {account.account.url}"
+    detail_url.string = f"Url: {account.url}"
     details.append(detail_url)
 
     detail_display_name = soup.new_tag("div")
     detail_display_name['class'] = "account-display-name"
-    detail_display_name.string = f"Display Name: {account.account.display_name or ''}"
+    detail_display_name.string = f"Display Name: {account.display_name or ''}"
     details.append(detail_display_name)
 
     detail_bio = soup.new_tag("div")
     detail_bio['class'] = "account-bio"
-    detail_bio.string = f"Bio: {account.account.bio or ''}"
+    detail_bio.string = f"Bio: {account.bio or ''}"
     details.append(detail_bio)
 
     json_header = soup.new_tag("div")
@@ -176,7 +175,7 @@ def summarize_account(account: AccountAndAssociatedEntities, soup: BeautifulSoup
     json_body = soup.new_tag("pre")
     json_body['class'] = "collapsible-body"
     json_body['style'] = "display: none;"
-    json_body.string = json.dumps(account.account.data, ensure_ascii=False, default=str)
+    json_body.string = json.dumps(account.data, ensure_ascii=False, default=str)
     collapsible_json = generate_collapsible_section(json_header, json_body, soup)
     details.append(collapsible_json)
 
@@ -185,8 +184,8 @@ def summarize_account(account: AccountAndAssociatedEntities, soup: BeautifulSoup
     # Bottom section: Posts
     posts_section = soup.new_tag("div")
     posts_section['class'] = "account-posts-section"
-    account.posts.sort(key=lambda x: x.post.publication_date, reverse=True)
-    for post in account.posts:
+    account.account_posts.sort(key=lambda x: x.publication_date, reverse=True)
+    for post in account.account_posts:
         post_tag = summarize_post(post, soup)
         posts_section.append(post_tag)
     container.append(posts_section)
@@ -386,7 +385,29 @@ def generate_stylesheet() -> str:
     """
 
 
+def filter_out_empty_entities(nested_entities: ExtractedEntitiesNested) -> None:
+    # Filter out media items with no local_url
+    # Filter out posts with no media or caption
+    # Filter out accounts with no posts
+    filtered_media = [m for m in nested_entities.media if m.local_url]
+    nested_entities.media = filtered_media
+    for p in nested_entities.posts:
+        filtered_post_media = [m for m in p.post_media if m.local_url]
+        p.post_media = filtered_post_media
+    filtered_posts = [p for p in nested_entities.posts if len(p.post_media) or (p.caption and len(p.caption.strip()))]
+    nested_entities.posts = filtered_posts
+    for a in nested_entities.accounts:
+        for p in a.account_posts:
+            filtered_post_media = [m for m in p.post_media if m.local_url]
+            p.post_media = filtered_post_media
+        filtered_posts = [p for p in a.account_posts if len(p.post_media) or (p.caption and len(p.caption.strip()))]
+        a.account_posts = filtered_posts
+    filtered_accounts = [a for a in nested_entities.accounts if len(a.account_posts)]
+    nested_entities.accounts = filtered_accounts
+
+
 def summarize_nested_entities(nested_entities: ExtractedEntitiesNested, metadata: dict) -> str:
+    filter_out_empty_entities(nested_entities)
     page_title = f"Summary of Entities Extracted from Archiving Session {metadata.get('archiving_start_timestamp', 'Unknown Date')}"
     soup = BeautifulSoup(f"<html><head><title>{page_title}</title></head><body></body></html>", "html.parser")
     # Attach stylesheet to head
