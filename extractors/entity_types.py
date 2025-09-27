@@ -7,6 +7,7 @@ class EntityBase(BaseModel):
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    canonical_id: Optional[int] = None
 
 
 class Account(EntityBase):
