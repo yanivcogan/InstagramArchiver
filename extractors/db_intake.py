@@ -6,7 +6,7 @@ from extractors.entity_types import ExtractedEntitiesFlattened, Account, Post, M
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
 
-def incorporate_structure_into_db(structure: ExtractedEntitiesFlattened):
+def incorporate_structure_into_db(structure: ExtractedEntitiesFlattened, archive_session: Optional[int] = None) -> None:
     for account in structure.accounts:
         existing_account = get_existing_account(account.url)
         if existing_account:

@@ -1134,21 +1134,6 @@ def deduplicate_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntit
     )
 
 
-def attach_archiving_session(
-        flattened_entities: ExtractedEntitiesFlattened,
-        archiving_session: str
-) -> ExtractedEntitiesFlattened:
-    for account in flattened_entities.accounts:
-        account.sheet_entries = [archiving_session]
-    for post in flattened_entities.posts:
-        post.sheet_entries = [archiving_session]
-    for media in flattened_entities.media:
-        media.sheet_entries = [archiving_session]
-    for comment in flattened_entities.comments:
-        comment.sheet_entries = [archiving_session]
-    return flattened_entities
-
-
 def manual_entity_extraction():
     # Provide the path to your .har file and desired output folder
     har_file = input("Input path to HAR file: ")  # Replace with your actual HAR file
