@@ -76,8 +76,6 @@ def reconcile_accounts(new_account: Account, existing_account: Optional[Account]
     existing_account.data = reconcile_dicts(existing_account.data, new_account.data)
     existing_account.display_name = reconcile_primitives(existing_account.display_name, new_account.display_name)
     existing_account.bio = reconcile_primitives(existing_account.bio, new_account.bio)
-    existing_account.notes = reconcile_lists(existing_account.notes, new_account.notes)
-    existing_account.sheet_entries = reconcile_lists(existing_account.sheet_entries, new_account.sheet_entries)
     return existing_account
 
 
@@ -88,8 +86,6 @@ def reconcile_posts(new_post: Post, existing_post: Optional[Post]) -> Post:
     existing_post.data = reconcile_dicts(existing_post.data, new_post.data)
     existing_post.publication_date = reconcile_primitives(existing_post.publication_date, new_post.publication_date)
     existing_post.caption = reconcile_primitives(existing_post.caption, new_post.caption)
-    existing_post.notes = reconcile_lists(existing_post.notes, new_post.notes)
-    existing_post.sheet_entries = reconcile_lists(existing_post.sheet_entries, new_post.sheet_entries)
     return existing_post
 
 
@@ -99,5 +95,4 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     existing_media.post_url = reconcile_primitives(existing_media.post_url, new_media.post_url)
     existing_media.data = reconcile_dicts(existing_media.data, new_media.data)
     existing_media.media_type = reconcile_primitives(existing_media.media_type, new_media.media_type)
-    existing_media.sheet_entries = reconcile_lists(existing_media.sheet_entries, new_media.sheet_entries)
     return existing_media

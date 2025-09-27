@@ -1,15 +1,18 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Callable, TypeVar
+from pydantic import BaseModel
 
 import pyperclip
-from extractors.entity_types import ExtractedEntities, ExtractedSinglePost, Post, Account, Media, \
-    ExtractedEntitiesFlattened, ExtractedEntitiesNested, ExtractedSingleAccount, Comment, Like
-from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig
-from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig
+from extractors.entity_types import Post, Account, Media, \
+    ExtractedEntitiesFlattened, Comment, Like, Follower, \
+    SuggestedAccount, TaggedAccount, ExtractedEntitiesNested, AccountAndAssociatedEntities, PostAndAssociatedEntities, \
+    MediaAndAssociatedEntities
+from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig, Photo
+from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig, Video
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed, CommentsConnection
-from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1, LikersApiV1
-from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection
+from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1, LikersApiV1, FriendshipsApiV1
+from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection, FriendsListGraphQL
 from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response, ApiV1Context
 from extractors.structures_extraction_graphql import GraphQLResponse
@@ -17,11 +20,23 @@ from extractors.structures_extraction_html import PageResponse
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
 
-def extract_entities_from_har(
+class ExtractedHarData(BaseModel):
+    structures: list[StructureType]
+    videos: list[Video]
+    photos: list[Photo]
+
+
+def extract_data_from_har(
         har_path: Path,
-        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(),
-        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig()
-) -> ExtractedEntitiesFlattened:
+        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(
+            download_missing=True, download_media_not_in_structures=True, download_unfetched_media=True,
+            download_full_versions_of_fetched_media=True, download_highest_quality_assets_from_structures=True
+        ),
+        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig(
+            download_missing=True, download_media_not_in_structures=True, download_unfetched_media=True,
+            download_highest_quality_assets_from_structures=True
+        )
+) -> ExtractedHarData:
     archive_dir = har_path.parent
 
     structures = structures_from_har(har_path)
@@ -40,6 +55,20 @@ def extract_entities_from_har(
         config=photo_acquisition_config
     )
 
+    return ExtractedHarData(
+        structures=structures,
+        videos=videos,
+        photos=photos
+    )
+
+
+def har_data_to_entities(
+        har_path: Path,
+        structures: list[StructureType],
+        videos: list[Video],
+        photos: list[Photo]
+) -> ExtractedEntitiesFlattened:
+    archive_dir = har_path.parent
     local_files_map = dict()
     for video in videos:
         if video.fetched_tracks:
@@ -52,31 +81,56 @@ def extract_entities_from_har(
         if len(photo.local_files) > 0:
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
 
-    entities = ExtractedEntities(accounts=[], posts=[], comments=[])
+    entities = ExtractedEntitiesFlattened(
+        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+    )
     for structure in structures:
-        extracted = extract_entities_from_structure(structure, local_files_map, archive_dir)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
-        entities.comments.extend(extracted.comments)
-        entities.likes.extend(extracted.likes)
-        entities.followers.extend(extracted.followers)
+        extend_flattened_entities(entities, convert_structure_to_entities(structure))
     flattened_entities = deduplicate_entities(entities)
+    attach_media_to_entities(flattened_entities, local_files_map, archive_dir)
+    return flattened_entities
+
+
+def extract_entities_from_har(
+        har_path: Path,
+        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(
+            download_missing=True, download_media_not_in_structures=True, download_unfetched_media=True,
+            download_full_versions_of_fetched_media=True, download_highest_quality_assets_from_structures=True
+        ),
+        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig(
+            download_missing=True, download_media_not_in_structures=True, download_unfetched_media=True,
+            download_highest_quality_assets_from_structures=True
+        )
+) -> ExtractedEntitiesFlattened:
+    har_data = extract_data_from_har(
+        har_path,
+        video_acquisition_config=video_acquisition_config,
+        photo_acquisition_config=photo_acquisition_config
+    )
+    flattened_entities = har_data_to_entities(
+        har_path,
+        har_data.structures,
+        har_data.videos,
+        har_data.photos
+    )
     return flattened_entities
 
 
 def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNested:
-    nested_accounts: list[ExtractedSingleAccount] = []
-    orphaned_posts: list[ExtractedSinglePost] = []
-    orphaned_media: list[Media] = []
+    nested_accounts: list[AccountAndAssociatedEntities] = []
+    orphaned_posts: list[PostAndAssociatedEntities] = []
+    orphaned_media: list[MediaAndAssociatedEntities] = []
 
-    account_map: dict[str, ExtractedSingleAccount] = {}
+    account_map: dict[str, AccountAndAssociatedEntities] = {}
     for account in entities.accounts:
-        account_map[account.url] = ExtractedSingleAccount(account=account)
+        account_map[account.url] = AccountAndAssociatedEntities(account=account, posts=[], followers=[],
+                                                                suggested_accounts=[])
         nested_accounts.append(account_map[account.url])
 
-    post_map: dict[str, ExtractedSinglePost] = {}
+    post_map: dict[str, PostAndAssociatedEntities] = {}
     for post in entities.posts:
-        post_map[post.url] = ExtractedSinglePost(post=post, media=[])
+        post_map[post.url] = PostAndAssociatedEntities(post=post, media=[], comments=[], likes=[], tagged_accounts=[],
+                                                       author=None)
         account_url = post.account_url
         if account_url in account_map:
             account_map[account_url].posts.append(post_map[post.url])
@@ -87,35 +141,30 @@ def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNest
         if media.post_url in post_map:
             post_map[media.post_url].media.append(media)
         else:
-            orphaned_media.append(media)
+            orphaned_media.append(MediaAndAssociatedEntities(media=media, parent_post=None))
 
     return ExtractedEntitiesNested(
         accounts=nested_accounts,
-        orphaned_posts=orphaned_posts,
-        orphaned_media=orphaned_media
+        posts=orphaned_posts,
+        media=orphaned_media
     )
 
 
-def extract_entities_from_structure(
-        structure: StructureType,
+def attach_media_to_entities(
+        entities: ExtractedEntitiesFlattened,
         local_files_map: dict[str, Path],
         archive_dir: Path
-) -> ExtractedEntities:
-    entities = convert_structure_to_entities(structure)
-    for post in entities.posts:
-        for media in post.media:
-            clean_media_url = media.url
-            if clean_media_url in local_files_map:
-                local_media_url = local_files_map[clean_media_url]
-                relative_path = local_media_url.relative_to(archive_dir)
-                media.local_url = str(relative_path)
-        post.media = [media for media in post.media if media.local_url]
-    entities.posts = [post for post in entities.posts if
-                      len(post.media) > 0 or (post.post.caption and len(post.post.caption.strip()))]
-    return entities
+) -> None:
+    for media in entities.media:
+        clean_media_url = media.url
+        if clean_media_url in local_files_map:
+            local_media_url = local_files_map[clean_media_url]
+            relative_path = local_media_url.relative_to(archive_dir)
+            media.local_url = str(relative_path)
+    # TODO: filter out media without local files?
 
 
-def convert_structure_to_entities(structure: StructureType) -> ExtractedEntities:
+def convert_structure_to_entities(structure: StructureType) -> ExtractedEntitiesFlattened:
     if isinstance(structure, GraphQLResponse):
         return graphql_to_entities(structure)
     elif isinstance(structure, ApiV1Response):
@@ -126,308 +175,547 @@ def convert_structure_to_entities(structure: StructureType) -> ExtractedEntities
         raise ValueError(f"Unsupported structure type: {type(structure)}")
 
 
-def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntities:
-    entities = ExtractedEntities()
+def extend_flattened_entities(
+        entities_1: ExtractedEntitiesFlattened,
+        entities_2: ExtractedEntitiesFlattened
+) -> None:
+    entities_1.accounts.extend(entities_2.accounts)
+    entities_1.posts.extend(entities_2.posts)
+    entities_1.media.extend(entities_2.media)
+    entities_1.comments.extend(entities_2.comments)
+    entities_1.likes.extend(entities_2.likes)
+    entities_1.followers.extend(entities_2.followers)
+    entities_1.suggested_accounts.extend(entities_2.suggested_accounts)
+    entities_1.tagged_accounts.extend(entities_2.tagged_accounts)
+
+
+def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntitiesFlattened:
+    entities = ExtractedEntitiesFlattened(
+        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+    )
     if structure.reels_media:
-        extracted = graphql_reels_media_to_entities(structure.reels_media)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, graphql_reels_media_to_entities(structure.reels_media))
     if structure.stories_feed:
-        extracted = page_stories_to_entities(structure.stories_feed)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, page_stories_to_entities(structure.stories_feed))
     if structure.profile_timeline:
-        extracted = graphql_profile_timeline_to_entities(structure.profile_timeline)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, graphql_profile_timeline_to_entities(structure.profile_timeline))
     if structure.comments_connection:
-        extracted = graphql_comments_to_entities(structure.comments_connection, structure.context)
-        entities.comments.extend(extracted.comments)
+        extend_flattened_entities(entities,
+                                  graphql_comments_to_entities(structure.comments_connection, structure.context)),
     if structure.likes:
-        extracted = graphql_likes_to_entities(structure.likes, structure.context)
-        entities.comments.extend(extracted.comments)
+        extend_flattened_entities(entities, graphql_likes_to_entities(structure.likes, structure.context))
+    if structure.friends_list:
+        extend_flattened_entities(entities, graphql_friends_to_entities(structure.friends_list, structure.context))
     return entities
 
 
-def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> ExtractedEntities:
-    extracted_posts: list[ExtractedSinglePost] = []
+def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> ExtractedEntitiesFlattened:
     extracted_accounts: list[Account] = []
+    extracted_posts: list[Post] = []
+    extracted_media: list[Media] = []
+    extracted_tagged_accounts: list[TaggedAccount] = []
     for edge in structure.edges:
         highlight = edge.node
         for item in highlight.items:
-            post = Post(
-                url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
-                account_url=f"https://www.instagram.com/{highlight.user.username}/",
-                publication_date=datetime.fromtimestamp(item.taken_at),
-                caption=item.caption.text if item.caption else None,
-                data=item.model_dump()
-            )
             account = Account(
-                url=post.account_url,
+                id_on_platform=highlight.user.id,
+                url=f"https://www.instagram.com/{highlight.user.username}/",
                 display_name=None,
                 bio=None,
                 data=highlight.user.model_dump()
             )
-            media: list[Media] = [Media(
+            extracted_accounts.append(account)
+            post = Post(
+                id_on_platform=item.id,
+                url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+                account_id_on_platform=account.id_on_platform,
+                account_url=account.url,
+                publication_date=datetime.fromtimestamp(item.taken_at),
+                caption=item.caption.text if item.caption else None,
+                data=item.model_dump()
+            )
+            extracted_posts.append(post)
+            extracted_media.append(Media(
+                id_on_platform=item.id,
                 url=canonical_cdn_url(
                     item.video_versions[0].url if item.video_versions
                     else item.image_versions2.candidates[0].url
                 ),
+                post_id_on_platform=post.id_on_platform,
                 post_url=post.url,
                 local_url=None,
                 media_type="video" if item.video_versions else "image",
                 data=item.model_dump(exclude={'carousel_media'})
-            )]
+            ))
             if item.carousel_media:
                 for media_item in item.carousel_media:
-                    media.append(Media(
-                        url=canonical_cdn_url(
-                            item.video_versions[0].url if item.video_versions
-                            else item.image_versions2.candidates[0].url
-                        ),
+                    media_url = canonical_cdn_url(
+                        item.video_versions[0].url if item.video_versions
+                        else item.image_versions2.candidates[0].url
+                    )
+                    extracted_media.append(Media(
+                        id_on_platform=media_item.id,
+                        url=media_url,
+                        post_id_on_platform=post.id_on_platform,
                         post_url=post.url,
                         local_url=None,
                         media_type="image" if media_item.media_type == 1 else "video",
                         data=media_item.model_dump()
                     ))
-            extracted_posts.append(ExtractedSinglePost(
-                post=post,
-                media=media,
-            ))
-            extracted_accounts.append(account)
-    return ExtractedEntities(
+                    if media_item.usertags:
+                        for tag in media_item.usertags.in_field:
+                            extracted_tagged_accounts.append(TaggedAccount(
+                                tagged_account_id=tag.user.id,
+                                tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                                context_account_id=highlight.user.id,
+                                context_post_url=post.url,
+                                context_media_url=media_url,
+                                context_post_id_on_platform=post.id_on_platform,
+                                context_media_id_on_platform=media_item.id,
+                                data=None
+                            ))
+                            extracted_accounts.append(Account(
+                                id_on_platform=tag.user.id,
+                                url=f"https://www.instagram.com/{tag.user.username}/",
+                                display_name=tag.user.full_name,
+                                bio=None,
+                                data=tag.user.model_dump()
+                            ))
+    return ExtractedEntitiesFlattened(
         accounts=extracted_accounts,
-        posts=extracted_posts
+        posts=extracted_posts,
+        media=extracted_media,
+        tagged_accounts=extracted_tagged_accounts,
+        comments=[], likes=[], followers=[], suggested_accounts=[]
     )
 
 
-def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> ExtractedEntities:
-    extracted_posts: list[ExtractedSinglePost] = []
+def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> ExtractedEntitiesFlattened:
     extracted_accounts: list[Account] = []
+    extracted_posts: list[Post] = []
+    extracted_media: list[Media] = []
+    extracted_tagged_accounts: list[TaggedAccount] = []
+
     for edge in structure.edges:
         item = edge.node
-        post = Post(
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
-            account_url=f"https://www.instagram.com/{item.user.username}/",
-            publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption.text if item.caption else None,
-            data=item.model_dump()
-        )
         account = Account(
-            url=post.account_url,
+            id_on_platform=item.user.id,
+            url=f"https://www.instagram.com/{item.user.username}/",
             display_name=None,
             bio=None,
             data=item.user.model_dump()
         )
-        media: list[Media] = [Media(
+        extracted_accounts.append(account)
+        post = Post(
+            id_on_platform=item.id,
+            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            account_id_on_platform=item.user.id,
+            account_url=account.url,
+            publication_date=datetime.fromtimestamp(item.taken_at),
+            caption=item.caption.text if item.caption else None,
+            data=item.model_dump()
+        )
+        extracted_posts.append(post)
+        tagged_accounts: list[TaggedAccount] = []
+        if item.usertags:
+            for tag in item.usertags.in_field:
+                tagged_accounts.append(TaggedAccount(
+                    tagged_account_id=tag.user.id,
+                    tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                    context_account_id=item.user.id,
+                    context_post_url=post.url,
+                    context_media_url=None,
+                    context_post_id_on_platform=post.id_on_platform,
+                    context_media_id_on_platform=None,
+                    data=None
+                ))
+                extracted_accounts.append(Account(
+                    id_on_platform=tag.user.id,
+                    url=f"https://www.instagram.com/{tag.user.username}/",
+                    display_name=tag.user.full_name,
+                    bio=None,
+                    data=tag.user.model_dump()
+                ))
+        extracted_media.append(Media(
+            id_on_platform=item.id,
             url=canonical_cdn_url(
                 item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            post_id_on_platform=post.id_on_platform,
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
-        )]
+        ))
         if item.carousel_media:
             for media_item in item.carousel_media:
                 media_url = media_item.video_versions[0].url if media_item.video_versions else \
                     media_item.image_versions2.candidates[0].url
-                media.append(Media(
+                extracted_media.append(Media(
+                    id_on_platform=media_item.id,
                     url=canonical_cdn_url(media_url),
+                    post_id_on_platform=post.id_on_platform,
                     post_url=post.url,
                     local_url=None,
                     media_type="image" if media_item.media_type == 1 else "video",
                     data=media_item.model_dump()
                 ))
-        extracted_posts.append(ExtractedSinglePost(
-            post=post,
-            media=media,
-        ))
-        extracted_accounts.append(account)
-    return ExtractedEntities(
+                if media_item.usertags:
+                    for tag in media_item.usertags.in_field:
+                        tagged_accounts.append(TaggedAccount(
+                            tagged_account_id=tag.user.id,
+                            tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                            context_account_id=item.user.id,
+                            context_post_url=post.url,
+                            context_media_url=media_url,
+                            context_post_id_on_platform=post.id_on_platform,
+                            context_media_id_on_platform=media_item.id,
+                            data=None
+                        ))
+                        extracted_accounts.append(Account(
+                            id_on_platform=tag.user.id,
+                            url=f"https://www.instagram.com/{tag.user.username}/",
+                            display_name=tag.user.full_name,
+                            bio=None,
+                            data=tag.user.model_dump()
+                        ))
+    return ExtractedEntitiesFlattened(
         accounts=extracted_accounts,
-        posts=extracted_posts
+        posts=extracted_posts,
+        media=extracted_media,
+        tagged_accounts=extracted_tagged_accounts,
+        comments=[], likes=[], followers=[], suggested_accounts=[]
     )
 
 
-def graphql_comments_to_entities(structure: CommentsConnection, context: Any) -> ExtractedEntities:
+def graphql_comments_to_entities(structure: CommentsConnection, context: Any) -> ExtractedEntitiesFlattened:
     variables = context.get('variables', {}) if isinstance(context, dict) else {}
-    post_pk: Optional[int] = variables.get('media_id', None)
+    post_pk: Optional[str] = variables.get('media_id', None)
     post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
     extracted_comments: list[Comment] = []
+    extracted_accounts: list[Account] = []
     for e in structure.edges:
         c = e.node
+        if c.user:
+            extracted_accounts.append(Account(
+                id_on_platform=c.user.id,
+                url=f"https://www.instagram.com/{c.user.username}/",
+                display_name=None,
+                bio=None,
+                data=c.user.model_dump()
+            ))
         comment = Comment(
-            post_url=post_url,
+            id_on_platform=c.pk,
             url=f"{post_url}c/{c.pk}/" if post_url else None,
+            post_id_on_platform=post_pk,
+            post_url=post_url,
+            account_id_on_platform=c.user.pk if c.user else None,
             account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
             text=c.text,
             publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
             data=c.model_dump()
         )
         extracted_comments.append(comment)
-    return ExtractedEntities(
-        comments=extracted_comments
+    return ExtractedEntitiesFlattened(
+        comments=extracted_comments,
+        accounts=extracted_accounts,
+        likes=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
-def graphql_likes_to_entities(structure: LikersApiV1, context: Any) -> ExtractedEntities:
+def graphql_likes_to_entities(structure: LikersApiV1, context: Any) -> ExtractedEntitiesFlattened:
     variables = context.get('variables', {}) if isinstance(context, dict) else {}
     post_pk: Optional[int] = variables.get('media_id', None)
     post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
     extracted_likes: list[Like] = []
+    extracted_accounts: list[Account] = []
     for u in structure.users:
         like = Like(
-            id=u.pk,
+            id_on_platform=None,
+            post_id_on_platform=post_pk,
             post_url=post_url,
+            account_id_on_platform=u.pk,
             account_url=f"https://www.instagram.com/{u.username}/",
             data=u.model_dump(),
-            sheet_entries=[]
         )
         extracted_likes.append(like)
-    return ExtractedEntities(
-        likes=extracted_likes
+        extracted_accounts.append(Account(
+            id_on_platform=u.pk,
+            url=like.account_url,
+            display_name=u.full_name,
+            bio=None,
+            data=u.model_dump()
+        ))
+    return ExtractedEntitiesFlattened(
+        likes=extracted_likes,
+        accounts=extracted_accounts,
+        comments=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
-def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntities:
-    entities = ExtractedEntities()
+def graphql_friends_to_entities(structure: FriendsListGraphQL, context: Any) -> ExtractedEntitiesFlattened:
+    variables = context.get('variables', {}) if isinstance(context, dict) else {}
+    target_account_id: Optional[str] = variables.get('target_id', None)
+    extracted_suggested_accounts: list[SuggestedAccount] = []
+    extracted_accounts: list[Account] = []
+    for u in structure.users:
+        account = Account(
+            url=f"https://www.instagram.com/{u.username}/",
+            display_name=u.full_name,
+            bio=None,
+            id_on_platform=u.id,
+            data=u.model_dump()
+        )
+        extracted_accounts.append(account)
+        follower = SuggestedAccount(
+            context_account_id=target_account_id,
+            suggested_account_id=u.id,
+            data=None
+        )
+        extracted_suggested_accounts.append(follower)
+    return ExtractedEntitiesFlattened(
+        suggested_accounts=extracted_suggested_accounts,
+        accounts=extracted_accounts,
+        comments=[], followers=[], likes=[], tagged_accounts=[], media=[], posts=[]
+    )
+
+
+def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntitiesFlattened:
+    entities = ExtractedEntitiesFlattened(
+        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+    )
     if structure.media_info:
-        extracted = api_v1_media_info_to_entities(structure.media_info)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, api_v1_media_info_to_entities(structure.media_info))
     if structure.comments:
-        extracted = api_v1_comments_to_entities(structure.comments, structure.context)
-        entities.comments.extend(extracted.comments)
+        extend_flattened_entities(entities, api_v1_comments_to_entities(structure.comments, structure.context))
     if structure.likers:
-        extracted = api_v1_likes_to_entities(structure.likers, structure.context)
-        entities.likes.extend(extracted.likes)
+        extend_flattened_entities(entities, api_v1_likes_to_entities(structure.likers, structure.context))
+    if structure.friendships:
+        extend_flattened_entities(entities, api_v1_friendships_to_entities(structure.friendships, structure.context))
     return entities
 
 
-def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntities:
-    extracted_posts: list[ExtractedSinglePost] = []
+def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntitiesFlattened:
+    extracted_posts: list[Post] = []
     extracted_accounts: list[Account] = []
+    extracted_tagged_accounts: list[TaggedAccount] = []
+    extracted_media: list[Media] = []
     for item in media_info.items:
-        post = Post(
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
-            account_url=f"https://www.instagram.com/{item.owner.username}/",
-            publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption.text if item.caption else None,
-            data=item.model_dump()
-        )
         account = Account(
-            url=post.account_url,
+            id_on_platform=item.owner.id,
+            url=f"https://www.instagram.com/{item.owner.username}/",
             display_name=item.owner.full_name,
             bio=None,
             data=item.owner.model_dump()
         )
-        media: list[Media] = [Media(
+        extracted_accounts.append(account)
+        post = Post(
+            id_on_platform=item.id,
+            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            account_id_on_platform=account.id_on_platform,
+            account_url=account.url,
+            publication_date=datetime.fromtimestamp(item.taken_at),
+            caption=item.caption.text if item.caption else None,
+            data=item.model_dump()
+        )
+        extracted_posts.append(post)
+        extracted_media.append(Media(
+            id_on_platform=item.id,
             url=canonical_cdn_url(
                 item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            post_id_on_platform=post.id_on_platform,
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
-        )]
-        extracted_posts.append(ExtractedSinglePost(
-            post=post,
-            media=media,
         ))
-        extracted_accounts.append(account)
-    return ExtractedEntities(
+        if item.usertags:
+            for tag in item.usertags.in_field:
+                extracted_tagged_accounts.append(TaggedAccount(
+                    tagged_account_id=tag.user.id,
+                    tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                    context_account_id=item.owner.id,
+                    context_post_url=post.url,
+                    context_media_url=None,
+                    context_post_id_on_platform=post.id_on_platform,
+                    context_media_id_on_platform=None,
+                    data=None
+                ))
+                extracted_accounts.append(Account(
+                    id_on_platform=tag.user.id,
+                    url=f"https://www.instagram.com/{tag.user.username}/",
+                    display_name=tag.user.full_name,
+                    bio=None,
+                    data=tag.user.model_dump()
+                ))
+    return ExtractedEntitiesFlattened(
         accounts=extracted_accounts,
-        posts=extracted_posts
+        posts=extracted_posts,
+        media=extracted_media,
+        tagged_accounts=extracted_tagged_accounts,
+        comments=[], likes=[], followers=[], suggested_accounts=[]
     )
 
 
-def api_v1_comments_to_entities(comments_insta: CommentsApiV1, context: ApiV1Context) -> ExtractedEntities:
-    post_pk: Optional[int] = context.media_id
+def api_v1_comments_to_entities(comments_insta: CommentsApiV1, context: ApiV1Context) -> ExtractedEntitiesFlattened:
+    post_pk: Optional[str] = context.media_id
     comments: list[Comment] = []
-    if not comments_insta:
-        return ExtractedEntities()
+    accounts: list[Account] = []
+
     post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
     for c in comments_insta.comments:
+        if c.user:
+            accounts.append(Account(
+                id_on_platform=c.user.id,
+                url=f"https://www.instagram.com/{c.user.username}/",
+                display_name=None,
+                bio=None,
+                data=c.user.model_dump()
+            ))
         comment = Comment(
-            post_url=post_url,
+            id_on_platform=c.pk,
             url=f"{post_url}c/{c.pk}/" if post_url else None,
+            post_id_on_platform=post_pk,
+            post_url=post_url,
+            account_id_on_platform=c.user.id,
             account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
             text=c.text,
             publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
             data=c.model_dump()
         )
         comments.append(comment)
-    return ExtractedEntities(
-        comments=comments
+    return ExtractedEntitiesFlattened(
+        comments=comments,
+        accounts=accounts,
+        likes=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
-def api_v1_likes_to_entities(structure: LikersApiV1, context: ApiV1Context) -> ExtractedEntities:
+def api_v1_likes_to_entities(structure: LikersApiV1, context: ApiV1Context) -> ExtractedEntitiesFlattened:
     post_pk: Optional[int] = context.media_id
     post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
     extracted_likes: list[Like] = []
+    accounts: list[Account] = []
     for u in structure.users:
-        like = Like(
-            id=u.pk,
+        accounts.append(Account(
+            id_on_platform=u.pk,
+            url=f"https://www.instagram.com/{u.username}/",
+            display_name=u.full_name,
+            bio=None,
+            data=u.model_dump()
+        ))
+        extracted_likes.append(Like(
+            id_on_platform=None,
+            post_id_on_platform=post_pk,
             post_url=post_url,
+            account_id_on_platform=u.pk,
             account_url=f"https://www.instagram.com/{u.username}/",
             data=u.model_dump(),
-            sheet_entries=[]
-        )
-        extracted_likes.append(like)
-    return ExtractedEntities(
-        likes=extracted_likes
+        ))
+    return ExtractedEntitiesFlattened(
+        likes=extracted_likes,
+        accounts=accounts,
+        comments=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
-def page_to_entities(structure: PageResponse) -> ExtractedEntities:
-    entities = ExtractedEntities()
+def api_v1_friendships_to_entities(structure: FriendshipsApiV1, context: ApiV1Context) -> ExtractedEntitiesFlattened:
+    url: Optional[str] = context.url
+    follow_direction = "followers" if "followers" in url else ("following" if "following" in url else None)
+    target_account_id = url.split("friendships/")[1].split("/")[0] if url else None
+    extracted_friends: list[Follower] = []
+    accounts: list[Account] = []
+    for u in structure.users:
+        account = Account(
+            url=f"https://www.instagram.com/{u.username}/",
+            display_name=u.full_name,
+            bio=None,
+            id_on_platform=u.id,
+            data=u.model_dump()
+        )
+        accounts.append(account)
+        like = Follower(
+            follower_account_id=u.id if follow_direction == "followers" else target_account_id,
+            following_account_id=u.id if follow_direction == "following" else target_account_id,
+            data=None
+        )
+        extracted_friends.append(like)
+    return ExtractedEntitiesFlattened(
+        followers=extracted_friends,
+        accounts=accounts,
+        comments=[], likes=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+    )
+
+
+def page_to_entities(structure: PageResponse) -> ExtractedEntitiesFlattened:
+    entities = ExtractedEntitiesFlattened(
+        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+    )
     if structure.posts:
-        extracted = page_posts_to_entities(structure.posts)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, page_posts_to_entities(structure.posts))
     if structure.highlight_reels:
-        extracted = page_highlight_reels_to_entities(structure.highlight_reels)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, page_highlight_reels_to_entities(structure.highlight_reels))
     if structure.stories:
-        extracted = graphql_reels_media_to_entities(structure.stories)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, graphql_reels_media_to_entities(structure.stories))
     if structure.stories_direct:
-        extracted = page_stories_to_entities(structure.stories_direct)
-        entities.posts.extend(extracted.posts)
-        entities.accounts.extend(extracted.accounts)
+        extend_flattened_entities(entities, page_stories_to_entities(structure.stories_direct))
     if structure.comments:
-        extracted = page_comments_to_entities(structure.comments, structure.posts)
-        entities.comments.extend(extracted.comments)
+        extend_flattened_entities(entities, page_comments_to_entities(structure.comments, structure.posts))
     return entities
 
 
-def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntities:
-    extracted_posts: list[ExtractedSinglePost] = []
+def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlattened:
     extracted_accounts: list[Account] = []
+    extracted_posts: list[Post] = []
+    extracted_media: list[Media] = []
+    extracted_tagged_accounts: list[TaggedAccount] = []
     for item in structure.items:
-        post = Post(
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
-            account_url=f"https://www.instagram.com/{item.owner.username}/",
-            publication_date=datetime.fromtimestamp(item.taken_at),
-            caption=item.caption.text if item.caption else None,
-            data=item.model_dump()
-        )
         account: Account = Account(
-            url=post.account_url,
+            id_on_platform=item.owner.id,
+            url=f"https://www.instagram.com/{item.owner.username}/",
             display_name=item.owner.full_name,
             bio=None,
             data=item.owner.model_dump()
         )
-        media: list[Media] = [Media(
+        extracted_accounts.append(account)
+        post = Post(
+            id_on_platform=item.id,
+            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            account_id_on_platform=item.owner.id,
+            account_url=account.url,
+            publication_date=datetime.fromtimestamp(item.taken_at),
+            caption=item.caption.text if item.caption else None,
+            data=item.model_dump()
+        )
+        extracted_posts.append(post)
+        extracted_media.append(Media(
+            id_on_platform=item.id,
             url=canonical_cdn_url(
                 item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            post_id_on_platform=post.id_on_platform,
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'})
-        )]
+        ))
+        if item.usertags:
+            for tag in item.usertags.in_field:
+                extracted_tagged_accounts.append(TaggedAccount(
+                    tagged_account_id=tag.user.id,
+                    tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                    context_account_id=item.owner.id,
+                    context_post_url=post.url,
+                    context_media_url=None,
+                    context_post_id_on_platform=post.id_on_platform,
+                    context_media_id_on_platform=None,
+                    data=None
+                ))
+                extracted_accounts.append(Account(
+                    id_on_platform=tag.user.id,
+                    url=f"https://www.instagram.com/{tag.user.username}/",
+                    display_name=tag.user.full_name,
+                    bio=None,
+                    data=tag.user.model_dump()
+                ))
         if item.carousel_media:
             for media_item in item.carousel_media:
                 url = (media_item.video_versions[0].url
@@ -437,34 +725,56 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntities:
                     if media_item.image_versions2 and len(media_item.image_versions2.candidates)
                     else None
                 ))
-                media.append(Media(
+                extracted_media.append(Media(
+                    id_on_platform=media_item.id,
                     url=canonical_cdn_url(url),
+                    post_id_on_platform=post.id_on_platform,
                     post_url=post.url,
                     local_url=None,
                     media_type="image" if media_item.media_type == 1 else "video",
                     data=media_item.model_dump()
                 ))
-        extracted_posts.append(ExtractedSinglePost(
-            post=post,
-            media=media,
-        ))
-        extracted_accounts.append(account)
-    return ExtractedEntities(
+                if media_item.usertags:
+                    for tag in media_item.usertags.in_field:
+                        extracted_tagged_accounts.append(TaggedAccount(
+                            tagged_account_id=tag.user.id,
+                            tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                            context_account_id=item.owner.id,
+                            context_post_url=post.url,
+                            context_media_url=url,
+                            context_post_id_on_platform=post.id_on_platform,
+                            context_media_id_on_platform=media_item.id,
+                            data=None
+                        ))
+                        extracted_accounts.append(Account(
+                            id_on_platform=tag.user.id,
+                            url=f"https://www.instagram.com/{tag.user.username}/",
+                            display_name=tag.user.full_name,
+                            bio=None,
+                            data=tag.user.model_dump()
+                        ))
+    return ExtractedEntitiesFlattened(
         accounts=extracted_accounts,
-        posts=extracted_posts
+        posts=extracted_posts,
+        media=extracted_media,
+        tagged_accounts=extracted_tagged_accounts,
+        likes=[], comments=[], followers=[], suggested_accounts=[]
     )
 
 
-def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> ExtractedEntities:
-    extracted_posts: list[ExtractedSinglePost] = []
+def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> ExtractedEntitiesFlattened:
+    extracted_posts: list[Post] = []
     extracted_accounts: list[Account] = []
+    extracted_media: list[Media] = []
+    extracted_tagged_accounts: list[TaggedAccount] = []
     highlight = structure.edges[0].node if structure.edges else None
     if not highlight:
-        return ExtractedEntities(
-            accounts=extracted_accounts,
-            posts=extracted_posts
+        return ExtractedEntitiesFlattened(
+            accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[],
+            tagged_accounts=[]
         )
     account = Account(
+        id_on_platform=highlight.user.id,
         url=f"https://www.instagram.com/{highlight.user.username}/",
         display_name=None,
         bio=None,
@@ -473,40 +783,98 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
     extracted_accounts.append(account)
     for reel in highlight.items:
         post = Post(
+            id_on_platform=reel.id,
             url="https://www.instagram.com/p/" + media_id_to_shortcode(int(reel.pk)),
+            account_id_on_platform=highlight.user.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(reel.taken_at),
             caption=reel.caption,
             data=reel.model_dump()
         )
-        media: list[Media] = [Media(
+        extracted_posts.append(post)
+        extracted_media.append(Media(
+            id_on_platform=reel.id,
             url=canonical_cdn_url(
                 reel.video_versions[0].url if reel.video_versions else reel.image_versions2.candidates[0].url),
+            post_id_on_platform=post.id_on_platform,
             post_url=post.url,
             local_url=None,
             media_type="video" if reel.video_versions else "image",
             data=reel.model_dump()
-        )]
-        extracted_posts.append(ExtractedSinglePost(
-            post=post,
-            media=media,
         ))
-    return ExtractedEntities(
+        if reel.story_bloks_stickers:
+            for sticker in reel.story_bloks_stickers:
+                extracted_tagged_accounts.append(TaggedAccount(
+                    tagged_account_id=None,
+                    tagged_account_url=f"https://www.instagram.com/{sticker.bloks_sticker.sticker_data.ig_mention.username}/",
+                    context_account_id=highlight.user.id,
+                    context_post_url=post.url,
+                    context_media_url=None,
+                    context_post_id_on_platform=post.id_on_platform,
+                    context_media_id_on_platform=None,
+                    data=None
+                ))
+                extracted_accounts.append(Account(
+                    id_on_platform=None,
+                    url=f"https://www.instagram.com/{sticker.bloks_sticker.sticker_data.ig_mention.username}/",
+                    display_name=sticker.bloks_sticker.sticker_data.ig_mention.full_name,
+                    bio=None,
+                    data=sticker.bloks_sticker.sticker_data.ig_mention.model_dump()
+                ))
+        if reel.carousel_media:
+            for media_item in reel.carousel_media:
+                media_url = media_item.video_versions[0].url if media_item.video_versions else \
+                    media_item.image_versions2.candidates[0].url
+                extracted_media.append(Media(
+                    id_on_platform=media_item.id,
+                    url=canonical_cdn_url(media_url),
+                    post_id_on_platform=post.id_on_platform,
+                    post_url=post.url,
+                    local_url=None,
+                    media_type="image" if media_item.media_type == 1 else "video",
+                    data=media_item.model_dump()
+                ))
+                if media_item.usertags:
+                    for tag in media_item.usertags.in_field:
+                        extracted_tagged_accounts.append(TaggedAccount(
+                            tagged_account_id=tag.user.id,
+                            tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                            context_account_id=highlight.user.id,
+                            context_post_url=post.url,
+                            context_media_url=media_url,
+                            context_post_id_on_platform=post.id_on_platform,
+                            context_media_id_on_platform=media_item.id,
+                            data=None
+                        ))
+                        extracted_accounts.append(Account(
+                            id_on_platform=tag.user.id,
+                            url=f"https://www.instagram.com/{tag.user.username}/",
+                            display_name=tag.user.full_name,
+                            bio=None,
+                            data=tag.user.model_dump()
+                        ))
+    return ExtractedEntitiesFlattened(
         accounts=extracted_accounts,
-        posts=extracted_posts
+        posts=extracted_posts,
+        media=extracted_media,
+        tagged_accounts=extracted_tagged_accounts,
+        comments=[], likes=[], followers=[], suggested_accounts=[]
     )
 
 
-def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntities:
-    extracted_posts: list[ExtractedSinglePost] = []
+def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlattened:
     extracted_accounts: list[Account] = []
+    extracted_posts: list[Post] = []
+    extracted_media: list[Media] = []
+    extracted_tagged_accounts: list[TaggedAccount] = []
     reels_media = structure.reels_media[0] if structure.reels_media and len(structure.reels_media) > 0 else None
     if not reels_media:
-        return ExtractedEntities(
-            accounts=extracted_accounts,
-            posts=extracted_posts
+        return ExtractedEntitiesFlattened(
+            accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[],
+            tagged_accounts=[]
         )
     account = Account(
+        id_on_platform=reels_media.user.id,
         url=f"https://www.instagram.com/{reels_media.user.username}/",
         display_name=None,
         bio=None,
@@ -515,41 +883,108 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntities:
     extracted_accounts.append(account)
     for item in reels_media.items:
         post = Post(
+            id_on_platform=item.id,
             url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            account_id_on_platform=reels_media.user.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(item.taken_at),
             caption=item.caption.text if item.caption else None,
             data=item.model_dump()
         )
-        media: list[Media] = [Media(
+        extracted_posts.append(post)
+        if item.story_bloks_stickers:
+            for sticker in item.story_bloks_stickers:
+                extracted_tagged_accounts.append(TaggedAccount(
+                    tagged_account_id=None,
+                    tagged_account_url=f"https://www.instagram.com/{sticker.bloks_sticker.sticker_data.ig_mention.username}/",
+                    context_account_id=reels_media.user.id,
+                    context_post_url=post.url,
+                    context_media_url=None,
+                    context_post_id_on_platform=post.id_on_platform,
+                    context_media_id_on_platform=None,
+                    data=None
+                ))
+                extracted_accounts.append(Account(
+                    id_on_platform=None,
+                    url=f"https://www.instagram.com/{sticker.bloks_sticker.sticker_data.ig_mention.username}/",
+                    display_name=sticker.bloks_sticker.sticker_data.ig_mention.full_name,
+                    bio=None,
+                    data=sticker.bloks_sticker.sticker_data.ig_mention.model_dump()
+                ))
+        extracted_media.append(Media(
+            id_on_platform=item.id,
             url=canonical_cdn_url(
                 item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
+            post_id_on_platform=post.id_on_platform,
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
             data=item.model_dump()
-        )]
-        extracted_posts.append(ExtractedSinglePost(
-            post=post,
-            media=media,
         ))
-    return ExtractedEntities(
+        if item.carousel_media:
+            for media_item in item.carousel_media:
+                media_url = media_item.video_versions[0].url if media_item.video_versions else \
+                    media_item.image_versions2.candidates[0].url
+                extracted_media.append(Media(
+                    id_on_platform=media_item.id,
+                    url=canonical_cdn_url(media_url),
+                    post_id_on_platform=post.id_on_platform,
+                    post_url=post.url,
+                    local_url=None,
+                    media_type="image" if media_item.media_type == 1 else "video",
+                    data=media_item.model_dump()
+                ))
+                if media_item.usertags:
+                    for tag in media_item.usertags.in_field:
+                        extracted_tagged_accounts.append(TaggedAccount(
+                            tagged_account_id=tag.user.id,
+                            tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
+                            context_account_id=reels_media.user.id,
+                            context_post_url=post.url,
+                            context_media_url=media_url,
+                            context_post_id_on_platform=post.id_on_platform,
+                            context_media_id_on_platform=media_item.id,
+                            data=None
+                        ))
+                        extracted_accounts.append(Account(
+                            id_on_platform=tag.user.id,
+                            url=f"https://www.instagram.com/{tag.user.username}/",
+                            display_name=tag.user.full_name,
+                            bio=None,
+                            data=tag.user.model_dump()
+                        ))
+    return ExtractedEntitiesFlattened(
         accounts=extracted_accounts,
-        posts=extracted_posts
+        posts=extracted_posts,
+        media=extracted_media,
+        tagged_accounts=extracted_tagged_accounts,
+        comments=[], likes=[], followers=[], suggested_accounts=[]
     )
 
 
-def page_comments_to_entities(comments_structure: CommentsConnection, post_structure: MediaShortcode) -> ExtractedEntities:
+def page_comments_to_entities(comments_structure: CommentsConnection,
+                              post_structure: MediaShortcode) -> ExtractedEntitiesFlattened:
     extracted_comments: list[Comment] = []
+    extracted_accounts: list[Account] = []
     try:
-        post_pk: Optional[int] = int(post_structure.items[0].pk)
+        post_pk: Optional[str] = post_structure.items[0].pk
         post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
         for e in comments_structure.edges:
             c = e.node
+            account = Account(
+                id_on_platform=c.user.pk if c.user else None,
+                url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
+                data=c.user.model_dump(),
+                display_name=None, bio=None
+            )
+            extracted_accounts.append(account)
             comment = Comment(
-                post_url=post_url,
+                id_on_platform=c.pk,
                 url=f"{post_url}c/{c.pk}/" if post_url else None,
-                account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
+                post_id_on_platform=post_pk,
+                post_url=post_url,
+                account_id_on_platform=account.id_on_platform,
+                account_url=account.url,
                 text=c.text,
                 publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
                 data=c.model_dump()
@@ -557,8 +992,10 @@ def page_comments_to_entities(comments_structure: CommentsConnection, post_struc
             extracted_comments.append(comment)
     except Exception as ex:
         print(f"Error extracting comments from page: {ex}")
-    return ExtractedEntities(
-        comments=extracted_comments
+    return ExtractedEntitiesFlattened(
+        comments=extracted_comments,
+        accounts=extracted_accounts,
+        likes=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
@@ -576,42 +1013,99 @@ def media_id_to_shortcode(media_id: int) -> str:
     return shortcode
 
 
-def deduplicate_entities(entities: ExtractedEntities) -> ExtractedEntitiesFlattened:
-    unique_accounts: dict[str, Account] = dict()
-    unique_posts: dict[str, Post] = dict()
-    unique_medias: dict[str, Media] = dict()
-    unique_comments: dict[str, Comment] = dict()
+T = TypeVar("T")
 
-    for post in entities.posts:
-        if post.post.url not in unique_posts:
-            unique_posts[post.post.url] = post.post
+
+def deduplicate_list_by_multiple_keys(
+        entries: list[T],
+        key_fields: list[Callable[[T], Optional[str]]],
+        merge_function: Callable[[T, T], T] = None
+) -> list[T]:
+    # Filter down the set of entries such that no two entries have the same values for *any* of the key fields, unless the value is None
+    unique_entries: list[T] = []
+    entries_key_map: dict[tuple, int] = dict()
+    for entry in entries:
+        existing_copy: Optional[int] = None
+        for key_index in range(len(key_fields)):
+            key_field = key_fields[key_index]
+            key_value = key_field(entry)
+            if key_value is not None:
+                key = (key_index, key_value)
+                if key in entries_key_map:
+                    existing_copy = entries_key_map[key]
+                    break
+        if existing_copy is None:
+            unique_entries.append(entry)
+            existing_copy = len(unique_entries) - 1
         else:
-            existing_post = unique_posts[post.post.url]
-            unique_posts[post.post.url] = reconcile_posts(post.post, existing_post)
-        for media in post.media:
-            if media.url not in unique_medias:
-                unique_medias[media.url] = media
-            else:
-                existing_media = unique_medias[media.url]
-                unique_medias[media.url] = reconcile_media(media, existing_media)
-        for comment in post.comments:
-            unique_comments[comment.url] = comment  # For now, just keep the latest comment with the same URL
+            unique_entries[existing_copy] = merge_function(unique_entries[existing_copy], entry) if merge_function else \
+                unique_entries[existing_copy]
+        for key_index in range(len(key_fields)):
+            key_field = key_fields[key_index]
+            key_value = key_field(entry)
+            if key_value is not None:
+                key = (key_index, key_value)
+                entries_key_map[key] = entry if existing_copy is None else existing_copy
+    return unique_entries
 
-    for account in entities.accounts:
-        if account.url not in unique_accounts:
-            unique_accounts[account.url] = account
-        else:
-            existing_account = unique_accounts[account.url]
-            unique_accounts[account.url] = reconcile_accounts(account, existing_account)
 
-    for comment in entities.comments:
-        unique_comments[comment.url] = comment  # For now, just keep the latest comment with the same URL
-
+def deduplicate_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesFlattened:
     return ExtractedEntitiesFlattened(
-        accounts=list(unique_accounts.values()),
-        posts=list(unique_posts.values()),
-        media=list(unique_medias.values()),
-        comments=list(unique_comments.values())
+        accounts=deduplicate_list_by_multiple_keys(
+            entities.accounts,
+            [
+                lambda x: x.id_on_platform,
+                lambda x: x.url
+            ],
+            reconcile_accounts
+        ),
+        posts=deduplicate_list_by_multiple_keys(
+            entities.posts,
+            [
+                lambda x: x.id_on_platform,
+                lambda x: x.url
+            ],
+            reconcile_posts
+        ),
+        media=deduplicate_list_by_multiple_keys(
+            entities.media,
+            [
+                lambda x: x.id_on_platform,
+                lambda x: x.url
+            ],
+            reconcile_media
+        ),
+        comments=deduplicate_list_by_multiple_keys(entities.comments, [
+            lambda x: x.id_on_platform,
+            lambda x: x.url
+        ]),
+        likes=deduplicate_list_by_multiple_keys(entities.likes, [
+            lambda x: "_".join([x.post_id_on_platform,
+                                x.account_id_on_platform]) if x.post_id_on_platform and x.account_id_on_platform else None,
+            lambda x: "_".join([x.post_url, x.account_url]) if x.post_url and x.account_url else None
+        ]),
+        followers=deduplicate_list_by_multiple_keys(entities.followers, [
+            lambda x: "_".join([x.follower_account_id,
+                                x.following_account_id]) if x.follower_account_id and x.following_account_id else None,
+            lambda x: "_".join([x.follower_account_url,
+                                x.following_account_url]) if x.follower_account_url and x.following_account_url else None
+        ]),
+        suggested_accounts=deduplicate_list_by_multiple_keys(entities.suggested_accounts, [
+            lambda x: "_".join([x.context_account_id,
+                                x.suggested_account_id]) if x.context_account_id and x.suggested_account_id else None
+        ]),
+        tagged_accounts=deduplicate_list_by_multiple_keys(entities.tagged_accounts, [
+            lambda x: "_".join([
+                x.tagged_account_id,
+                x.context_post_id_on_platform,
+                x.context_media_id_on_platform
+            ]) if x.tagged_account_id and (x.context_post_id_on_platform or x.context_media_id_on_platform) else None,
+            lambda x: "_".join([
+                x.tagged_account_url,
+                x.context_post_url,
+                x.context_media_url
+            ]) if x.tagged_account_url and (x.context_post_url or x.context_media_url) else None
+        ])
     )
 
 

@@ -2,9 +2,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from entity_types import MediaAndAssociatedEntities
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
-from extractors.entity_types import ExtractedSingleAccount, ExtractedSinglePost, Media, ExtractedEntitiesNested
+from extractors.entity_types import AccountAndAssociatedEntities, PostAndAssociatedEntities, ExtractedEntitiesNested
 from extractors.structures_to_entities import extract_entities_from_har, nest_entities
 from bs4 import BeautifulSoup, Tag
 
@@ -47,10 +48,10 @@ def generate_table_rec(data: Any, soup: BeautifulSoup) -> Tag:
         return leaf
 
 
-def summarize_media(media: Media, soup: BeautifulSoup) -> Tag:
+def summarize_media(media_wrap: MediaAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     container = soup.new_tag("div")
     container['class'] = "media-container"
-
+    media = media_wrap.media
     # Preview element
     if media.media_type == "image":
         preview = soup.new_tag("img", src=media.local_url)
@@ -98,7 +99,7 @@ def summarize_media(media: Media, soup: BeautifulSoup) -> Tag:
     return container
 
 
-def summarize_post(post: ExtractedSinglePost, soup: BeautifulSoup) -> Tag:
+def summarize_post(post: PostAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     container = soup.new_tag("div")
     container['class'] = "post-container"
 
@@ -148,7 +149,7 @@ def summarize_post(post: ExtractedSinglePost, soup: BeautifulSoup) -> Tag:
     return container
 
 
-def summarize_account(account: ExtractedSingleAccount, soup: BeautifulSoup) -> Tag:
+def summarize_account(account: AccountAndAssociatedEntities, soup: BeautifulSoup) -> Tag:
     container = soup.new_tag("div")
     container['class'] = "account-container"
 
@@ -409,25 +410,25 @@ def summarize_nested_entities(nested_entities: ExtractedEntitiesNested, metadata
             account_tag = summarize_account(account, soup)
             accounts_section.append(account_tag)
         body.append(accounts_section)
-    if len(nested_entities.orphaned_posts) > 0:
+    if len(nested_entities.posts) > 0:
         orphaned_posts_section = soup.new_tag("div")
         orphaned_posts_section['class'] = "orphaned-posts-section"
         orphaned_posts_title = soup.new_tag("h2")
         orphaned_posts_title['class'] = "orphaned-posts-title"
         orphaned_posts_title.string = "Additional Posts"
         orphaned_posts_section.append(orphaned_posts_title)
-        for post in nested_entities.orphaned_posts:
+        for post in nested_entities.posts:
             post_tag = summarize_post(post, soup)
             orphaned_posts_section.append(post_tag)
         body.append(orphaned_posts_section)
-    if len(nested_entities.orphaned_media) > 0:
+    if len(nested_entities.media) > 0:
         orphaned_media_section = soup.new_tag("div")
         orphaned_media_section['class'] = "orphaned-media-section"
         orphaned_media_title = soup.new_tag("h2")
         orphaned_media_title['class'] = "orphaned-media-title"
         orphaned_media_title.string = "Additional Media"
         orphaned_media_section.append(orphaned_media_title)
-        for media in nested_entities.orphaned_media:
+        for media in nested_entities.media:
             media_tag = summarize_media(media, soup)
             orphaned_media_section.append(media_tag)
         body.append(orphaned_media_section)
@@ -449,8 +450,14 @@ def generate_entities_summary(
         har_path: Path,
         archive_dir: Path,
         metadata: dict,
-        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(),
-        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig()
+        video_acquisition_config: VideoAcquisitionConfig = VideoAcquisitionConfig(
+            download_missing=True, download_media_not_in_structures=True, download_unfetched_media=True,
+            download_full_versions_of_fetched_media=True, download_highest_quality_assets_from_structures=True
+        ),
+        photo_acquisition_config: PhotoAcquisitionConfig = PhotoAcquisitionConfig(
+            download_missing=True, download_media_not_in_structures=True, download_unfetched_media=True,
+            download_highest_quality_assets_from_structures=True
+        )
 ):
     flattened_entities = extract_entities_from_har(har_path, video_acquisition_config, photo_acquisition_config)
     nested_entities = nest_entities(flattened_entities)

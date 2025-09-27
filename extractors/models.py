@@ -346,6 +346,29 @@ class CommentsConnection(BaseModel):
 # Re-using existing models if their structure matches
 # from .existing_models import InstagramImageVersions2, InstagramSharingFrictionInfo
 # Assuming InstagramImageVersions2 and InstagramSharingFrictionInfo are defined as in the previous conversation history
+class IGMention(BaseModel):
+    username: str
+    full_name: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
+
+class BlokStickerData(BaseModel):
+    ig_mention: IGMention
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
+class BlokStickerInner(BaseModel):
+    sticker_data: BlokStickerData
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
+class StoryBlokSticker(BaseModel):
+    bloks_sticker: BlokStickerInner
 
 class HighlightsReelUser(BaseModel):
     pk: str
@@ -383,7 +406,7 @@ class HighlightsReel(BaseModel):
     video_versions: Optional[List[VideoVersion]] = None
     media_type: int
     visual_comment_reply_sticker_info: Optional[Any] = None
-    story_bloks_stickers: Optional[Any] = None
+    story_bloks_stickers: Optional[List[StoryBlokSticker]] = None
     story_link_stickers: Optional[Any] = None
     story_hashtags: Optional[Any] = None # Could be List[StoryHashtag]
     story_locations: Optional[Any] = None # Could be List[StoryLocation]

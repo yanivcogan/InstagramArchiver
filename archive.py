@@ -28,7 +28,6 @@ from dotenv import load_dotenv
 from profile_selection import select_profile
 from timestamper import timestamp_file
 from profile_registration import Profile
-from summarizers.archive_summary_generator import generate_summary
 from summarizers.entities_summary_generator import generate_entities_summary
 
 from utils import get_my_public_ip, get_system_info
