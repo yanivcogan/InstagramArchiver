@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from entity_types import MediaAndAssociatedEntities
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
-from extractors.entity_types import AccountAndAssociatedEntities, PostAndAssociatedEntities, ExtractedEntitiesNested
+from extractors.entity_types import AccountAndAssociatedEntities, PostAndAssociatedEntities, ExtractedEntitiesNested, MediaAndAssociatedEntities
 from extractors.structures_to_entities import extract_entities_from_har, nest_entities
 from bs4 import BeautifulSoup, Tag
 
