@@ -3,7 +3,13 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any, Literal
 import json
 
-class Account(BaseModel):
+class EntityBase(BaseModel):
+    id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class Account(EntityBase):
     id_on_platform: Optional[str] = None
     url: str = Field(..., max_length=200)
     display_name: Optional[str] = Field(None, max_length=100)
@@ -31,9 +37,10 @@ class Account(BaseModel):
                 v = None
         return v
 
-class Post(BaseModel):
+class Post(EntityBase):
     id_on_platform: Optional[str] = None
     url: str = Field(..., max_length=250)
+    account_id: Optional[int] = None
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url: Optional[str] = Field(None, max_length=200)
     publication_date: Optional[datetime] = None
@@ -63,9 +70,10 @@ class Post(BaseModel):
 
 t_media_type = Literal['video', 'audio', 'image']
 
-class Media(BaseModel):
+class Media(EntityBase):
     id_on_platform: Optional[str] = None
     url: str = Field(..., max_length=250)
+    post_id: Optional[int] = None
     post_id_on_platform: Optional[str] = None
     post_url: Optional[str] = Field(None, max_length=250)
     local_url: Optional[str] = None
@@ -94,7 +102,7 @@ class Media(BaseModel):
         return v
 
 
-class Comment(BaseModel):
+class Comment(EntityBase):
     id_on_platform: Optional[str] = None,
     url: str = Field(..., max_length=250)
     post_id_on_platform: str = Field(..., max_length=250)
@@ -127,7 +135,7 @@ class Comment(BaseModel):
         return v
 
 
-class Like(BaseModel):
+class Like(EntityBase):
     id_on_platform: Optional[str] = None,
     post_id_on_platform: Optional[str] = None,
     post_url: Optional[str] = Field(None, max_length=250)
@@ -157,13 +165,13 @@ class Like(BaseModel):
         return v
 
 
-class Follower(BaseModel):
+class Follower(EntityBase):
     follower_account_id: str
     following_account_id: str
     data: Optional[Any] = None
 
 
-class SuggestedAccount(BaseModel):
+class SuggestedAccount(EntityBase):
     context_account_id: str
     suggested_account_id: str
     data: Optional[Any] = None
@@ -184,7 +192,7 @@ class SuggestedAccount(BaseModel):
         return v
 
 
-class TaggedAccount(BaseModel):
+class TaggedAccount(EntityBase):
     tagged_account_id: Optional[str] = Field(None, max_length=200)
     tagged_account_url: Optional[str] = Field(None, max_length=250)
     context_account_id: Optional[str] = Field(None, max_length=200)

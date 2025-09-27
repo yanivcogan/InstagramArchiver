@@ -3,66 +3,44 @@ from typing import Optional, TypeVar, Generic, Callable
 from pydantic import BaseModel
 
 import db
-from extractors.entity_types import ExtractedEntitiesFlattened, Account, Post, Media
+from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 
-EntityType = TypeVar("EntityType")
+EntityType = TypeVar("EntityType", bound="EntityBase")
+
+
 class EntityProcessingConfig(BaseModel, Generic[EntityType]):
     key: str
     table: str
-    data_type: EntityType
-    get_entity_within_archive: Callable[[EntityType], Optional[EntityType]]
-    get_entity: Callable[[EntityType], Optional[EntityType]]
-    merge: Callable[[EntityType, EntityType], Optional[EntityType]]
+    data_type: type[EntityType]
+    get_entity: Callable[[EntityType, Optional[int]], Optional[EntityType]]
+    store_entity: Callable[[EntityType, bool, Optional[int]], int]
+    merge: Callable[[EntityType, Optional[EntityType]], EntityType]
 
 
 def incorporate_structure_into_db(structure: ExtractedEntitiesFlattened, archive_session_id: int) -> None:
-    entity_types: list[EntityProcessingConfig] = [
-        EntityProcessingConfig(
-            key="accounts",
-            table="account",
-        ),
-        EntityProcessingConfig(
-            key="posts",
-            table="post",
-            identifier_keys=[["url"], ["id_on_platform"]]
-        ),
-        EntityProcessingConfig(
-            key="media",
-            table="media",
-            identifier_keys=[["url"], ["id_on_platform"]]
-        ),
-        EntityProcessingConfig(
-            key="suggested_accounts",
-            table="account_relation",
-            identifier_keys=[["followed_account_id", "follower_account_id"]]
-        ),
-        EntityProcessingConfig(
-            key="followers",
-            table="account_relation",
-            identifier_keys=[["followed_account_id", "follower_account_id"]]
-        ),
-        EntityProcessingConfig(
-            key="likes",
-            table="post_engagement",
-            identifier_keys=[["url"], ["url", "post_id", "account_id"]]
-        ),
-        EntityProcessingConfig(
-            key="tagged_accounts",
-            table="post_engagement",
-            identifier_keys=[["url"], ["url", "post_id", "account_id"]]
-        ),
-        EntityProcessingConfig(
-            key="comments",
-            table="post_engagement",
-            identifier_keys=[["url"], ["url", "post_id", "account_id"]]
-        ),
-    ]
+    for entity_config in entity_types:
+        entities: list = getattr(structure, entity_config.key, [])
+        for entity in entities:
+            existing_entity = entity_config.get_entity(entity, None)
+            already_existed = existing_entity is not None
+            entity_id = entity_config.store_entity(entity, already_existed, None)
+
+            existing_entity_within_archive = entity_config.get_entity(existing_entity,
+                                                                      archive_session_id) if existing_entity else None
+            already_existed_within_archive = existing_entity_within_archive is not None
+            existing_entity = entity_config.merge(entity, existing_entity)
+            existing_entity_within_archive = entity_config.merge(entity, existing_entity_within_archive)
 
 
-def get_existing_account_archive(account: Account, archive_session_id: int) -> Optional[Account]:
-    account_row = db.execute_query(
-        "SELECT * FROM account WHERE url=%(url)s AND archive_session_id=%(archive_session_id)s",
+def get_stored_account_archive(account: Account, archive_session_id: Optional[int] = None) -> Optional[Account]:
+    entry = db.execute_query(
+        f'''SELECT * 
+           FROM account{'_archive' if archive_session_id else ''}
+           WHERE 
+               ((url=%(url)s AND url IS NOT NULL) OR (id_on_platform=%(id_on_platform)s AND id_on_platform IS NOT NULL))
+             {'AND archive_session_id=%(archive_session_id)s' if archive_session_id else ''}
+        ''',
         {
             "url": account.url,
             "id_on_platform": account.id_on_platform,
@@ -70,65 +48,102 @@ def get_existing_account_archive(account: Account, archive_session_id: int) -> O
         },
         return_type="single_row"
     )
-    if not account_row:
+    if not entry:
         return None
-    return Account(**account_row)
+    return Account(**entry)
 
-def get_existing_post(post: Post, archive_session_id: int) -> Optional[Post]:
-    post_row = db.execute_query(
-        "SELECT * FROM post WHERE url=%(url)s",
-        {"url": post.url, "archive_session_id": archive_session_id},
+
+def get_stored_post_archive(post: Post, archive_session_id: Optional[int] = None) -> Optional[Post]:
+    entry = db.execute_query(
+        f'''SELECT * 
+           FROM post{'_archive' if archive_session_id else ''}
+           WHERE 
+               ((url=%(url)s AND url IS NOT NULL) OR (id_on_platform=%(id_on_platform)s AND id_on_platform IS NOT NULL))
+             {'AND archive_session_id=%(archive_session_id)s' if archive_session_id else ''}
+        ''',
+        {
+            "url": post.url,
+            "id_on_platform": post.id_on_platform,
+            "archive_session_id": archive_session_id
+        },
         return_type="single_row"
     )
-    if not post_row:
+    if not entry:
         return None
-    return Post(**post_row)
+    return Post(**entry)
 
-def get_existing_media(media: Media, archive_session_id: int) -> Optional[Media]:
-    media_row = db.execute_query(
-        "SELECT * FROM media WHERE url=%(url)s",
-        {"url": media.url, "archive_session_id": archive_session_id},
+
+def get_stored_media_archive(media: Media, archive_session_id: Optional[int] = None) -> Optional[Media]:
+    entry = db.execute_query(
+        f'''SELECT * 
+           FROM media{'_archive' if archive_session_id else ''}
+           WHERE 
+               ((url=%(url)s AND url IS NOT NULL) OR (id_on_platform=%(id_on_platform)s AND id_on_platform IS NOT NULL))
+             {'AND archive_session_id=%(archive_session_id)s' if archive_session_id else ''}
+        ''',
+        {
+            "url": media.url,
+            "id_on_platform": media.id_on_platform,
+            "archive_session_id": archive_session_id
+        },
         return_type="single_row"
     )
-    if not media_row:
+    if not entry:
         return None
-    return Media(**media_row)
+    return Media(**entry)
 
 
-def store_account(account: Account, update: bool, archive_session_id: int) -> bool:
+entity_types: list[EntityProcessingConfig] = [
+    EntityProcessingConfig(
+        key="accounts",
+        table="account",
+        data_type=Account,
+        get_entity=get_stored_account_archive,
+        merge=reconcile_accounts
+    ),
+    EntityProcessingConfig(
+        key="posts",
+        table="post",
+        data_type=Post,
+        get_entity=get_stored_post_archive,
+        merge=reconcile_posts
+    ),
+    EntityProcessingConfig(
+        key="media",
+        table="media",
+        data_type=Media,
+        get_entity=get_stored_media_archive,
+        merge=reconcile_media
+    ),
+]
+
+
+def store_account(account: Account, update: bool, archive_session_id: int) -> int:
     try:
-        account.notes = account.notes or []
-        account.notes = [note.strip() for note in account.notes if len(note.strip()) > 0]
         if update:
             db.execute_query(
                 """UPDATE account
-                   SET display_name  = %(display_name)s,
-                       bio           = %(bio)s,
-                       data          = %(data)s,
-                       notes         = %(notes)s,
-                       sheet_entries = %(sheet_entries)s
+                   SET display_name = %(display_name)s,
+                       bio          = %(bio)s,
+                       data         = %(data)s
                    WHERE url = %(url)s""",
                 {
                     "url": account.url,
                     "display_name": account.display_name,
                     "bio": account.bio,
                     "data": json.dumps(account.data) if account.data else None,
-                    "notes": json.dumps(account.notes) if account.notes else "[]",
-                    "sheet_entries": json.dumps(account.sheet_entries) if account.sheet_entries else "[]"
                 },
                 return_type="none"
             )
         else:
             db.execute_query(
-                """INSERT INTO account (url, display_name, bio, data, notes, sheet_entries)
-                   VALUES (%(url)s, %(display_name)s, %(bio)s, %(data)s, %(notes)s, %(sheet_entries)s)""",
+                """INSERT INTO account (url, display_name, bio, data)
+                   VALUES (%(url)s, %(display_name)s, %(bio)s, %(data)s)""",
                 {
                     "url": account.url,
                     "display_name": account.display_name,
                     "bio": account.bio,
-                    "data": json.dumps(account.data) if account.data else None,
-                    "notes": json.dumps(account.notes) if account.notes else "[]",
-                    "sheet_entries": json.dumps(account.sheet_entries) if account.sheet_entries else "[]"
+                    "data": json.dumps(account.data) if account.data else None
                 },
                 return_type="none"
             )
@@ -137,43 +152,49 @@ def store_account(account: Account, update: bool, archive_session_id: int) -> bo
         print(f"Error storing account {account.url}: {e}")
         return False
 
-def store_post(post: Post, update: bool, archive_session_id: int) -> bool:
+
+def store_post(post: Post, update: bool, archive_session_id: int) -> int:
     try:
-        post.notes = post.notes or []
-        post.notes = [note.strip() for note in post.notes if len(note.strip()) > 0]
+        if post.account_id is None:
+            stored_account = get_stored_account_archive(
+                Account(url=post.account_url, id_on_platform=post.account_id_on_platform), None
+            )
+            if stored_account is None:
+                raise ValueError("Post must have account_id set before storing.")
+            else:
+                post.account_id = stored_account.id
         if update:
             db.execute_query(
                 """UPDATE post
-                   SET account_url   = %(account_url)s,
+                   SET url              = %(url)s,
+                       id_on_platform   = %(id_on_platform)s,
+                       account_id       = %(account_id)s,
                        publication_date = %(publication_date)s,
-                       caption        = %(caption)s,
-                       data           = %(data)s,
-                       notes          = %(notes)s,
-                       sheet_entries  = %(sheet_entries)s
-                   WHERE url = %(url)s""",
+                       caption          = %(caption)s,
+                       data             = %(data)s
+                   WHERE id = %(id)s""",
                 {
+                    "id": post.id,
                     "url": post.url,
-                    "account_url": post.account_url,
+                    "id_on_platform": post.id_on_platform,
+                    "account_id": post.account_id,
                     "publication_date": post.publication_date.isoformat() if post.publication_date else None,
                     "caption": post.caption,
                     "data": json.dumps(post.data) if post.data else None,
-                    "notes": json.dumps(post.notes) if post.notes else "[]",
-                    "sheet_entries": json.dumps(post.sheet_entries) if post.sheet_entries else "[]"
                 },
                 return_type="none"
             )
         else:
             db.execute_query(
-                """INSERT INTO post (url, account_url, publication_date, caption, data, notes, sheet_entries)
-                   VALUES (%(url)s, %(account_url)s, %(publication_date)s, %(caption)s, %(data)s, %(notes)s, %(sheet_entries)s)""",
+                """INSERT INTO post (url, id_on_platform, account_id, publication_date, caption, data)
+                   VALUES (%(url)s, %(id_on_platform)s, %(account_id)s, %(publication_date)s, %(caption)s, %(data)s)""",
                 {
                     "url": post.url,
-                    "account_url": post.account_url,
+                    "id_on_platform": post.id_on_platform,
+                    "account_id": post.account_id,
                     "publication_date": post.publication_date.isoformat() if post.publication_date else None,
                     "caption": post.caption,
-                    "data": json.dumps(post.data) if post.data else None,
-                    "notes": json.dumps(post.notes) if post.notes else "[]",
-                    "sheet_entries": json.dumps(post.sheet_entries) if post.sheet_entries else "[]"
+                    "data": json.dumps(post.data) if post.data else None
                 },
                 return_type="none"
             )
@@ -182,38 +203,49 @@ def store_post(post: Post, update: bool, archive_session_id: int) -> bool:
         print(f"Error storing post {post.url}: {e}")
         return False
 
-def store_media(media: Media, update: bool, archive_session_id: int) -> bool:
+
+def store_media(media: Media, update: bool, archive_session_id: int) -> int:
     try:
+        if media.post_id is None:
+            stored_post = get_stored_post_archive(
+                Post(url=media.post_url, id_on_platform=media.post_id_on_platform), None
+            )
+            if stored_post is None:
+                raise ValueError("Media must have post_id set before storing.")
+            else:
+                media.post_id = stored_post.id
         if update:
             db.execute_query(
                 """UPDATE media
-                   SET post_url     = %(post_url)s,
-                       local_url   = %(local_url)s,
-                       media_type  = %(media_type)s,
-                       data        = %(data)s,
-                       sheet_entries = %(sheet_entries)s
-                   WHERE url = %(url)s""",
+                   SET url            = %(url)s,
+                       id_on_platform = %(id_on_platform)s,
+                       post_id        = %(post_id)s,
+                       local_url      = %(local_url)s,
+                       media_type     = %(media_type)s,
+                       data           = %(data)s
+                   WHERE id = %(id)s""",
                 {
+                    "id": media.id,
                     "url": media.url,
-                    "post_url": media.post_url,
+                    "id_on_platform": media.id_on_platform,
+                    "post_id": media.post_id,
                     "local_url": media.local_url,
                     "media_type": media.media_type,
-                    "data": json.dumps(media.data) if media.data else None,
-                    "sheet_entries": json.dumps(media.sheet_entries) if media.sheet_entries else "[]"
+                    "data": json.dumps(media.data) if media.data else None
                 },
                 return_type="none"
             )
         else:
             db.execute_query(
-                """INSERT INTO media (url, post_url, local_url, media_type, data, sheet_entries)
-                   VALUES (%(url)s, %(post_url)s, %(local_url)s, %(media_type)s, %(data)s, %(sheet_entries)s)""",
+                """INSERT INTO media (url, id_on_platform, post_id, local_url, media_type, data)
+                   VALUES (%(url)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s)""",
                 {
                     "url": media.url,
-                    "post_url": media.post_url,
+                    "id_on_platform": media.id_on_platform,
+                    "post_id": media.post_id,
                     "local_url": media.local_url,
                     "media_type": media.media_type,
-                    "data": json.dumps(media.data) if media.data else None,
-                    "sheet_entries": json.dumps(media.sheet_entries) if media.sheet_entries else "[]"
+                    "data": json.dumps(media.data) if media.data else None
                 },
                 return_type="none"
             )
