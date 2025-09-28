@@ -21,6 +21,8 @@ class Account(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('url', mode='before')
@@ -52,6 +54,8 @@ class Post(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('url', 'account_url', mode='before')
@@ -85,6 +89,8 @@ class Media(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('url', 'post_url', mode='before')
@@ -118,6 +124,8 @@ class Comment(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('url', 'post_url', 'account_url', mode='before')
@@ -148,6 +156,8 @@ class Like(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('post_url', 'account_url', mode='before')
@@ -181,6 +191,8 @@ class SuggestedAccount(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('data', mode='before')
@@ -207,6 +219,8 @@ class TaggedAccount(EntityBase):
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
+        if isinstance(v, int):
+            v = str(v)
         return v
 
     @field_validator('context_post_url', 'context_media_url', 'tagged_account_url', mode='before')

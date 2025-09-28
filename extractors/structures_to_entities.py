@@ -1126,9 +1126,9 @@ def deduplicate_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntit
                 x.context_media_id_on_platform
             ]) if x.tagged_account_id and (x.context_post_id_on_platform or x.context_media_id_on_platform) else None,
             lambda x: "_".join([
-                x.tagged_account_url,
-                x.context_post_url,
-                x.context_media_url
+                x.tagged_account_url or "",
+                x.context_post_url or "",
+                x.context_media_url or ""
             ]) if x.tagged_account_url and (x.context_post_url or x.context_media_url) else None
         ])
     )

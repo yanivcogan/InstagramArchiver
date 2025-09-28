@@ -10,7 +10,7 @@ class ApiV1Context(BaseModel):
     media_id: Optional[int] = None
 
 class ApiV1Response(BaseModel):
-    context: Optional[Any] = None
+    context: Optional[ApiV1Context] = None
     friendships: Optional[FriendshipsApiV1] = None
     likers: Optional[LikersApiV1] = None
     comments: Optional[CommentsApiV1] = None
@@ -18,7 +18,7 @@ class ApiV1Response(BaseModel):
 
 
 def extract_data_from_api_v1_entry(api_data: dict, req: HarRequest) -> Optional[ApiV1Response]:
-    res = ApiV1Response(context=req.postData)
+    res = ApiV1Response()
     res.context = ApiV1Context(url=req.url, media_id=int(req.url.split('media/')[1].split('/')[0]) if 'media/' in req.url else None)
     if "/friendships/" in req.url:
         res.friendships = FriendshipsApiV1(**api_data)

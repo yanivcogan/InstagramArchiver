@@ -578,6 +578,45 @@ class StoryFeedMediaItem(BaseModel):
         populate_by_name = True
         extra = "allow"
 
+class BloksStickerDataIgMention(BaseModel):
+    full_name: str
+    username: str
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
+
+class BloksStickerData(BaseModel):
+    ig_mention: BloksStickerDataIgMention
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
+
+class BloksSticker(BaseModel):
+    sticker_data: BloksStickerData
+    id: str # e.g., "bloks_sticker_id"
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
+
+class StoryBloksStickerItem(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+    rotation: int
+    bloks_sticker: BloksSticker
+    id: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
+        extra = "allow"
+
 class StoryItem(BaseModel):
     id: str
     original_height: int
@@ -605,7 +644,7 @@ class StoryItem(BaseModel):
     video_dash_manifest: Optional[str] = None
     video_versions: Optional[List[VideoVersion]] = None # Reusing
     visual_comment_reply_sticker_info: Optional[Any] = None
-    story_bloks_stickers: Optional[Any] = None
+    story_bloks_stickers: Optional[list[StoryBloksStickerItem]] = None
     story_link_stickers: Optional[Any] = None
     story_hashtags: Optional[Any] = None
     story_locations: Optional[Any] = None
@@ -689,5 +728,4 @@ class StoriesFeed(BaseModel):
     class Config:
         populate_by_name = True
         extra = "allow"
-
 

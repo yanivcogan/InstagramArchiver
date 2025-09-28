@@ -6,7 +6,7 @@ import db
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
-from extractors.db_intake import incorporate_structure_into_db
+from extractors.db_intake import incorporate_structures_into_db
 from utils import ROOT_DIR
 
 
@@ -165,7 +165,7 @@ def extract_entities():
                 har_data.videos,
                 har_data.photos
             )
-            incorporate_structure_into_db(entities, entry['id'])
+            incorporate_structures_into_db(entities, entry['id'])
             db.execute_query(
                 "UPDATE archive_session SET extraction_error = NULL, extracted_entities = %(v)s WHERE external_id = %(id)s",
                 {"id": entry_id, "v": ENTITY_EXTRACTION_ALGORITHM_VERSION},
@@ -184,4 +184,4 @@ def extract_entities():
 if __name__ == "__main__":
     # register_archives()
     parse_archives()
-    # extract_entities()
+    extract_entities()

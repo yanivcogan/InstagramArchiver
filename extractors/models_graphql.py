@@ -3,7 +3,7 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 
 from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo, VideoVersion, \
-    InstagramImageVersions2, InstagramCarouselMedia, PostComment
+    InstagramImageVersions2, InstagramCarouselMedia
 
 
 class ProfileTimelinePageInfo(BaseModel):
@@ -61,41 +61,6 @@ class FriendsListGraphQL(BaseModel):
     class Config:
         extra = "allow"
 
-class BloksStickerDataIgMention(BaseModel):
-    full_name: str
-    username: str
-
-    class Config:
-        populate_by_name = True
-        extra = "allow"
-
-class BloksStickerData(BaseModel):
-    ig_mention: BloksStickerDataIgMention
-
-    class Config:
-        populate_by_name = True
-        extra = "allow"
-
-class BloksSticker(BaseModel):
-    sticker_data: BloksStickerData
-    id: str # e.g., "bloks_sticker_id"
-
-    class Config:
-        populate_by_name = True
-        extra = "allow"
-
-class StoryBloksStickerItem(BaseModel):
-    x: float
-    y: float
-    width: float
-    height: float
-    rotation: int
-    bloks_sticker: BloksSticker
-    id: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-        extra = "allow"
 
 class ReelsMediaCoverMediaCroppedImageVersion(BaseModel):
     url: str

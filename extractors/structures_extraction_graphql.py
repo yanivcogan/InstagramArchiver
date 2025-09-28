@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from pydantic import BaseModel
 
@@ -10,7 +10,7 @@ from extractors.models_api_v1 import LikersApiV1
 
 
 class GraphQLResponse(BaseModel):
-    context: Optional[Any] = None
+    context: Optional[Dict] = None
     profile_timeline: Optional[ProfileTimelineGraphQL] = None
     friends_list: Optional[FriendsListGraphQL] = None
     reels_media: Optional[ReelsMediaConnection] = None
