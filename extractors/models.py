@@ -609,7 +609,7 @@ class StoryBloksStickerItem(BaseModel):
     y: float
     width: float
     height: float
-    rotation: int
+    rotation: float
     bloks_sticker: BloksSticker
     id: Optional[str] = None
 
