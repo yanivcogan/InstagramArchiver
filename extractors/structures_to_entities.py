@@ -1121,9 +1121,9 @@ def deduplicate_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntit
         ]),
         tagged_accounts=deduplicate_list_by_multiple_keys(entities.tagged_accounts, [
             lambda x: "_".join([
-                x.tagged_account_id,
-                x.context_post_id_on_platform,
-                x.context_media_id_on_platform
+                x.tagged_account_id or "",
+                x.context_post_id_on_platform or "",
+                x.context_media_id_on_platform or ""
             ]) if x.tagged_account_id and (x.context_post_id_on_platform or x.context_media_id_on_platform) else None,
             lambda x: "_".join([
                 x.tagged_account_url or "",
