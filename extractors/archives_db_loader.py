@@ -47,6 +47,8 @@ def strip_media_contents(data: ExtractedHarData) -> None:
     for v in data.videos:
         for t in v.fetched_tracks:
             v.fetched_tracks[t].segments = []
+    for p in data.photos:
+        p.fetched_assets = None
 
 
 def parse_archives():
@@ -181,7 +183,21 @@ def extract_entities():
             traceback.print_exc()
 
 
+def clear_extraction_errors():
+    db.execute_query(
+        "UPDATE archive_session SET extraction_error = NULL WHERE source_type = 1",
+        {},
+        return_type="none"
+    )
+
+
 if __name__ == "__main__":
-    # register_archives()
-    parse_archives()
-    # extract_entities()
+    stage = input("Enter stage (register, parse, extract, clear_errors): ").strip().lower()
+    if stage == "register":
+        register_archives()
+    elif stage == "parse":
+        parse_archives()
+    elif stage == "extract":
+        extract_entities()
+    elif stage == "clear_errors":
+        clear_extraction_errors()
