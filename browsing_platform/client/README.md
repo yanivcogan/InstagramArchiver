@@ -1,0 +1,1 @@
+# Settings Manager and Incident Curation Editor

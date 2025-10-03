@@ -2,28 +2,18 @@ import React, {ReactNode} from 'react';
 import server from '../../services/server';
 import cookie from 'js-cookie';
 import withRouter, {IRouterProps} from "../../services/withRouter";
-import {encodeBrowseWorkspaceSearchParams, getDefaultBrowseWorkspace} from "../../services/types/workspace";
 import {
-    Accordion, AccordionDetails, AccordionSummary,
     AppBar, Toolbar, Drawer,
     List, ListItemButton,
     Stack, Divider,
-    Tooltip, IconButton, Typography, Box
+    IconButton
 } from "@mui/material";
-import {t} from "@lingui/core/macro";
-import {Add} from '@mui/icons-material';
 import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MenuIcon from '@mui/icons-material/Menu';
-import {E_ENTITIES} from "../../services/types/entities";
-import {ENTITIES} from "../../services/entities/entities";
-import {NavLink} from "react-router-dom";
-import {AlignDirProvider} from "../../services/languages/AlignDirContext";
-import withAlignDir, {IAlignDirProps} from "../../services/languages/withAlignment";
 
 type IProps = {
     children: ReactNode
-} & IAlignDirProps & IRouterProps
+} & IRouterProps
 
 interface IState {
     emoji: string,
@@ -104,10 +94,8 @@ class TopNavBar extends React.Component<IProps, IState> {
                     </Stack>
                 </Toolbar>
             </AppBar>
-            <AlignDirProvider direction={"ltr"}>
                 <Drawer open={this.state.menuOpened} onClose={this.toggleMenu}
-                        anchor={this.props.direction === "rtl" ? "right" : "left"}>
-                    <AlignDirProvider direction={this.props.direction}>
+                        anchor={"left"}>
                         <Stack direction={"column"} sx={{height: "100vh"}}>
                             <AppBar position="static" sx={{backgroundColor: "#282c34"}}>
                                 <Toolbar>
@@ -130,13 +118,11 @@ class TopNavBar extends React.Component<IProps, IState> {
                                         this.logout()
                                     }}
                                 >
-                                    {t`Logout`}
+                                    Logout
                                 </ListItemButton>
                             </List>
                         </Stack>
-                    </AlignDirProvider>
                 </Drawer>
-            </AlignDirProvider>
         </>
     }
 }

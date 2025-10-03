@@ -57,14 +57,6 @@ export const cleanKeys = (obj: any, keysToRemove: string[]): void => {
     }
 }
 
-export const getNodeText = (node: ReactNode | ReactNode[]): string => {
-    if (node === null || node === undefined) return ''
-    if (['string', 'number'].includes(typeof node)) return node.toString()
-    if (node instanceof Array) return node.map(getNodeText).join('')
-    if (typeof node === 'object' && node && "props" in node) return getNodeText(node.props.children)
-    return ''
-}
-
 export const isValidHttpUrl = (str: string) => {
     let url;
     try {

@@ -2,7 +2,6 @@ import React from 'react';
 import "./Alert.scss";
 import {IPreparedPopupAlert} from "../../services/alerts/alerts";
 import {Button, Card, CardActions, CardContent, CircularProgress, Fade, Modal, Typography} from "@mui/material";
-import {t} from "@lingui/core/macro";
 import PubSub from "pubsub-js";
 import events from "../../lib/events";
 
@@ -37,7 +36,7 @@ export default class Alert extends React.Component <IProps, IState> {
         const alertBody = alert ? (alert.html ? alert.html : <Card>
             <CardContent>
                 <Typography gutterBottom variant="h5" component="div">
-                    {alert.title || t`Alert`}
+                    {alert.title || `Alert`}
                 </Typography>
                 {
                     alert.message ? (typeof alert.message === "string" ?

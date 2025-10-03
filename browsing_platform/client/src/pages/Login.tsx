@@ -1,7 +1,7 @@
 import React from 'react';
 import server from '../services/server';
 import cookie from 'js-cookie';
-import './Login.scss';
+import './login/Login.scss';
 import withRouter, {IRouterProps} from "../services/withRouter";
 import {
     CircularProgress,
@@ -105,50 +105,47 @@ class Login extends React.Component<IProps, IState> {
     );
 
     renderPasswordForm = () => (
-        <Stack dir="column" alignItems="center" gap={2} sx={{width: "100%"}}>
-            <h2>{`Login with password`}</h2>
-            <FormControl
-                variant="outlined"
-                sx={{width: (window.innerWidth <= 768) ? "80%" : "500px"}}
-            >
-                <InputLabel>{`Password`}</InputLabel>
-                <Input
-                    type={this.state.showPassword ? "text" : "password"}
-                    value={this.state.password}
-                    onChange={(e) => this.setState({password: e.target.value})}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && this.state.password.length) {
-                            this.verifyPasswordLogin();
-                        }
-                    }}
-                    endAdornment={
-                        <Stack direction="row" alignItems="center" gap={0.5}>
-                            <IconButton
-                                size="small"
-                                onClick={() => this.setState({showPassword: !this.state.showPassword})}
-                                aria-label={`Toggle password visibility`}
-                            >
-                                {this.state.showPassword ? <VisibilityOff/> : <Visibility/>}
-                            </IconButton>
-                            {
-                                this.state.awaitingAuthentication
-                                    ? <CircularProgress size={20}/>
-                                    : <Tooltip title={`Login`} placement="top" arrow disableInteractive>
-                                        <IconButton
-                                            color="success"
-                                            size="small"
-                                            disabled={!this.state.password.length}
-                                            onClick={this.verifyPasswordLogin}
-                                        >
-                                            <LocalFlorist/>
-                                        </IconButton>
-                                    </Tooltip>
-                            }
-                        </Stack>
+        <FormControl
+            variant="outlined"
+            sx={{width: (window.innerWidth <= 768) ? "80%" : "500px"}}
+        >
+            <InputLabel>{`Password`}</InputLabel>
+            <Input
+                type={this.state.showPassword ? "text" : "password"}
+                value={this.state.password}
+                onChange={(e) => this.setState({password: e.target.value})}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' && this.state.password.length) {
+                        this.verifyPasswordLogin();
                     }
-                />
-            </FormControl>
-        </Stack>
+                }}
+                endAdornment={
+                    <Stack direction="row" alignItems="center" gap={0.5}>
+                        <IconButton
+                            size="small"
+                            onClick={() => this.setState({showPassword: !this.state.showPassword})}
+                            aria-label={`Toggle password visibility`}
+                        >
+                            {this.state.showPassword ? <VisibilityOff/> : <Visibility/>}
+                        </IconButton>
+                        {
+                            this.state.awaitingAuthentication
+                                ? <CircularProgress size={20}/>
+                                : <Tooltip title={`Login`} placement="top" arrow disableInteractive>
+                                    <IconButton
+                                        color="success"
+                                        size="small"
+                                        disabled={!this.state.password.length}
+                                        onClick={this.verifyPasswordLogin}
+                                    >
+                                        <LocalFlorist/>
+                                    </IconButton>
+                                </Tooltip>
+                        }
+                    </Stack>
+                }
+            />
+        </FormControl>
     );
 
     render() {
@@ -169,7 +166,7 @@ class Login extends React.Component<IProps, IState> {
                                 : <Stack className={"welcome-title-wrap"} justifyContent="center" direction="row"
                                          gap={2}>
                                     <h1 className={"title-adornments"}>°𓏲⋆🌿🍁⋆˚࿔</h1>
-                                    <h1 className={"welcome-title"}>Welcome to the Magrefa</h1>
+                                    <h1 className={"welcome-title"}>Welcome</h1>
                                     <h1 className={"title-adornments"}>༄˖°.🍂.ೃ࿔*</h1>
                                 </Stack>
                         }

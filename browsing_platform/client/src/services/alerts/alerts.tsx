@@ -1,8 +1,5 @@
-import {Button, ButtonOwnProps, Card, CardActions, CardContent, Typography} from "@mui/material";
+import {ButtonOwnProps} from "@mui/material";
 import React from "react";
-import {t} from "@lingui/core/macro";
-import PubSub from "pubsub-js";
-import events from "../../lib/events";
 
 export interface IPopupAlertAction {
     label?: string;
