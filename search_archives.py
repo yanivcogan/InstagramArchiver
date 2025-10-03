@@ -1,10 +1,6 @@
-from pathlib import Path
 import subprocess
 
-from utils import ROOT_DIR
-
-# Path to your archives directory
-ARCHIVES_DIR = Path(ROOT_DIR) / "archives"
+from extractors.db_intake import ROOT_ARCHIVES
 
 # Your keywords (case-insensitive)
 KEYWORDS = ["daniel_abramov3", "danielabramov1718"]
@@ -12,7 +8,7 @@ KEYWORDS = ["daniel_abramov3", "danielabramov1718"]
 def find_matching_archives():
     """Find all archives where metadata.json contains at least one keyword."""
     matching = []
-    for entry in ARCHIVES_DIR.iterdir():
+    for entry in ROOT_ARCHIVES.iterdir():
         if entry.is_dir():
             meta_path = entry / "metadata.json"
             if meta_path.exists():

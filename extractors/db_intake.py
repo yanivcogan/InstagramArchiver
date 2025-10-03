@@ -1,11 +1,15 @@
 import json
+from pathlib import Path
 from typing import Optional, TypeVar, Generic, Callable
 from pydantic import BaseModel
 
 import db
 from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
+from utils import ROOT_DIR
 
+LOCAL_ARCHIVES_DIR_ALIAS = 'local_archive_har'
+ROOT_ARCHIVES = Path(ROOT_DIR) / "archives"
 EntityType = TypeVar("EntityType", bound="EntityBase")
 
 
@@ -13,12 +17,12 @@ class EntityProcessingConfig(BaseModel, Generic[EntityType]):
     key: str
     table: str
     get_entity: Callable[[EntityType, Optional[int]], Optional[EntityType]]
-    store_entity: Callable[[EntityType, Optional[int]], int]
-    store_entity_archive: Callable[[EntityType, int, Optional[int], Optional[int]], int]
+    store_entity: Callable[[EntityType, Optional[int], Optional[Path]], int]
+    store_entity_archive: Callable[[EntityType, int, Optional[int], Optional[int], Optional[Path]], int]
     merge: Callable[[EntityType, Optional[EntityType]], EntityType]
 
 
-def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archive_session_id: int) -> None:
+def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archive_session_id: int, archive_location: Optional[Path]) -> None:
     for entity_config in entity_types:
         entities: list = getattr(structures, entity_config.key, [])
         for entity in entities:
@@ -26,7 +30,8 @@ def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archi
             existing_entity_id = existing_entity.id if existing_entity is not None else None
             entity_id = entity_config.store_entity(
                 entity_config.merge(entity, existing_entity),
-                existing_entity_id
+                existing_entity_id,
+                archive_location
             )
 
             existing_entity_within_archive = entity_config.get_entity(
@@ -40,7 +45,8 @@ def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archi
                 entity_within_archive_for_storage,
                 archive_session_id,
                 existing_entity_within_archive_id,
-                entity_id
+                entity_id,
+                archive_location
             )
             entity.id = entity_within_archive_id
 
@@ -106,7 +112,7 @@ def get_stored_media_archive(media: Media, archive_session_id: Optional[int] = N
 
 
 def store_account(
-        account: Account, existing_id: Optional[int]
+        account: Account, existing_id: Optional[int], _: Optional[Path]
 ) -> int:
     if existing_id is not None:
         db.execute_query(
@@ -145,7 +151,7 @@ def store_account(
 
 
 def store_account_archive(
-        account: Account, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int] = None
+        account: Account, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int], _: Optional[Path]
 ) -> int:
     if existing_id is not None:
         db.execute_query(
@@ -192,7 +198,7 @@ def store_account_archive(
 
 
 def store_post(
-        post: Post, existing_id: Optional[int]
+        post: Post, existing_id: Optional[int], _: Optional[Path]
 ) -> int:
     if post.account_id is None:
         stored_account = get_stored_account_archive(
@@ -242,7 +248,7 @@ def store_post(
 
 
 def store_post_archive(
-        post: Post, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int] = None
+        post: Post, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int], _: Optional[Path]
 ) -> int:
     if existing_id is not None:
         db.execute_query(
@@ -295,8 +301,9 @@ def store_post_archive(
 
 
 def store_media(
-        media: Media, existing_id: Optional[int]
+        media: Media, existing_id: Optional[int], archive_location: Path
 ) -> int:
+    local_url = (f"{LOCAL_ARCHIVES_DIR_ALIAS}/" + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()) if media.local_url is not None else None
     if media.post_id is None:
         stored_post = get_stored_post_archive(
             Post(url=media.post_url, id_on_platform=media.post_id_on_platform), None
@@ -320,7 +327,7 @@ def store_media(
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
-                "local_url": media.local_url,
+                "local_url": local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
             },
@@ -335,7 +342,7 @@ def store_media(
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
-                "local_url": media.local_url,
+                "local_url": local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
             },
@@ -345,8 +352,9 @@ def store_media(
 
 
 def store_media_archive(
-        media: Media, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int] = None
+        media: Media, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int], archive_location: Path
 ) -> int:
+    local_url = (f"{LOCAL_ARCHIVES_DIR_ALIAS}/" + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()) if media.local_url is not None else None
     if existing_id is not None:
         db.execute_query(
             """UPDATE media_archive
@@ -364,7 +372,7 @@ def store_media_archive(
                 "id": existing_id,
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
-                "local_url": media.local_url,
+                "local_url": local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "archive_session_id": archive_session_id,
@@ -384,7 +392,7 @@ def store_media_archive(
             {
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
-                "local_url": media.local_url,
+                "local_url": local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "archive_session_id": archive_session_id,

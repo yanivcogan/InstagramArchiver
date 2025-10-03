@@ -1,17 +1,12 @@
 import json
 import traceback
-from pathlib import Path
 
 import db
+from extractors.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
 from extractors.db_intake import incorporate_structures_into_db
-from utils import ROOT_DIR
-
-
-LOCAL_ARCHIVES_DIR_ALIAS = 'local_archive_har'
-ROOT_ARCHIVES = Path(ROOT_DIR) / "archives"
 
 
 def register_archives():
@@ -167,7 +162,7 @@ def extract_entities():
                 har_data.videos,
                 har_data.photos
             )
-            incorporate_structures_into_db(entities, entry['id'])
+            incorporate_structures_into_db(entities, entry['id'], archive_dir)
             db.execute_query(
                 "UPDATE archive_session SET extraction_error = NULL, extracted_entities = %(v)s WHERE external_id = %(id)s",
                 {"id": entry_id, "v": ENTITY_EXTRACTION_ALGORITHM_VERSION},

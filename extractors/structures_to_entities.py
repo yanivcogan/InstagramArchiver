@@ -123,7 +123,7 @@ def extract_entities_from_har(
     return flattened_entities
 
 
-def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNested:
+def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNested:
     nested_accounts: list[AccountAndAssociatedEntities] = []
     orphaned_posts: list[PostAndAssociatedEntities] = []
     orphaned_media: list[MediaAndAssociatedEntities] = []

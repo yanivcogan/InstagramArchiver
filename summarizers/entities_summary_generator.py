@@ -5,7 +5,7 @@ from typing import Any
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.entity_types import AccountAndAssociatedEntities, PostAndAssociatedEntities, ExtractedEntitiesNested, MediaAndAssociatedEntities
-from extractors.structures_to_entities import extract_entities_from_har, nest_entities
+from extractors.structures_to_entities import extract_entities_from_har, nest_entities_from_archive_session
 from bs4 import BeautifulSoup, Tag
 
 
@@ -480,7 +480,7 @@ def generate_entities_summary(
         )
 ):
     flattened_entities = extract_entities_from_har(har_path, video_acquisition_config, photo_acquisition_config)
-    nested_entities = nest_entities(flattened_entities)
+    nested_entities = nest_entities_from_archive_session(flattened_entities)
     html = summarize_nested_entities(nested_entities, metadata)
     # replace absolute paths under archive_dir with relative paths
     archive_dir_str = archive_dir.as_posix()
