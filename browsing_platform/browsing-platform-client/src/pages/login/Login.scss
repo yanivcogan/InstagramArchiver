@@ -1,0 +1,45 @@
+@import "../../lib/variables.scss";
+
+.page-wrap-login {
+  color: antiquewhite;
+  background-color: $purple-main;
+  height: 100vh;
+  width: 100vw;
+  position: fixed;
+  overflow: auto;
+  top: 0;
+
+  .welcome-title-wrap {
+    width: 100%;
+    margin: 0 auto;
+    text-align: center;
+    .title-adornments{
+      color: #436060;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .welcome-title-wrap {
+    .welcome-title {
+      padding: 0 1em;
+      margin-bottom: 0;
+      box-sizing: border-box;
+    }
+  }
+}
+
+@media (min-width: 768px) {
+  .welcome-title-wrap {
+    .welcome-title {
+      font-size: 36px;
+    }
+  }
+}
+
+.authentication-modal{
+    background: white;
+    padding: 1em 2em;
+    border-radius: 1em;
+    outline: none;
+}

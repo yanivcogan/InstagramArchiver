@@ -1,0 +1,114 @@
+@import "../lib/variables.scss";
+
+.link-button{
+  display: block;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.big-button{
+  display: block;
+  padding: 0.5em 2em;
+  line-height: 1em;
+  font-size: 21px;
+  font-weight: bold;
+  color: white;
+  background-color: $purple-main;
+  border: none;
+  outline: none;
+  position: relative;
+}
+
+.big-button:not(:disabled):hover {
+  background: linear-gradient(135deg, rgba(112,7,110,1) 0%, rgba(112,7,110,1) 32%, rgba(187,101,186,1) 50%, rgba(112,7,110,1) 66%, rgba(112,7,110,1) 100%);
+  background-size: 800% 800%;
+  -webkit-animation: sheen 1s ease forwards;
+  -moz-animation: sheen 1s ease forwards;
+  animation: sheen 1s ease forwards;
+}
+
+.big-button:not(:disabled):active {
+  background-color: $purple-dark;
+}
+
+.big-button.red-button{
+  background-color: $red-main;
+}
+
+.big-button.red-button:not(:disabled):hover {
+  background: linear-gradient(135deg, $red-dark 0%, $red-dark 32%, $red-light 50%, $red-dark 66%, $red-dark 100%);
+  background-size: 800% 800%;
+  -webkit-animation: sheen 1s ease forwards;
+  -moz-animation: sheen 1s ease forwards;
+  animation: sheen 1s ease forwards;
+}
+
+.big-button.red-button:not(:disabled):active {
+  background-color: $red-darker;
+}
+
+@-webkit-keyframes sheen {
+  0%{background-position:0 50%}
+  100%{background-position:100% 50%}
+}
+@-moz-keyframes sheen {
+  0%{background-position:0 50%}
+  100%{background-position:100% 50%}
+}
+@keyframes sheen {
+  0%{background-position:0 50%}
+  100%{background-position:100% 50%}
+}
+
+.big-button:disabled {
+  background-color: #666;
+  cursor: not-allowed;
+}
+
+.small-purple-button{
+  height: 1.5em;
+  line-height: 1.5em;
+  background-color: $purple-main;
+  color: #fff;
+  cursor: pointer;
+}
+.small-purple-button:not(:disabled):hover{
+  background-color: $purple-dark;
+}
+.small-purple-button:not(:disabled):active{
+  background-color: $purple-darker;
+}
+
+.small-purple-button:disabled{
+  background-color: #666;
+  cursor: not-allowed;
+}
+
+.refresh-button{
+  width: 2em;
+  height: 2em;
+  font-size: 1.25em;
+  outline: none;
+  border: none;
+  padding: 0.125em 0.5em;
+  top: 0;
+  cursor: pointer;
+  background-color: #DDD;
+  color: $purple-main;
+  border-radius: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refresh-button:hover {
+  background-color: #CCC;
+}
+
+.refresh-button:active {
+  background-color: #AAA;
+}
+
+.refresh-button:focus, .refresh-button:active {
+  box-shadow: 0 0 2px #000000a0 inset;
+}
