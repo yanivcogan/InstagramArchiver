@@ -2,7 +2,7 @@ from http.client import HTTPException
 
 from fastapi import APIRouter, Depends
 
-from browsing_platform.server.services.media import get_enriched_media_by_id
+from browsing_platform.server.services.enriched_entities import get_enriched_media_by_id
 from browsing_platform.server.services.permissions import get_auth_user
 from extractors.entity_types import ExtractedEntitiesNested
 

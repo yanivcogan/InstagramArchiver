@@ -15,3 +15,5 @@ ffmpeg/*
 open_ssl_location.txt
 /.env
 /packaged_archives/
+browsing_platform/server/routes/__pycache__/*
+browsing_platform/server/services/__pycache__/*

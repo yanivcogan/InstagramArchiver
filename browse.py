@@ -1,10 +1,19 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
-from browsing_platform.server.routes import account, post, media, archiving_session
+from browsing_platform.server.routes import account, post, media, archiving_session, login
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Serve the 'archives' directory statically
 app.mount("/archives", StaticFiles(directory="archives"), name="archives")
@@ -13,6 +22,7 @@ for r in [
     post.router,
     media.router,
     archiving_session.router,
+    login.router
 ]:
     app.include_router(r, prefix="/api")
 

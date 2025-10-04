@@ -64,7 +64,7 @@ class Login extends React.Component<IProps, IState> {
         if (this.state.awaitingAuthentication) return;
         const payload = {email: this.state.email, password: this.state.password};
         this.setState({awaitingAuthentication: true}, async () => {
-            const res = await server.post("login/login/pass/", payload);
+            const res = await server.post("login/", payload);
             if (res.token) {
                 this.setState({awaitingAuthentication: false});
                 cookie.set('token', res.token, {expires: 30});

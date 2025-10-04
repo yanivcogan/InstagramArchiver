@@ -1,10 +1,5 @@
-from typing import Optional
-
 import db
-from browsing_platform.server.services.account import get_account_by_id
-from browsing_platform.server.services.entities_hierarchy import nest_entities
-from browsing_platform.server.services.media import get_media_by_posts
-from extractors.entity_types import Account, Post, ExtractedEntitiesNested, ExtractedEntitiesFlattened
+from extractors.entity_types import Account, Post
 
 
 def get_post_by_id(post_id: int) -> Post | None:
@@ -16,23 +11,6 @@ def get_post_by_id(post_id: int) -> Post | None:
     if row is None:
         return None
     return Post(**row)
-
-
-def get_enriched_post_by_id(post_id: int) -> Optional[ExtractedEntitiesNested]:
-    post = get_post_by_id(post_id)
-    if post is None:
-        return None
-    account = get_account_by_id(post.account_id)
-    media = get_media_by_posts([post])
-
-    # Flatten and nest entities
-    flattened_entities = ExtractedEntitiesFlattened(
-        accounts=[account],
-        posts=[post],
-        media=media
-    )
-    nested_entities = nest_entities(flattened_entities)
-    return nested_entities
 
 
 def get_posts_by_accounts(accounts: list[Account]) -> list[Post]:

@@ -3,7 +3,7 @@ from http.client import HTTPException
 from fastapi import APIRouter, Depends
 
 from browsing_platform.server.services.permissions import get_auth_user
-from browsing_platform.server.services.post import get_enriched_post_by_id
+from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id
 from extractors.entity_types import ExtractedEntitiesNested
 
 router = APIRouter(
