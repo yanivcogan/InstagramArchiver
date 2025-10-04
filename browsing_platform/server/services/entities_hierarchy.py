@@ -2,7 +2,9 @@ from extractors.entity_types import ExtractedEntitiesFlattened, ExtractedEntitie
     PostAndAssociatedEntities, MediaAndAssociatedEntities
 
 
-def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNested:
+def nest_entities(
+        entities: ExtractedEntitiesFlattened,
+) -> ExtractedEntitiesNested:
     nested_accounts: list[AccountAndAssociatedEntities] = []
     orphaned_posts: list[PostAndAssociatedEntities] = []
     orphaned_media: list[MediaAndAssociatedEntities] = []
@@ -28,7 +30,7 @@ def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNest
             post_author=None
         )
         if post.account_id in account_map:
-            post_map[post.id].post_author = account_map[post.account_id]
+            # post_map[post.id].post_author = account_map[post.account_id]
             account_map[post.account_id].account_posts.append(post_map[post.id])
         else:
             orphaned_posts.append(post_map[post.id])
@@ -37,7 +39,7 @@ def nest_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntitiesNest
         if media.post_id in post_map:
             post_map[media.post_id].post_media.append(MediaAndAssociatedEntities(
                 **media.model_dump(),
-                media_parent_post=post_map[media.post_id]
+                media_parent_post=None
             ))
         else:
             orphaned_media.append(MediaAndAssociatedEntities(

@@ -1,11 +1,11 @@
 import React, {Component, ReactElement} from 'react';
-import {Popover, Stack} from '@mui/material';
+import {Popover, PopoverProps, Stack} from '@mui/material';
 import {SxProps, Theme} from "@mui/system";
 
 interface IProps {
     trigger: (popupVisibilitySetter: (e: React.MouseEvent<HTMLElement>, visibility: boolean) => any) => ReactElement;
     content: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement;
-    popoverSx?: SxProps<Theme> | undefined
+    popoverProps?: Partial<PopoverProps>
 }
 
 
@@ -35,13 +35,14 @@ export default class SelfContainedPopover extends Component<IProps, IState> {
                         this.setState({visible: false})
                     }}
                     sx={
-                        this.props.popoverSx ? this.props.popoverSx : {
+                        {
                             '& .MuiPaper-root': {
                                 padding: '1em'
                             }
                         }
                     }
                     anchorEl={this.state.anchorEl}
+                    {...this.props.popoverProps}
                 >
                     {
                         this.props.content(

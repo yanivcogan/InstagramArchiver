@@ -16,6 +16,8 @@ import {KeyStatesProvider} from './services/keys/keyStates';
 import {incorporateArrayInQueue, IPopupAlert, IPreparedPopupAlert} from "./services/alerts/alerts";
 import withReactErrorSuppression from "./services/reactErrorSuppression/reactErrorSuppression";
 import Alert from "./UIComponents/Alert/Alert";
+import Account from "./UIComponents/Entities/Account";
+import AccountPage from "./pages/AccountPage";
 
 interface IAppProps {
 }
@@ -65,6 +67,7 @@ class App extends React.Component <IAppProps, IAppState> {
                     <Routes>
                         <Route path="/" element={<Login/>}/>
                         <Route path="/login" element={<Login/>}/>
+                        <Route path="/account/:id" element={<AccountPage/>}/>
                         <Route path="/*" element={<NoMatch/>}/>
                     </Routes>
                     <Alert
