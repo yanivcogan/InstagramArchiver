@@ -33,8 +33,8 @@ class AccountPage extends React.Component<IProps, IState> {
     componentDidUpdate() {
         const id_param = this.props.params.id;
         const id = id_param === undefined ? null : parseInt(id_param);
-        if(id !== this.state.id){
-            this.setState((curr)=>({...curr, id}), async ()=>{
+        if (id !== this.state.id) {
+            this.setState((curr) => ({...curr, id}), async () => {
                 await this.fetchData()
             })
         }
@@ -46,11 +46,23 @@ class AccountPage extends React.Component<IProps, IState> {
 
     fetchData = async () => {
         const id = this.state.id;
-        if(id === null){
+        if (id === null) {
             return;
         }
-        this.setState((curr) => ({...curr, loadingData: true}), async ()=>{
-            const data = await fetchAccount(id)
+        this.setState((curr) => ({...curr, loadingData: true}), async () => {
+            const data = await fetchAccount(
+                id,
+                {
+                    flattened_entities_transform: {
+                        retain_only_media_with_local_files: true,
+                        local_files_root: null,
+                    },
+                    nested_entities_transform: {
+                        retain_only_posts_with_media: true,
+                        retain_only_accounts_with_posts: false,
+                    }
+                }
+            )
             this.setState((curr) => ({...curr, data, loadingData: false}))
         });
     }
@@ -66,10 +78,16 @@ class AccountPage extends React.Component<IProps, IState> {
         if (!data) {
             return <div>No data</div>
         }
-        return <EntitiesViewer entities={data}/>
+        return <EntitiesViewer
+            entities={data}
+            mediaStyle={{
+                maxWidth: '17vw',
+                maxHeight: '50vh',
+            }}
+        />
     }
 
-    render(){
+    render() {
         return <div className={"page-wrap"}>
             <TopNavBar>
                 Account Data

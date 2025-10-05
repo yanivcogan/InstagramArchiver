@@ -8,6 +8,7 @@ import ReactJson from "react-json-view";
 
 interface IProps {
     media: MediaAndAssociatedEntities
+    mediaStyle?: React.CSSProperties
 }
 
 interface IState {
@@ -26,7 +27,7 @@ export default class Media extends React.Component <IProps, IState> {
     render() {
         const media = this.props.media;
         let localUrl = media.local_url;
-        if(localUrl && localUrl.startsWith("local_archive_har")){
+        if (localUrl && localUrl.startsWith("local_archive_har")) {
             localUrl = localUrl.replace("local_archive_har", "http://127.0.0.1:4444/archives");
         }
         return <SelfContainedPopover
@@ -36,6 +37,13 @@ export default class Media extends React.Component <IProps, IState> {
                         media.media_type === "video" ?
                             <video
                                 src={localUrl}
+                                style={
+                                    {
+                                        backgroundColor: '#000',
+                                        ...this.props.mediaStyle
+                                    }
+                                }
+                                controls
                             /> :
                             null
                     }
@@ -44,15 +52,16 @@ export default class Media extends React.Component <IProps, IState> {
                             <img
                                 src={localUrl}
                                 alt={"photo"}
+                                style={this.props.mediaStyle}
                             /> :
                             null
                     }
                 </Box>
             )}
             content={() => (<ReactJson
-                        src={media.data}
-                        enableClipboard={false}
-                    />)}
+                src={media.data}
+                enableClipboard={false}
+            />)}
             popoverProps={
                 {
                     anchorOrigin: {

@@ -1,14 +1,12 @@
 import React from 'react';
 import {AccountAndAssociatedEntities} from "../../types/entities";
 import {
-    Accordion,
-    AccordionDetails,
-    AccordionSummary,
     Box,
     Collapse,
     Grid,
     IconButton,
     Paper,
+    Stack,
     Typography
 } from "@mui/material";
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
@@ -17,6 +15,7 @@ import ReactJson from "react-json-view";
 
 interface IProps {
     account: AccountAndAssociatedEntities
+    mediaStyle?: React.CSSProperties
 }
 
 interface IState {
@@ -34,36 +33,40 @@ export default class Account extends React.Component <IProps, IState> {
 
     render() {
         const account = this.props.account;
-        return <Paper>
-            <a href={account.url}>
-                <Typography variant={"body1"}>{account.url}</Typography>
-            </a>
-            {account.display_name ? <Typography variant="h5">{account.display_name}</Typography> : null}
-            <Typography variant="caption">{account.bio}</Typography>
-            <IconButton
-                size="small"
-                color={"primary"}
-                onClick={() => this.setState((curr) => ({...curr, expandDetails: !curr.expandDetails}))}
-            >
-                <MoreHorizIcon/>
-            </IconButton>
-            <Collapse in={this.state.expandDetails}>
+        return <Paper sx={{padding: '1em'}}>
+            <Stack gap={0.5}>
+                <a href={account.url}>
+                    <Typography variant={"body1"}>{account.url}</Typography>
+                </a>
+                {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
+                <Typography variant="caption">{account.bio}</Typography>
+                <span>
+                    <IconButton
+                        size="small"
+                        color={"primary"}
+                        onClick={() => this.setState((curr) => ({...curr, expandDetails: !curr.expandDetails}))}
+                    >
+                        <MoreHorizIcon/>
+                    </IconButton>
+                </span>
+                <Collapse in={this.state.expandDetails}>
                     <ReactJson
                         src={account.data}
                         enableClipboard={false}
                     />
-            </Collapse>
-            <Box>
-                <Grid container spacing={2}>
-                    {
-                        account.account_posts.map((p, p_i) =>{
-                            return <React.Fragment key={p_i}>
-                                <Post post={p} />
-                            </React.Fragment>
-                        })
-                    }
-                </Grid>
-            </Box>
+                </Collapse>
+                <Box>
+                    <Grid container spacing={2}>
+                        {
+                            account.account_posts.map((p, p_i) => {
+                                return <React.Fragment key={p_i}>
+                                    <Post post={p} mediaStyle={this.props.mediaStyle}/>
+                                </React.Fragment>
+                            })
+                        }
+                    </Grid>
+                </Box>
+            </Stack>
         </Paper>
     }
 }

@@ -45,6 +45,10 @@ def apply_nested_entities_transform(
         entities.posts = [
             p for p in entities.posts if p.post_media and len(p.post_media) > 0
         ]
+        for account in entities.accounts:
+            account.account_posts = [
+                p for p in account.account_posts if p.post_media and len(p.post_media) > 0
+            ]
     if transform.retain_only_accounts_with_posts:
         entities.accounts = [
             a for a in entities.accounts if a.account_posts and len(a.account_posts) > 0
