@@ -48,7 +48,7 @@ export default class Post extends React.Component <IProps, IState> {
                     />
                 </Collapse>
                 <Box>
-                    <Grid container spacing={2}>
+                    <Grid container gap={1}>
                         {
                             post.post_media.map((m, m_i) => {
                                 return <Grid item xs={2} key={m_i}>

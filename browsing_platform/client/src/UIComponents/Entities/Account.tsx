@@ -56,7 +56,7 @@ export default class Account extends React.Component <IProps, IState> {
                     />
                 </Collapse>
                 <Box>
-                    <Grid container spacing={2}>
+                    <Grid container gap={1}>
                         {
                             account.account_posts.map((p, p_i) => {
                                 return <React.Fragment key={p_i}>
