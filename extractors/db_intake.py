@@ -17,6 +17,7 @@ class EntityProcessingConfig(BaseModel, Generic[EntityType]):
     key: str
     table: str
     get_entity: Callable[[EntityType, Optional[int]], Optional[EntityType]]
+    raw_entity_preprocessing: Optional[Callable[[EntityType, Optional[int], Optional[Path]], EntityType]] = None
     store_entity: Callable[[EntityType, Optional[int], Optional[Path]], int]
     store_entity_archive: Callable[[EntityType, int, Optional[int], Optional[int], Optional[Path]], int]
     merge: Callable[[EntityType, Optional[EntityType]], EntityType]
@@ -28,12 +29,13 @@ def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archi
         for entity in entities:
             existing_entity = entity_config.get_entity(entity, None)
             existing_entity_id = existing_entity.id if existing_entity is not None else None
+            if entity_config.raw_entity_preprocessing is not None:
+                entity = entity_config.raw_entity_preprocessing(entity, existing_entity_id, archive_location)
             entity_id = entity_config.store_entity(
                 entity_config.merge(entity, existing_entity),
                 existing_entity_id,
                 archive_location
             )
-
             existing_entity_within_archive = entity_config.get_entity(
                 existing_entity, archive_session_id
             ) if existing_entity else None
@@ -300,10 +302,15 @@ def store_post_archive(
         return post_id
 
 
+def preprocess_media(media: Media, _: Optional[int], archive_location: Path) -> Media:
+    local_url = (f"{LOCAL_ARCHIVES_DIR_ALIAS}/" + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()) if media.local_url is not None else None
+    media.local_url = local_url
+    return media
+
+
 def store_media(
         media: Media, existing_id: Optional[int], archive_location: Path
 ) -> int:
-    local_url = (f"{LOCAL_ARCHIVES_DIR_ALIAS}/" + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()) if media.local_url is not None else None
     if media.post_id is None:
         stored_post = get_stored_post_archive(
             Post(url=media.post_url, id_on_platform=media.post_id_on_platform), None
@@ -327,7 +334,7 @@ def store_media(
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
-                "local_url": local_url,
+                "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
             },
@@ -342,7 +349,7 @@ def store_media(
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
-                "local_url": local_url,
+                "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
             },
@@ -354,7 +361,6 @@ def store_media(
 def store_media_archive(
         media: Media, archive_session_id: int, existing_id: Optional[int], canonical_id: Optional[int], archive_location: Path
 ) -> int:
-    local_url = (f"{LOCAL_ARCHIVES_DIR_ALIAS}/" + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()) if media.local_url is not None else None
     if existing_id is not None:
         db.execute_query(
             """UPDATE media_archive
@@ -372,7 +378,7 @@ def store_media_archive(
                 "id": existing_id,
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
-                "local_url": local_url,
+                "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "archive_session_id": archive_session_id,
@@ -392,7 +398,7 @@ def store_media_archive(
             {
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
-                "local_url": local_url,
+                "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "archive_session_id": archive_session_id,
@@ -428,6 +434,7 @@ entity_types: list[EntityProcessingConfig] = [
         get_entity=get_stored_media_archive,
         store_entity=store_media,
         store_entity_archive=store_media_archive,
-        merge=reconcile_media
+        merge=reconcile_media,
+        raw_entity_preprocessing=preprocess_media
     ),
 ]
