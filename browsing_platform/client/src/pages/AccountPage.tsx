@@ -5,7 +5,7 @@ import {
     Box,
     CircularProgress,
 } from "@mui/material";
-import {ExtractedEntitiesNested} from "../types/entities";
+import {IExtractedEntitiesNested} from "../types/entities";
 import {fetchAccount} from "../UIComponents/Entities/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
@@ -14,7 +14,7 @@ type IProps = {} & IRouterProps;
 
 interface IState {
     id: number | null;
-    data: ExtractedEntitiesNested | null;
+    data: IExtractedEntitiesNested | null;
     loadingData: boolean;
 }
 

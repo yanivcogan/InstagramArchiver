@@ -1,11 +1,11 @@
-export interface EntityBase {
+export interface IEntityBase {
     id?: number;
     created_at?: string; // ISO date string
     updated_at?: string;
     canonical_id?: number;
 }
 
-export interface Account extends EntityBase {
+export interface IAccount extends IEntityBase {
     id_on_platform?: string;
     url: string;
     display_name?: string;
@@ -13,7 +13,7 @@ export interface Account extends EntityBase {
     data?: any;
 }
 
-export interface Post extends EntityBase {
+export interface IPost extends IEntityBase {
     id_on_platform?: string;
     url: string;
     account_id?: number;
@@ -24,20 +24,20 @@ export interface Post extends EntityBase {
     data?: any;
 }
 
-export type MediaType = 'video' | 'audio' | 'image';
+export type EMediaType = 'video' | 'audio' | 'image';
 
-export interface Media extends EntityBase {
+export interface IMedia extends IEntityBase {
     id_on_platform?: string;
     url: string;
     post_id?: number;
     post_id_on_platform?: string;
     post_url?: string;
     local_url?: string;
-    media_type: MediaType;
+    media_type: EMediaType;
     data?: any;
 }
 
-export interface Comment extends EntityBase {
+export interface IComment extends IEntityBase {
     id_on_platform?: string;
     url: string;
     post_id_on_platform: string;
@@ -49,7 +49,7 @@ export interface Comment extends EntityBase {
     data?: any;
 }
 
-export interface Like extends EntityBase {
+export interface ILike extends IEntityBase {
     id_on_platform?: string;
     post_id_on_platform?: string;
     post_url?: string;
@@ -58,19 +58,19 @@ export interface Like extends EntityBase {
     data?: any;
 }
 
-export interface Follower extends EntityBase {
+export interface IFollower extends IEntityBase {
     follower_account_id: string;
     following_account_id: string;
     data?: any;
 }
 
-export interface SuggestedAccount extends EntityBase {
+export interface ISuggestedAccount extends IEntityBase {
     context_account_id: string;
     suggested_account_id: string;
     data?: any;
 }
 
-export interface TaggedAccount extends EntityBase {
+export interface ITaggedAccount extends IEntityBase {
     tagged_account_id?: string;
     tagged_account_url?: string;
     context_account_id?: string;
@@ -81,37 +81,60 @@ export interface TaggedAccount extends EntityBase {
     data?: any;
 }
 
-export interface ExtractedEntitiesFlattened {
-    accounts: Account[];
-    posts: Post[];
-    media: Media[];
-    comments: Comment[];
-    likes: Like[];
-    followers: Follower[];
-    suggested_accounts: SuggestedAccount[];
-    tagged_accounts: TaggedAccount[];
+export interface IExtractedEntitiesFlattened {
+    accounts: IAccount[];
+    posts: IPost[];
+    media: IMedia[];
+    comments: IComment[];
+    likes: ILike[];
+    followers: IFollower[];
+    suggested_accounts: ISuggestedAccount[];
+    tagged_accounts: ITaggedAccount[];
 }
 
-export interface MediaAndAssociatedEntities extends Media {
-    media_parent_post?: PostAndAssociatedEntities;
+export interface IMediaAndAssociatedEntities extends IMedia {
+    media_parent_post?: IPostAndAssociatedEntities;
 }
 
-export interface PostAndAssociatedEntities extends Post {
-    post_author?: AccountAndAssociatedEntities;
-    post_media: MediaAndAssociatedEntities[];
-    post_comments: Comment[];
-    post_likes: Like[];
-    post_tagged_accounts: TaggedAccount[];
+export interface IPostAndAssociatedEntities extends IPost {
+    post_author?: IAccountAndAssociatedEntities;
+    post_media: IMediaAndAssociatedEntities[];
+    post_comments: IComment[];
+    post_likes: ILike[];
+    post_tagged_accounts: ITaggedAccount[];
 }
 
-export interface AccountAndAssociatedEntities extends Account {
-    account_posts: PostAndAssociatedEntities[];
-    account_followers: Follower[];
-    account_suggested_accounts: SuggestedAccount[];
+export interface IAccountAndAssociatedEntities extends IAccount {
+    account_posts: IPostAndAssociatedEntities[];
+    account_followers: IFollower[];
+    account_suggested_accounts: ISuggestedAccount[];
 }
 
-export interface ExtractedEntitiesNested {
-    accounts: AccountAndAssociatedEntities[];
-    posts: PostAndAssociatedEntities[];
-    media: MediaAndAssociatedEntities[];
+export interface IExtractedEntitiesNested {
+    accounts: IAccountAndAssociatedEntities[];
+    posts: IPostAndAssociatedEntities[];
+    media: IMediaAndAssociatedEntities[];
+}
+
+export interface IArchiveSession {
+    id?: number;
+    create_date?: string;
+    update_date?: string;
+    external_id?: string;
+    archived_url?: string;
+    archive_location?: string;
+    summary_html?: string;
+    parsed_content?: number;
+    structures?: Record<string, any>;
+    metadata?: Record<string, any>;
+    extracted_entities?: number;
+    archiving_timestamp?: string;
+    notes?: string;
+    extraction_error?: string;
+    source_type: number;
+}
+
+export interface IArchiveSessionWithEntities {
+    session: IArchiveSession;
+    entities: IExtractedEntitiesNested;
 }

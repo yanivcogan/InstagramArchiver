@@ -1,13 +1,13 @@
 import React from 'react';
 import {
-    MediaAndAssociatedEntities,
+    IMediaAndAssociatedEntities,
 } from "../../types/entities";
 import {Box} from "@mui/material";
 import SelfContainedPopover from "../SelfContainedComponents/selfContainedPopover";
 import ReactJson from "react-json-view";
 
 interface IProps {
-    media: MediaAndAssociatedEntities
+    media: IMediaAndAssociatedEntities
     mediaStyle?: React.CSSProperties
 }
 

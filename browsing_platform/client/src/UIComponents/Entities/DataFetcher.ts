@@ -1,4 +1,4 @@
-import {ExtractedEntitiesNested} from "../../types/entities";
+import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested} from "../../types/entities";
 import server from "../../services/server";
 
 interface FlattenedEntitiesTransform {
@@ -37,6 +37,30 @@ const entitiesTransformConfigToQueryParams = (config: EntitiesTransformConfig): 
     return params.toString();
 }
 
-export const fetchAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<ExtractedEntitiesNested> => {
+export const fetchAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
     return await server.get("account/" + accountId + "/?" + entitiesTransformConfigToQueryParams(config));
+}
+
+export const fetchPost = async (postId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
+    return await server.get("post/" + postId + "/?" + entitiesTransformConfigToQueryParams(config));
+}
+
+export const fetchMedia = async (mediaId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
+    return await server.get("media/" + mediaId + "/?" + entitiesTransformConfigToQueryParams(config));
+}
+
+export const fetchArchivingSession = async (archivingSessionId: number, config: EntitiesTransformConfig): Promise<IArchiveSessionWithEntities> => {
+    return await server.get("archiving_session/" + archivingSessionId + "/?" + entitiesTransformConfigToQueryParams(config));
+}
+
+export const fetchArchivingSessionsAccount = async (accountId: number): Promise<IArchiveSession[]> => {
+    return await server.get("archiving_session/account/" + accountId);
+}
+
+export const fetchArchivingSessionsPost = async (postId: number): Promise<IArchiveSession[]> => {
+    return await server.get("archiving_session/post/" + postId);
+}
+
+export const fetchArchivingSessionsMedia = async (mediaId: number): Promise<IArchiveSession[]> => {
+    return await server.get("archiving_session/media/" + mediaId);
 }

@@ -1,12 +1,12 @@
 import React from 'react';
-import {PostAndAssociatedEntities} from "../../types/entities";
+import {IPostAndAssociatedEntities} from "../../types/entities";
 import {Accordion, AccordionDetails, Box, Collapse, Grid, IconButton, Paper, Stack, Typography} from "@mui/material";
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Media from "./Media";
 import ReactJson from "react-json-view";
 
 interface IProps {
-    post: PostAndAssociatedEntities
+    post: IPostAndAssociatedEntities
     mediaStyle?: React.CSSProperties
 }
 

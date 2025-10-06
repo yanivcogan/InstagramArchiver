@@ -3,7 +3,8 @@ from pydantic import BaseModel
 
 import db
 from browsing_platform.server.services.account import get_account_by_id
-from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, get_archiving_session_by_id
+from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, get_archiving_session_by_id, \
+    ArchiveSession
 from browsing_platform.server.services.entities_hierarchy import nest_entities
 from browsing_platform.server.services.media import get_media_by_posts
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
@@ -80,8 +81,8 @@ def transform_and_nest(
 
 
 def get_enriched_media_by_id(
-    media_id: int,
-    config: Optional[EntitiesTransformConfig] = None
+        media_id: int,
+        config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
     row = db.execute_query(
         """SELECT *
@@ -108,8 +109,8 @@ def get_enriched_media_by_id(
 
 
 def get_enriched_post_by_id(
-    post_id: int,
-    config: Optional[EntitiesTransformConfig] = None
+        post_id: int,
+        config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
     post = get_post_by_id(post_id)
     if post is None:
@@ -128,8 +129,8 @@ def get_enriched_post_by_id(
 
 
 def get_enriched_account_by_id(
-    account_id: int,
-    config: Optional[EntitiesTransformConfig] = None
+        account_id: int,
+        config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
     account = get_account_by_id(account_id)
     if account is None:
@@ -148,8 +149,8 @@ def get_enriched_account_by_id(
 
 
 def get_enriched_archiving_session_by_id(
-    session_id: int,
-    config: Optional[EntitiesTransformConfig] = None
+        session_id: int,
+        config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ArchiveSessionWithEntities]:
     session = get_archiving_session_by_id(session_id)
     if session is None:
@@ -196,3 +197,69 @@ def get_enriched_archiving_session_by_id(
         session=session,
         entities=nested_entities
     )
+
+
+def get_archiving_sessions_by_account_id(
+        account_id: int,
+) -> list[ArchiveSession]:
+    # fetching all sessions in which at least one post from the account was archived
+    # additional sessions in which only the account was archived are not included,
+    # so as to not confuse users through the inclusions of content the account merely engaged with
+    account = get_account_by_id(account_id)
+    if account is None:
+        return []
+    posts = get_posts_by_accounts([account])
+    if not posts or len(posts) == 0:
+        return []
+    post_ids = [p.id for p in posts]
+    query_args = {f"post_id_{i}": f"{post_id}" for i, post_id in enumerate(post_ids)}
+    query_in_clause = ', '.join([f"%(post_id_{i})s" for i in range(len(post_ids))])
+    session_rows = db.execute_query(
+        f"""SELECT DISTINCT a_s.*
+            FROM archive_session AS a_s
+            LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
+            WHERE pa.canonical_id IN ({query_in_clause})
+        """,
+        query_args,
+        return_type="rows"
+    )
+    return [ArchiveSession(**s) for s in session_rows]
+
+
+def get_archiving_sessions_by_post_id(
+        post_id: int,
+) -> list[ArchiveSession]:
+    post = get_post_by_id(post_id)
+    if post is None:
+        return []
+    session_rows = db.execute_query(
+        """SELECT a_s.*
+            FROM archive_session AS a_s
+            LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
+            WHERE p_a.canonical_id LIKE %(post_id)s
+        """,
+        {"post_id": post_id},
+        return_type="rows"
+    )
+    return [ArchiveSession(**s) for s in session_rows]
+
+
+def get_archiving_sessions_by_media_id(
+        media_id: int,
+) -> list[ArchiveSession]:
+    media = db.execute_query(
+        """SELECT * FROM media WHERE id LIKE %(id)s""",
+        {"id": media_id},
+        return_type="single_row"
+    )
+    if media is None:
+        return []
+    session_rows = db.execute_query(
+        """SELECT a_s.*
+            FROM archive_session AS a_s
+            LEFT JOIN media_archive AS m_a ON a_s.id = m_a.archive_session_id
+            WHERE m_a.canonical_id LIKE %(media_id)s""",
+        {"media_id": media_id},
+        return_type="rows"
+    )
+    return [ArchiveSession(**s) for s in session_rows]

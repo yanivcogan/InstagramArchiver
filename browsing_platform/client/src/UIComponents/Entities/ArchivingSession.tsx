@@ -1,5 +1,5 @@
 import React from 'react';
-import {IAccountAndAssociatedEntities} from "../../types/entities";
+import {IArchiveSession} from "../../types/entities";
 import {
     Box,
     Collapse,
@@ -14,7 +14,7 @@ import Post from "./Post";
 import ReactJson from "react-json-view";
 
 interface IProps {
-    account: IAccountAndAssociatedEntities
+    session: IArchiveSession,
     mediaStyle?: React.CSSProperties
 }
 
@@ -23,7 +23,7 @@ interface IState {
 }
 
 
-export default class Account extends React.Component <IProps, IState> {
+export default class ArchiveSessionMetadata extends React.Component <IProps, IState> {
     constructor(props: IProps) {
         super(props);
         this.state = {
@@ -32,7 +32,7 @@ export default class Account extends React.Component <IProps, IState> {
     }
 
     render() {
-        const account = this.props.account;
+        const session = this.props.session;
         return <Paper sx={{padding: '1em'}}>
             <Stack gap={0.5}>
                 <a href={account.url}>
