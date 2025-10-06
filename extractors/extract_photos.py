@@ -341,6 +341,9 @@ def acquire_photos(
         if photo.fetched_assets:
             for fn in photo.fetched_assets:
                 possible_ids.add(fn)
+                if "." in fn:
+                    file_ext = fn.split('.')[-1]
+                    possible_ids.add(fn + '.' + file_ext)
         if any(pid in existing for pid in possible_ids):
             print(f"Skipping image {photo.asset_id} as it already exists in the output directory.")
             photo.local_files = [existing[pid] for pid in possible_ids if pid in existing]

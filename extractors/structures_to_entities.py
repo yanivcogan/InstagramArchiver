@@ -1140,7 +1140,22 @@ def manual_entity_extraction():
     # Strip leading and trailing whitespace as well as " " or " from the input
     har_file = har_file.strip().strip('"').strip("'")
     har_path = Path(har_file)
-    entities = extract_entities_from_har(har_path)
+    entities = extract_entities_from_har(
+        har_path,
+        VideoAcquisitionConfig(
+            download_missing=False,
+            download_media_not_in_structures=False,
+            download_unfetched_media=False,
+            download_full_versions_of_fetched_media=False,
+            download_highest_quality_assets_from_structures=False
+        ),
+        PhotoAcquisitionConfig(
+            download_missing=False,
+            download_media_not_in_structures=False,
+            download_unfetched_media=False,
+            download_highest_quality_assets_from_structures=False
+        )
+    )
     pyperclip.copy(entities.model_dump_json(indent=2))
 
 
