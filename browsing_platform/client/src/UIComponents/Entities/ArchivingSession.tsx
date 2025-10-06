@@ -2,16 +2,8 @@ import React from 'react';
 import {IArchiveSession} from "../../types/entities";
 import {
     Box,
-    Collapse,
-    Grid,
-    IconButton,
-    Paper,
-    Stack,
-    Typography
 } from "@mui/material";
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import Post from "./Post";
-import ReactJson from "react-json-view";
+import {DataGrid} from "@mui/x-data-grid";
 
 interface IProps {
     session: IArchiveSession,
@@ -33,40 +25,28 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
 
     render() {
         const session = this.props.session;
-        return <Paper sx={{padding: '1em'}}>
-            <Stack gap={0.5}>
-                <a href={account.url}>
-                    <Typography variant={"body1"}>{account.url}</Typography>
-                </a>
-                {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
-                <Typography variant="caption">{account.bio}</Typography>
-                <span>
-                    <IconButton
-                        size="small"
-                        color={"primary"}
-                        onClick={() => this.setState((curr) => ({...curr, expandDetails: !curr.expandDetails}))}
-                    >
-                        <MoreHorizIcon/>
-                    </IconButton>
-                </span>
-                <Collapse in={this.state.expandDetails}>
-                    <ReactJson
-                        src={account.data}
-                        enableClipboard={false}
-                    />
-                </Collapse>
-                <Box>
-                    <Grid container gap={1}>
-                        {
-                            account.account_posts.map((p, p_i) => {
-                                return <React.Fragment key={p_i}>
-                                    <Post post={p} mediaStyle={this.props.mediaStyle}/>
-                                </React.Fragment>
-                            })
-                        }
-                    </Grid>
-                </Box>
-            </Stack>
-        </Paper>
+        const metadata = session.metadata || {};
+        // Convert metadata object to array of { key, value } for DataGrid
+        const rows = Object.entries(metadata).map(([key, value], idx) => ({
+            id: idx,
+            key,
+            value: typeof value === 'object' ? JSON.stringify(value) : String(value)
+        }));
+
+        const columns = [
+            {field: 'key', headerName: 'Key', flex: 1},
+            {field: 'value', headerName: 'Value', flex: 2}
+        ];
+
+        return (
+            <Box sx={{height: 400, width: 400}}>
+                <DataGrid
+                    rows={rows}
+                    columns={columns}
+                    hideFooterPagination
+                    hideFooter
+                />
+            </Box>
+        );
     }
 }

@@ -1,25 +1,36 @@
+from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import db
+import json
 from extractors.entity_types import ExtractedEntitiesNested
 
 
 class ArchiveSession(BaseModel):
-    id: Optional[int]
-    create_date: Optional[str]
-    update_date: Optional[str]
-    external_id: Optional[str]
-    archived_url: Optional[str]
-    archive_location: Optional[str]
-    summary_html: Optional[str]
-    parsed_content: Optional[int]
-    structures: Optional[dict]
-    metadata: Optional[dict]
-    extracted_entities: Optional[int]
-    archiving_timestamp: Optional[str]
-    notes: Optional[str]
-    extraction_error: Optional[str]
+    id: Optional[int] = None
+    create_date: Optional[datetime] = None
+    update_date: Optional[datetime] = None
+    external_id: Optional[str] = None
+    archived_url: Optional[str] = None
+    archive_location: Optional[str] = None
+    summary_html: Optional[str] = None
+    parsed_content: Optional[int] = None
+    structures: Optional[dict] = None
+    metadata: Optional[dict] = None
+    extracted_entities: Optional[int] = None
+    archiving_timestamp: Optional[str] = None
+    notes: Optional[str] = None
+    extraction_error: Optional[str] = None
     source_type: int = 0
+
+    @field_validator('metadata', 'structures', mode='before')
+    def parse_data(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = None
+        return v
 
 
 class ArchiveSessionWithEntities(BaseModel):

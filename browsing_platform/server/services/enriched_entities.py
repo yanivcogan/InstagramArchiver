@@ -218,7 +218,7 @@ def get_archiving_sessions_by_account_id(
         f"""SELECT DISTINCT a_s.*
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
-            WHERE pa.canonical_id IN ({query_in_clause})
+            WHERE p_a.canonical_id IN ({query_in_clause})
         """,
         query_args,
         return_type="rows"
