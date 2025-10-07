@@ -39,7 +39,7 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
         ];
 
         return (
-            <Box sx={{height: 400, width: 400}}>
+            <Box sx={{height: 400, width: 600}}>
                 <DataGrid
                     rows={rows}
                     columns={columns}

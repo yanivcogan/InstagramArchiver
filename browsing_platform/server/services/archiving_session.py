@@ -40,7 +40,7 @@ class ArchiveSessionWithEntities(BaseModel):
 
 def get_archiving_session_by_id(session_id: int) -> Optional[ArchiveSession]:
     session = db.execute_query(
-        """SELECT * FROM archive_session WHERE id LIKE %(id)s""",
+        """SELECT * FROM archive_session WHERE id = %(id)s""",
         {"id": session_id},
         return_type="single_row"
     )

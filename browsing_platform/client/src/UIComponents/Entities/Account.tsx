@@ -9,6 +9,7 @@ import {
     Stack,
     Typography
 } from "@mui/material";
+import LinkIcon from '@mui/icons-material/Link';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Post from "./Post";
 import ReactJson from "react-json-view";
@@ -35,9 +36,17 @@ export default class Account extends React.Component <IProps, IState> {
         const account = this.props.account;
         return <Paper sx={{padding: '1em'}}>
             <Stack gap={0.5}>
-                <a href={account.url}>
-                    <Typography variant={"body1"}>{account.url}</Typography>
-                </a>
+                <Stack gap={1} direction={"row"} alignItems={"center"}>
+                    <a href={account.url}>
+                        <Typography variant={"body1"}>{account.url}</Typography>
+                    </a>
+                    <IconButton
+                        color={"primary"}
+                        href={"/account/" + account.id}
+                    >
+                        <LinkIcon/>
+                    </IconButton>
+                </Stack>
                 {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
                 <Typography variant="caption">{account.bio}</Typography>
                 <span>

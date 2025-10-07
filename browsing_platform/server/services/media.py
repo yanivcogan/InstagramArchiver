@@ -4,7 +4,7 @@ from extractors.entity_types import Post, Media
 
 def get_media_by_id(media_id: int) -> Media | None:
     row = db.execute_query(
-        """SELECT * FROM media WHERE id LIKE %(id)s""",
+        """SELECT * FROM media WHERE id = %(id)s""",
         {"id": media_id},
         return_type="single_row"
     )

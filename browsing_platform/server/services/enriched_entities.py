@@ -87,7 +87,7 @@ def get_enriched_media_by_id(
     row = db.execute_query(
         """SELECT *
            FROM media
-           WHERE id LIKE %(id)s""",
+           WHERE id = %(id)s""",
         {"id": media_id},
         return_type="single_row"
     )
@@ -159,7 +159,7 @@ def get_enriched_archiving_session_by_id(
         """SELECT a.id, aa.url, aa.archive_session_id, aa.display_name, aa.bio
            FROM account_archive AS aa
                     LEFT JOIN account AS a ON aa.canonical_id = a.id
-           WHERE archive_session_id LIKE %(id)s
+           WHERE archive_session_id = %(id)s
         """,
         {"id": session_id},
         return_type="rows"
@@ -168,7 +168,7 @@ def get_enriched_archiving_session_by_id(
         """SELECT p.id, p.account_id, pa.url, pa.archive_session_id, pa.caption, pa.publication_date, pa.data
            FROM post_archive AS pa
                     LEFT JOIN post AS p ON pa.canonical_id = p.id
-           WHERE archive_session_id LIKE %(id)s
+           WHERE archive_session_id = %(id)s
         """,
         {"id": session_id},
         return_type="rows"
@@ -177,7 +177,7 @@ def get_enriched_archiving_session_by_id(
         """SELECT m.id, m.post_id, ma.url, ma.local_url, ma.archive_session_id, ma.media_type, ma.data
            FROM media_archive AS ma
                     LEFT JOIN media AS m ON ma.canonical_id = m.id
-           WHERE archive_session_id LIKE %(id)s
+           WHERE archive_session_id = %(id)s
         """,
         {"id": session_id},
         return_type="rows"
@@ -204,7 +204,7 @@ def get_archiving_sessions_by_account_id(
 ) -> list[ArchiveSession]:
     # fetching all sessions in which at least one post from the account was archived
     # additional sessions in which only the account was archived are not included,
-    # so as to not confuse users through the inclusions of content the account merely engaged with
+    # in order not to confuse users through the inclusions of content the account merely engaged with
     account = get_account_by_id(account_id)
     if account is None:
         return []
@@ -236,7 +236,7 @@ def get_archiving_sessions_by_post_id(
         """SELECT a_s.*
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
-            WHERE p_a.canonical_id LIKE %(post_id)s
+            WHERE p_a.canonical_id = %(post_id)s
         """,
         {"post_id": post_id},
         return_type="rows"
@@ -248,7 +248,7 @@ def get_archiving_sessions_by_media_id(
         media_id: int,
 ) -> list[ArchiveSession]:
     media = db.execute_query(
-        """SELECT * FROM media WHERE id LIKE %(id)s""",
+        """SELECT * FROM media WHERE id = %(id)s""",
         {"id": media_id},
         return_type="single_row"
     )
@@ -258,7 +258,7 @@ def get_archiving_sessions_by_media_id(
         """SELECT a_s.*
             FROM archive_session AS a_s
             LEFT JOIN media_archive AS m_a ON a_s.id = m_a.archive_session_id
-            WHERE m_a.canonical_id LIKE %(media_id)s""",
+            WHERE m_a.canonical_id = %(media_id)s""",
         {"media_id": media_id},
         return_type="rows"
     )

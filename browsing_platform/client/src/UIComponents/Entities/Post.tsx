@@ -1,9 +1,10 @@
 import React from 'react';
 import {IPostAndAssociatedEntities} from "../../types/entities";
-import {Accordion, AccordionDetails, Box, Collapse, Grid, IconButton, Paper, Stack, Typography} from "@mui/material";
+import {Box, Collapse, Grid, IconButton, Paper, Stack, Typography} from "@mui/material";
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Media from "./Media";
 import ReactJson from "react-json-view";
+import LinkIcon from "@mui/icons-material/Link";
 
 interface IProps {
     post: IPostAndAssociatedEntities
@@ -27,9 +28,17 @@ export default class Post extends React.Component <IProps, IState> {
         const post = this.props.post;
         return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
             <Stack gap={0.5}>
-                <a href={post.url}>
-                    <Typography variant={"body1"}>{post.url}</Typography>
-                </a>
+                <Stack gap={1} direction={"row"} alignItems={"center"}>
+                    <a href={post.url}>
+                        <Typography variant={"body1"}>{post.url}</Typography>
+                    </a>
+                    <IconButton
+                        color={"primary"}
+                        href={"/post/" + post.id}
+                    >
+                        <LinkIcon/>
+                    </IconButton>
+                </Stack>
                 <Typography variant="caption">{post.publication_date}</Typography>
                 {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
                 <span>

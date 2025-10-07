@@ -18,6 +18,7 @@ import withReactErrorSuppression from "./services/reactErrorSuppression/reactErr
 import Alert from "./UIComponents/Alert/Alert";
 import Account from "./UIComponents/Entities/Account";
 import AccountPage from "./pages/AccountPage";
+import PostPage from "./pages/PostPage";
 
 interface IAppProps {
 }
@@ -68,6 +69,7 @@ class App extends React.Component <IAppProps, IAppState> {
                         <Route path="/" element={<Login/>}/>
                         <Route path="/login" element={<Login/>}/>
                         <Route path="/account/:id" element={<AccountPage/>}/>
+                        <Route path="/post/:id" element={<PostPage/>}/>
                         <Route path="/*" element={<NoMatch/>}/>
                     </Routes>
                     <Alert
