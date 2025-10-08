@@ -56,17 +56,13 @@ export default class Post extends React.Component <IProps, IState> {
                         enableClipboard={false}
                     />
                 </Collapse>
-                <Box>
-                    <Grid container gap={1} columnGap={1}>
-                        {
-                            post.post_media.map((m, m_i) => {
-                                return <Grid item xs={2} key={m_i}>
-                                    <Media media={m} mediaStyle={this.props.mediaStyle}/>
-                                </Grid>
-                            })
-                        }
-                    </Grid>
-                </Box>
+                <Stack direction={"row"} useFlexGap={true} gap={1} flexWrap={"wrap"}>
+                    {
+                        post.post_media.map((m, m_i) => {
+                            return <Media media={m} mediaStyle={this.props.mediaStyle} key={m_i}/>
+                        })
+                    }
+                </Stack>
             </Stack>
         </Paper>
     }

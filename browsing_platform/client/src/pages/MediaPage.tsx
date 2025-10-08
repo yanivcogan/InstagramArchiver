@@ -6,7 +6,9 @@ import {
     CircularProgress, Divider, Stack,
 } from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
-import {fetchAccount, fetchArchivingSessionsAccount} from "../UIComponents/Entities/DataFetcher";
+import {
+    fetchArchivingSessionsMedia, fetchMedia
+} from "../UIComponents/Entities/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSession from "src/UIComponents/Entities/ArchivingSession";
@@ -21,7 +23,7 @@ interface IState {
     loadingSessions: boolean;
 }
 
-class AccountPage extends React.Component<IProps, IState> {
+class MediaPage extends React.Component<IProps, IState> {
     constructor(props: IProps) {
         super(props);
         const idArg = this.props.params.id;
@@ -61,7 +63,7 @@ class AccountPage extends React.Component<IProps, IState> {
             return;
         }
         this.setState((curr) => ({...curr, loadingData: true}), async () => {
-            const data = await fetchAccount(
+            const data = await fetchMedia(
                 id,
                 {
                     flattened_entities_transform: {
@@ -84,7 +86,7 @@ class AccountPage extends React.Component<IProps, IState> {
             return;
         }
         this.setState((curr) => ({...curr, loadingSessions: true}), async () => {
-            const sessions = await fetchArchivingSessionsAccount(id);
+            const sessions = await fetchArchivingSessionsMedia(id);
             this.setState((curr) => ({...curr, sessions, loadingSessions: false}))
         });
     }
@@ -112,7 +114,7 @@ class AccountPage extends React.Component<IProps, IState> {
     render() {
         return <div className={"page-wrap"}>
             <TopNavBar>
-                Account Data
+                Media Data
             </TopNavBar>
             <div className={"page-content content-wrap"}>
                 <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
@@ -148,4 +150,4 @@ class AccountPage extends React.Component<IProps, IState> {
     }
 }
 
-export default withRouter(AccountPage);
+export default withRouter(MediaPage);

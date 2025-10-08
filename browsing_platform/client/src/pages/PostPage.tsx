@@ -24,7 +24,7 @@ interface IState {
     loadingSessions: boolean;
 }
 
-class AccountPage extends React.Component<IProps, IState> {
+class PostPage extends React.Component<IProps, IState> {
     constructor(props: IProps) {
         super(props);
         const idArg = this.props.params.id;
@@ -106,7 +106,7 @@ class AccountPage extends React.Component<IProps, IState> {
         return <EntitiesViewer
             entities={data}
             mediaStyle={{
-                maxWidth: '17vw',
+                maxWidth: '100%',
                 maxHeight: '50vh',
             }}
         />
@@ -151,4 +151,4 @@ class AccountPage extends React.Component<IProps, IState> {
     }
 }
 
-export default withRouter(AccountPage);
+export default withRouter(PostPage);
