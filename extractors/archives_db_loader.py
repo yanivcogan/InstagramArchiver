@@ -5,6 +5,7 @@ import db
 from extractors.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
+from extractors.session_attachments import get_session_attachments
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
 from extractors.db_intake import incorporate_structures_into_db
 
@@ -77,6 +78,13 @@ def parse_archives():
             except Exception:
                 raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
 
+            try:
+                session_attachments = get_session_attachments(archive_dir).model_dump()
+            except Exception as e:
+                print(f"Warning: Could not get session attachments for archive {archive_name}: {e}")
+                traceback.print_exc()
+                session_attachments = dict()
+
             har_path = archive_dir / "archive.har"
             if not har_path.exists():
                 raise Exception(f"HAR file {har_path} does not exist")
@@ -109,14 +117,16 @@ def parse_archives():
                         parsed_content = %(parsing_code_version)s,
                         structures = %(structures)s,
                         metadata = %(metadata)s,
-                        extraction_error = NULL
+                        extraction_error = NULL,
+                        attachments = %(attachments)s
                     WHERE id = %(id)s
                     ''',
                     {
                         "id": entry['id'],
                         "structures": json.dumps(extracted_data.model_dump(), default=str, ensure_ascii=False),
                         "parsing_code_version": PARSING_ALGORITHM_VERSION,
-                        "metadata": json.dumps(metadata)
+                        "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
+                        "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str)
                     },
                     'none'
                 )
@@ -186,8 +196,42 @@ def clear_extraction_errors():
     )
 
 
+def add_missing_attachments():
+    while True:
+        entry = db.execute_query(
+            '''SELECT *
+               FROM archive_session 
+               WHERE attachments IS NULL AND source_type = 1 AND extraction_error IS NULL
+               LIMIT 1''',
+            {},
+            return_type="single_row"
+        )
+        if entry is None:
+            print("Added attachments to all entries.")
+            return
+        entry_id = entry['external_id'] or entry['id']
+        try:
+            print("Adding attachments for entry", entry_id)
+            archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
+            archive_dir = ROOT_ARCHIVES / archive_name
+            session_attachments = get_session_attachments(archive_dir).model_dump()
+            db.execute_query(
+                "UPDATE archive_session SET attachments = %(attachments)s WHERE external_id = %(id)s",
+                {"id": entry_id, "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str)},
+                return_type="none"
+            )
+        except Exception as e:
+            db.execute_query(
+                "UPDATE archive_session SET extraction_error = %(extraction_error)s WHERE external_id = %(id)s",
+                {"id": entry_id, "extraction_error": f"Error adding attachments: {str(e)}"},
+                return_type="none"
+            )
+            print(f"Error adding attachments for {entry_id}: {e}")
+            traceback.print_exc()
+
+
 if __name__ == "__main__":
-    stage = input("Enter stage (register, parse, extract, full, clear_errors): ").strip().lower()
+    stage = input("Enter stage (register, parse, extract, full, add_attachments, clear_errors): ").strip().lower()
     if stage == "register":
         register_archives()
     elif stage == "parse":
@@ -198,5 +242,7 @@ if __name__ == "__main__":
         register_archives()
         parse_archives()
         extract_entities()
+    elif stage == "add_attachments":
+        add_missing_attachments()
     elif stage == "clear_errors":
         clear_extraction_errors()

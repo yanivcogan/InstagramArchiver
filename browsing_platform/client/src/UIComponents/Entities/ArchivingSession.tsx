@@ -1,9 +1,13 @@
 import React from 'react';
 import {IArchiveSession} from "../../types/entities";
 import {
-    Box,
+    Box, Divider, Fade, IconButton, Stack,
 } from "@mui/material";
 import {DataGrid} from "@mui/x-data-grid";
+import LinkIcon from "@mui/icons-material/Link";
+import SelfContainedPopover from "../SelfContainedComponents/selfContainedPopover";
+import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import ReactJson from "react-json-view";
 
 interface IProps {
     session: IArchiveSession,
@@ -39,14 +43,39 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
         ];
 
         return (
-            <Box sx={{height: 400, width: 600}}>
-                <DataGrid
-                    rows={rows}
-                    columns={columns}
-                    hideFooterPagination
-                    hideFooter
-                />
-            </Box>
+            <Stack
+                direction={"column"}
+                divider={<Divider orientation="horizontal" flexItem/>}
+            >
+                <Stack
+                    direction={"row"}
+                    alignItems={"center"}
+                    sx={{height: 400, width: "100%", overflow: 'auto'}}
+                >
+                    {
+                        session.attachments?.screen_recordings?.map((sr) => {
+                            return <video
+                                key={sr}
+                                src={session.archive_location + '/' + sr}
+                                style={{
+                                    backgroundColor: '#000',
+                                    maxWidth: '100%',
+                                    maxHeight: '100%',
+                                }}
+                                controls
+                            />
+                        })
+                    }
+                </Stack>
+                <Box sx={{height: 400, width: 600, overflow: 'auto'}}>
+                    <DataGrid
+                        rows={rows}
+                        columns={columns}
+                        hideFooterPagination
+                        hideFooter
+                    />
+                </Box>
+            </Stack>
         );
     }
 }

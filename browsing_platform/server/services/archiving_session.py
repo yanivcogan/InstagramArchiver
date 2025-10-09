@@ -17,13 +17,14 @@ class ArchiveSession(BaseModel):
     parsed_content: Optional[int] = None
     structures: Optional[dict] = None
     metadata: Optional[dict] = None
+    attachments: Optional[dict] = None
     extracted_entities: Optional[int] = None
     archiving_timestamp: Optional[str] = None
     notes: Optional[str] = None
     extraction_error: Optional[str] = None
     source_type: int = 0
 
-    @field_validator('metadata', 'structures', mode='before')
+    @field_validator('metadata', 'structures', 'attachments', mode='before')
     def parse_data(cls, v, _):
         if isinstance(v, str):
             try:

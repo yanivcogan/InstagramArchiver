@@ -116,6 +116,16 @@ export interface IExtractedEntitiesNested {
     media: IMediaAndAssociatedEntities[];
 }
 
+export interface ISessionAttachments {
+    screen_recordings: string[];
+    screen_shots: string[];
+    wacz_archives: string[];
+    har_archives: string[];
+    hash_files: string[];
+    timestamp_files: string[];
+    other_files: string[];
+}
+
 export interface IArchiveSession {
     id?: number;
     create_date?: string;
@@ -127,6 +137,7 @@ export interface IArchiveSession {
     parsed_content?: number;
     structures?: Record<string, any>;
     metadata?: Record<string, any>;
+    attachments?: ISessionAttachments;
     extracted_entities?: number;
     archiving_timestamp?: string;
     notes?: string;
