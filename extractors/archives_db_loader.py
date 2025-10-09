@@ -187,12 +187,16 @@ def clear_extraction_errors():
 
 
 if __name__ == "__main__":
-    stage = input("Enter stage (register, parse, extract, clear_errors): ").strip().lower()
+    stage = input("Enter stage (register, parse, extract, full, clear_errors): ").strip().lower()
     if stage == "register":
         register_archives()
     elif stage == "parse":
         parse_archives()
     elif stage == "extract":
+        extract_entities()
+    elif stage == "full":
+        register_archives()
+        parse_archives()
         extract_entities()
     elif stage == "clear_errors":
         clear_extraction_errors()
