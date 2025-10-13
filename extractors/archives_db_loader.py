@@ -118,7 +118,8 @@ def parse_archives():
                         structures = %(structures)s,
                         metadata = %(metadata)s,
                         extraction_error = NULL,
-                        attachments = %(attachments)s
+                        attachments = %(attachments)s,
+                        notes = %(notes)s
                     WHERE id = %(id)s
                     ''',
                     {
@@ -126,7 +127,8 @@ def parse_archives():
                         "structures": json.dumps(extracted_data.model_dump(), default=str, ensure_ascii=False),
                         "parsing_code_version": PARSING_ALGORITHM_VERSION,
                         "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
-                        "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str)
+                        "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str),
+                        "notes": metadata.get("notes", None) if isinstance(metadata, dict) else None
                     },
                     'none'
                 )

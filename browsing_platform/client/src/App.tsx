@@ -20,6 +20,8 @@ import Account from "./UIComponents/Entities/Account";
 import AccountPage from "./pages/AccountPage";
 import PostPage from "./pages/PostPage";
 import MediaPage from "./pages/MediaPage";
+import SessionPage from "./pages/SessionPage";
+import SearchPage from "./pages/SearchPage";
 
 interface IAppProps {
 }
@@ -72,6 +74,8 @@ class App extends React.Component <IAppProps, IAppState> {
                         <Route path="/account/:id" element={<AccountPage/>}/>
                         <Route path="/post/:id" element={<PostPage/>}/>
                         <Route path="/media/:id" element={<MediaPage/>}/>
+                        <Route path="/archive/:id" element={<SessionPage/>}/>
+                        <Route path="/search" element={<SearchPage/>}/>
                         <Route path="/*" element={<NoMatch/>}/>
                     </Routes>
                     <Alert

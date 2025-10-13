@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 
-from browsing_platform.server.routes import account, post, media, archiving_session, login
+from browsing_platform.server.routes import account, post, media, archiving_session, login, search
 
 app = FastAPI()
 
@@ -22,6 +22,7 @@ for r in [
     post.router,
     media.router,
     archiving_session.router,
+    search.router,
     login.router
 ]:
     app.include_router(r, prefix="/api")

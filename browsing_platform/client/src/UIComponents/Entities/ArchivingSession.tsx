@@ -56,11 +56,11 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
                         session.attachments?.screen_recordings?.map((sr) => {
                             return <video
                                 key={sr}
-                                src={session.archive_location + '/' + sr}
+                                src={session.archive_location?.replace('local_archive_har', 'http://127.0.0.1:4444/archives') + '/' + sr}
                                 style={{
                                     backgroundColor: '#000',
-                                    maxWidth: '100%',
-                                    maxHeight: '100%',
+                                    maxWidth: 300,
+                                    maxHeight: 300
                                 }}
                                 controls
                             />
