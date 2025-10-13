@@ -405,7 +405,7 @@ if __name__ == "__main__":
     ensure_ffmpeg_installed()
     profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")
-    url = url.split("?igsh=")[0].strip()
+    url = url.split("?igsh=")[0].strip().split("&igsh=")[0].strip()
 
     archive_instagram_content(profile, url)
     sys.exit(0)
