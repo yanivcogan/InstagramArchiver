@@ -1,5 +1,10 @@
 import json
 import traceback
+from datetime import datetime
+from tzlocal import get_localzone_name
+
+from dateutil import parser
+from pytz import timezone as pytz_timezone
 
 import db
 from extractors.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES
@@ -72,9 +77,25 @@ def parse_archives():
             archive_dir = ROOT_ARCHIVES / archive_name
 
             metadata_path = archive_dir / "metadata.json"
+            iso_timestamp = None
+            archived_url = None
+            notes = None
             try:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.loads(f.read())
+                archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
+                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
+                timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
+                timezone = get_localzone_name()
+                if timestamp is not None:
+                    dt = parser.isoparse(timestamp)
+                    if dt.tzinfo is None:
+                        try:
+                            tz = pytz_timezone(timezone)
+                            dt = tz.localize(dt)
+                            iso_timestamp = dt.astimezone(pytz_timezone("UTC")).strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            pass
             except Exception:
                 raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
 
@@ -128,7 +149,9 @@ def parse_archives():
                         "parsing_code_version": PARSING_ALGORITHM_VERSION,
                         "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
                         "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str),
-                        "notes": metadata.get("notes", None) if isinstance(metadata, dict) else None
+                        "archived_url": archived_url,
+                        "archiving_timestamp": iso_timestamp,
+                        "notes": notes
                     },
                     'none'
                 )
@@ -218,8 +241,72 @@ def add_missing_attachments():
             archive_dir = ROOT_ARCHIVES / archive_name
             session_attachments = get_session_attachments(archive_dir).model_dump()
             db.execute_query(
-                "UPDATE archive_session SET attachments = %(attachments)s WHERE external_id = %(id)s",
-                {"id": entry_id, "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str)},
+                "UPDATE archive_session SET attachments = %(attachments)s WHERE id = %(id)s",
+                {"id": entry['id'], "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str)},
+                return_type="none"
+            )
+        except Exception as e:
+            db.execute_query(
+                "UPDATE archive_session SET extraction_error = %(extraction_error)s WHERE external_id = %(id)s",
+                {"id": entry_id, "extraction_error": f"Error adding attachments: {str(e)}"},
+                return_type="none"
+            )
+            print(f"Error adding attachments for {entry_id}: {e}")
+            traceback.print_exc()
+
+
+def add_missing_metadata():
+    while True:
+        entry = db.execute_query(
+            '''SELECT *
+               FROM archive_session 
+               WHERE archiving_timestamp IS NULL AND source_type = 1 AND extraction_error IS NULL
+               LIMIT 1''',
+            {},
+            return_type="single_row"
+        )
+        if entry is None:
+            print("Added metadata to all entries.")
+            return
+        entry_id = entry['external_id'] or entry['id']
+        try:
+            print("Adding metadata for entry", entry_id)
+            archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
+            archive_dir = ROOT_ARCHIVES / archive_name
+            metadata_path = archive_dir / "metadata.json"
+            iso_timestamp = None
+            archived_url = None
+            notes = None
+            try:
+                with open(metadata_path, "r", encoding="utf-8") as f:
+                    metadata = json.loads(f.read())
+                archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
+                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
+                timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
+                timezone = get_localzone_name()
+                if timestamp is not None:
+                    dt = parser.isoparse(timestamp)
+                    if dt.tzinfo is None:
+                        try:
+                            tz = pytz_timezone(timezone)
+                            dt = tz.localize(dt)
+                            iso_timestamp = dt.astimezone(pytz_timezone("UTC")).strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception as e:
+                            print(str(e))
+            except Exception:
+                raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
+            db.execute_query(
+                '''UPDATE archive_session SET 
+                    archived_url = %(archived_url)s,
+                    archiving_timestamp = %(archiving_timestamp)s,
+                    notes = %(notes)s
+                   WHERE id = %(id)s''',
+                {
+                    "id": entry['id'],
+                    "archived_url": archived_url,
+                    "archiving_timestamp": iso_timestamp,
+                    "notes": notes
+                },
                 return_type="none"
             )
         except Exception as e:
@@ -233,7 +320,7 @@ def add_missing_attachments():
 
 
 if __name__ == "__main__":
-    stage = input("Enter stage (register, parse, extract, full, add_attachments, clear_errors): ").strip().lower()
+    stage = input("Enter stage (register, parse, extract, full, add_attachments, clear_errors, add_metadata): ").strip().lower()
     if stage == "register":
         register_archives()
     elif stage == "parse":
@@ -246,5 +333,7 @@ if __name__ == "__main__":
         extract_entities()
     elif stage == "add_attachments":
         add_missing_attachments()
+    elif stage == "add_metadata":
+        add_missing_metadata()
     elif stage == "clear_errors":
         clear_extraction_errors()
