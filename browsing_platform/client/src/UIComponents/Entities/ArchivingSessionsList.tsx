@@ -1,7 +1,7 @@
 import React from 'react';
 import {
     Box,
-    CircularProgress, Stack,
+    CircularProgress, Stack, Typography,
 } from "@mui/material";
 import {IArchiveSession,} from "../../types/entities";
 import ArchivingSession from "src/UIComponents/Entities/ArchivingSession";
@@ -11,7 +11,8 @@ type IProps = {
     loadingSessions: boolean;
 };
 
-interface IState {}
+interface IState {
+}
 
 class ArchivingSessionsList extends React.Component<IProps, IState> {
     constructor(props: IProps) {
@@ -21,26 +22,29 @@ class ArchivingSessionsList extends React.Component<IProps, IState> {
     render() {
         const sessions = this.props.sessions;
         const loadingSessions = this.props.loadingSessions;
-        if (loadingSessions) {
-            return <Box sx={{
-                display: "flex", justifyContent: "center", alignItems: "center", height: "30vh",
-                maxWidth: "100%", overflowX: "auto"
-            }}>
-                <CircularProgress/>
-            </Box>
-        }
-        if (!sessions || sessions.length === 0) {
-            return <div>No archiving sessions</div>
-        }
-        return <Stack direction={"row"} gap={1} sx={{"overflowX": "auto", width: '100%'}}>
+        return <Stack direction={"column"} gap={1} sx={{width: '100%'}}>
+            <Typography variant={"h6"}>Archiving History</Typography>
             {
-                sessions.map((s, s_i) => {
-                    return <Box key={s_i}>
-                        <ArchivingSession
-                            session={s}
-                        />
-                    </Box>
-                })
+                loadingSessions ?
+                    <Box sx={{
+                        display: "flex", justifyContent: "center", alignItems: "center", height: "30vh",
+                        maxWidth: "100%", overflowX: "auto"
+                    }}>
+                        <CircularProgress/>
+                    </Box> :
+                    ((!sessions || sessions.length === 0) ? <div>No archiving sessions</div> :
+                            <Stack direction={"row"} gap={1} sx={{"overflowX": "auto", width: '100%'}}>
+                                {
+                                    sessions.map((s, s_i) => {
+                                        return <Box key={s_i}>
+                                            <ArchivingSession
+                                                session={s}
+                                            />
+                                        </Box>
+                                    })
+                                }
+                            </Stack>
+                    )
             }
         </Stack>
     }

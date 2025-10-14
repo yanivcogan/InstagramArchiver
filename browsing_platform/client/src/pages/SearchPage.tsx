@@ -38,10 +38,13 @@ class SearchPage extends React.Component<IProps, IState> {
         }
     }
 
-    componentDidUpdate() {
-        const new_query = this.extractQueryFromParams();
-        if (JSON.stringify(new_query) !== JSON.stringify(this.state.query)) {
-            this.setState((curr) => ({...curr, query: new_query}), async () => {
+    componentDidUpdate(prevProps: IProps) {
+        const newQuery = this.extractQueryFromParams();
+        const prevQuery = this.extractQueryFromParams(prevProps.searchParams);
+        if (
+            JSON.stringify(newQuery) !== JSON.stringify(prevQuery)
+        ) {
+            this.setState((curr) => ({...curr, query: newQuery}), async () => {
                 await this.fetchData();
             })
         }
@@ -67,21 +70,23 @@ class SearchPage extends React.Component<IProps, IState> {
         if (query.search_mode && query.search_mode !== "posts") {
             params.append("sm", query.search_mode);
         }
+        debugger
         this.props.navigate({
             pathname: this.props.location.pathname,
             search: params.toString()
         }, {replace: true});
     }
 
-    extractQueryFromParams = (): ISearchQuery => {
-        const search_term = this.props.searchParams.get("s") || ""
-        let search_mode = this.props.searchParams.get("sm") || "posts";
+    extractQueryFromParams = (searchParams?: URLSearchParams): ISearchQuery => {
+        searchParams = searchParams || this.props.searchParams;
+        const search_term = searchParams.get("s") || ""
+        let search_mode = searchParams.get("sm") || "posts";
         if (!SEARCH_MODES.map(m => m.key).includes(search_mode)) {
             search_mode = "posts";
         }
-        let page_number = parseInt(this.props.searchParams.get("p") || "1");
+        let page_number = parseInt(searchParams.get("p") || "1");
         page_number = isNaN(page_number) || page_number < 1 ? 1 : page_number;
-        let page_size = parseInt(this.props.searchParams.get("ps") || "20");
+        let page_size = parseInt(searchParams.get("ps") || "20");
         page_size = isNaN(page_size) || page_size < 20 ? 20 : page_size;
         return {
             search_term,
@@ -123,7 +128,7 @@ class SearchPage extends React.Component<IProps, IState> {
     render() {
         return <div className={"page-wrap"}>
             <TopNavBar>
-                Post Data
+                Search Archives
             </TopNavBar>
             <div className={"page-content content-wrap"}>
                 <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
@@ -140,7 +145,7 @@ class SearchPage extends React.Component<IProps, IState> {
                                 }))}
                                 onKeyDown={async e => {
                                     if (e.key === 'Enter') {
-                                        await this.performSearch();
+                                        this.performSearch();
                                     }
                                 }}
                                 placeholder="Search..."
@@ -163,7 +168,7 @@ class SearchPage extends React.Component<IProps, IState> {
                                                 ...curr,
                                                 query: {...curr.query, search_mode: e.target.value as T_Search_Mode}
                                             }), async () => {
-                                                await this.performSearch()
+                                                this.performSearch()
                                             })
                                         }}
                                         sx={{width: "100%", '::before': {borderBottom: 'none !important'}}}
@@ -179,7 +184,7 @@ class SearchPage extends React.Component<IProps, IState> {
                             />
                             <IconButton
                                 color="primary"
-                                onClick={() => this.fetchData()}
+                                onClick={() => this.performSearch()}
                                 sx={{padding: '8px'}}
                             >
                                 <SearchIcon/>
