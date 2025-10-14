@@ -1,5 +1,4 @@
 import React from 'react';
-import './login/Login.scss';
 import withRouter, {IRouterProps} from "../services/withRouter";
 import {
     Box, Button, Card,
@@ -23,14 +22,59 @@ interface SearchResult {
 }
 
 interface IState {
+    typedSearchTerm?: string;
     query: ISearchQuery;
-    loadingData: boolean;
+    queryPromise: AbortController | null;
     results: SearchResult[]
 }
 
 class SearchPage extends React.Component<IProps, IState> {
     constructor(props: IProps) {
         super(props);
+        const query = this.extractQueryFromParams();
+        this.state = {
+            query,
+            results: [],
+            queryPromise: null,
+        }
+    }
+
+    componentDidUpdate() {
+        const new_query = this.extractQueryFromParams();
+        if (JSON.stringify(new_query) !== JSON.stringify(this.state.query)) {
+            this.setState((curr) => ({...curr, query: new_query}), async () => {
+                await this.fetchData();
+            })
+        }
+    }
+
+    async componentDidMount() {
+        await Promise.all([
+            this.fetchData(),
+        ])
+    }
+
+    encodeQueryToParams = (query: ISearchQuery) => {
+        const params = new URLSearchParams();
+        if (query.search_term) {
+            params.append("s", query.search_term);
+        }
+        if (query.page_number && query.page_number > 1) {
+            params.append("p", query.page_number.toString());
+        }
+        if (query.page_size && query.page_size !== 20) {
+            params.append("ps", query.page_size.toString());
+        }
+        if (query.search_mode && query.search_mode !== "posts") {
+            params.append("sm", query.search_mode);
+        }
+        this.props.navigate({
+            pathname: this.props.location.pathname,
+            search: params.toString()
+        }, {replace: true});
+    }
+
+    extractQueryFromParams = (): ISearchQuery => {
         const search_term = this.props.searchParams.get("s") || ""
         let search_mode = this.props.searchParams.get("sm") || "posts";
         if (!SEARCH_MODES.map(m => m.key).includes(search_mode)) {
@@ -40,36 +84,40 @@ class SearchPage extends React.Component<IProps, IState> {
         page_number = isNaN(page_number) || page_number < 1 ? 1 : page_number;
         let page_size = parseInt(this.props.searchParams.get("ps") || "20");
         page_size = isNaN(page_size) || page_size < 20 ? 20 : page_size;
-        this.state = {
-            query: {
-                search_term,
-                page_number,
-                page_size,
-                search_mode: search_mode as T_Search_Mode,
-            },
-            results: [],
-            loadingData: false,
+        return {
+            search_term,
+            page_number,
+            page_size,
+            search_mode: search_mode as T_Search_Mode,
         }
     }
 
-    componentDidUpdate() {
-    }
-
-    async componentDidMount() {
-        await Promise.all([
-            this.fetchData(),
-        ])
+    performSearch = () => {
+        this.setState((curr) => ({
+                ...curr,
+                query: {...curr.query, search_term: curr.typedSearchTerm || ""}
+            }),
+            () => {
+                this.encodeQueryToParams(this.state.query);
+            })
     }
 
     fetchData = async () => {
-        if (this.state.loadingData) {
-            return;
+        if (this.state.queryPromise) {
+            // Cancel previous search if possible (requires AbortController in searchData)
+            this.state.queryPromise.abort?.();
         }
-        this.setState((curr) => ({...curr, loadingData: true}), async () => {
-            const results = await searchData(
-                this.state.query,
-            )
-            this.setState((curr) => ({...curr, results, loadingData: false}))
+        const controller = new AbortController();
+        const queryPromise = searchData(this.state.query, {signal: controller.signal});
+        this.setState((curr) => ({...curr, queryPromise: controller}), async () => {
+            try {
+                const results = await queryPromise;
+                this.setState((curr) => ({...curr, results, loadingData: false, queryPromise: null}));
+            } catch (e: any) {
+                if (e.name !== "AbortError") {
+                    this.setState((curr) => ({...curr, loadingData: false, queryPromise: null}));
+                }
+            }
         });
     }
 
@@ -84,14 +132,16 @@ class SearchPage extends React.Component<IProps, IState> {
                     <Box sx={{mb: 2}}>
                         <Stack direction="row" spacing={2}>
                             <OutlinedInput
-                                value={this.state.query.search_term}
+                                value={
+                                    this.state.typedSearchTerm || this.state.query.search_term || ""
+                                }
                                 onChange={e => this.setState((curr) => ({
                                     ...curr,
-                                    query: {...curr.query, search_term: e.target.value}
+                                    typedSearchTerm: e.target.value
                                 }))}
                                 onKeyDown={async e => {
                                     if (e.key === 'Enter') {
-                                        await this.fetchData();
+                                        await this.performSearch();
                                     }
                                 }}
                                 placeholder="Search..."
@@ -114,7 +164,7 @@ class SearchPage extends React.Component<IProps, IState> {
                                                 ...curr,
                                                 query: {...curr.query, search_mode: e.target.value as T_Search_Mode}
                                             }), async () => {
-                                                await this.fetchData()
+                                                await this.performSearch()
                                             })
                                         }}
                                         sx={{width: "100%"}}
@@ -139,7 +189,7 @@ class SearchPage extends React.Component<IProps, IState> {
                     </Box>
                     {/* Search Results */}
                     <Box sx={{minHeight: 200}}>
-                        {this.state.loadingData ? (
+                        {this.state.queryPromise !== null ? (
                             <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200}}>
                                 <CircularProgress/>
                             </Box>
@@ -155,6 +205,9 @@ class SearchPage extends React.Component<IProps, IState> {
                                         <a
                                             key={idx}
                                             href={`/${result.page}/${result.id}`}
+                                            style={{
+                                                textDecoration: 'none',
+                                            }}
                                         >
                                             <Card variant="elevation" elevation={0}>
                                                 <Typography variant={"h6"}>

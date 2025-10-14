@@ -1,5 +1,4 @@
 import React from 'react';
-import './login/Login.scss';
 import withRouter, {IRouterProps} from "../services/withRouter";
 import {
     Box,
@@ -14,6 +13,7 @@ import {
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSession from "src/UIComponents/Entities/ArchivingSession";
+import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
 
 type IProps = {} & IRouterProps;
 
@@ -113,34 +113,13 @@ class SessionPage extends React.Component<IProps, IState> {
             <div className={"page-content content-wrap"}>
                 <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
                     {this.renderData()}
-                    {this.renderSessions()}
+                    <ArchivingSessionsList
+                        sessions={this.state.sessions}
+                        loadingSessions={this.state.loadingSessions}
+                    />
                 </Stack>
             </div>
         </div>
-    }
-
-    private renderSessions() {
-        const sessions = this.state.sessions;
-        const loadingSessions = this.state.loadingSessions;
-        if (loadingSessions) {
-            return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "30vh"}}>
-                <CircularProgress/>
-            </Box>
-        }
-        if (!sessions || sessions.length === 0) {
-            return <div>No archiving sessions</div>
-        }
-        return <Stack direction={"row"} gap={1} sx={{"overflowX": "auto", width: '100%'}}>
-            {
-                sessions.map((s, s_i) => {
-                    return <Box key={s_i}>
-                        <ArchivingSession
-                            session={s}
-                        />
-                    </Box>
-                })
-            }
-        </Stack>
     }
 }
 

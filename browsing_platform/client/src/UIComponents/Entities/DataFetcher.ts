@@ -1,6 +1,5 @@
 import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested} from "../../types/entities";
-import server from "../../services/server";
-import React from "react";
+import server, {HTTP_METHODS} from "../../services/server";
 
 interface FlattenedEntitiesTransform {
     local_files_root?: string | null;
@@ -66,7 +65,7 @@ export const fetchArchivingSessionsMedia = async (mediaId: number): Promise<IArc
     return await server.get("archiving_session/media/" + mediaId);
 }
 
-export const SEARCH_MODES: readonly {key: string, label: string}[] = [
+export const SEARCH_MODES: readonly { key: string, label: string }[] = [
     {key: 'media', label: 'Media'},
     {key: 'posts', label: 'Posts'},
     {key: 'accounts', label: 'Accounts'},
@@ -91,6 +90,7 @@ export interface SearchResult {
 
 export const searchData = async (
     query: ISearchQuery,
+    options: { signal: AbortSignal }
 ): Promise<SearchResult[]> => {
-    return await server.post("search/", query);
+    return await server.post("search/", query, HTTP_METHODS.post, { abortSignal: options.signal } );
 }

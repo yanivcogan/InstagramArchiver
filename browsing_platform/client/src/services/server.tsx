@@ -25,6 +25,7 @@ export enum HTTP_METHODS {
 
 export interface IRequestOptions {
     ignoreErrors?: boolean,
+    abortSignal?: AbortSignal,
 }
 
 export interface IErrorResponse {
@@ -35,9 +36,12 @@ function get(path: string, options?: IRequestOptions) {
     return post(path, {}, HTTP_METHODS.get, options)
 }
 
-const post = async (path: string, data: {
-    [key: string]: any
-}, method?: HTTP_METHODS, options?: IRequestOptions): Promise<any> => {
+const post = async (
+    path: string,
+    data: { [key: string]: any },
+    method?: HTTP_METHODS,
+    options?: IRequestOptions
+): Promise<any> => {
     const fixedMethod = method === undefined ? HTTP_METHODS.post : method;
     const headers = new Headers();
     headers.set('Accept', 'application/json');
@@ -50,6 +54,7 @@ const post = async (path: string, data: {
         method: HTTP_METHODS[fixedMethod],
         body: (fixedMethod === HTTP_METHODS.get) ? undefined : JSON.stringify(data),
         headers,
+        signal: options?.abortSignal
     });
     const resAsJson = res.status === 401 ? {error: "missing permissions"} : await res.json();
     return handleResult(resAsJson, fixedMethod, path, data, options);

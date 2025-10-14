@@ -19,7 +19,7 @@ class ArchiveSession(BaseModel):
     metadata: Optional[dict] = None
     attachments: Optional[dict] = None
     extracted_entities: Optional[int] = None
-    archiving_timestamp: Optional[str] = None
+    archiving_timestamp: Optional[datetime] = None
     notes: Optional[str] = None
     extraction_error: Optional[str] = None
     source_type: int = 0
@@ -30,6 +30,15 @@ class ArchiveSession(BaseModel):
             try:
                 v = json.loads(v)
             except json.JSONDecodeError:
+                v = None
+        return v
+
+    @field_validator('archiving_timestamp', mode='before')
+    def parse_timestamp(cls, v, _):
+        if isinstance(v, str):
+            try:
+                v = datetime.fromisoformat(v)
+            except ValueError:
                 v = None
         return v
 

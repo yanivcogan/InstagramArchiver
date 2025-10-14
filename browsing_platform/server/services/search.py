@@ -37,7 +37,7 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
            WHERE
                archived_url LIKE %(search_term)s OR
                notes LIKE %(search_term)s
-           ORDER BY create_date DESC
+           ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
             "search_term": f"%{query.search_term}%",
@@ -50,7 +50,7 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
         page="archive",
         id=s.id,
         title=f"Archive Session {s.id}",
-        details=f"{s.archived_url}"
+        details=f"{s.archived_url}" + (f" ({s.notes})" if s.notes else "")
     ) for s in sessions]
 
 
@@ -63,7 +63,7 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
                bio LIKE %(search_term)s OR
                display_name LIKE %(search_term)s OR
                notes LIKE %(search_term)s
-           ORDER BY create_date DESC
+           ORDER BY id DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
             "search_term": f"%{query.search_term}%",
