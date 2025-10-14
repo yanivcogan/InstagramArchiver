@@ -85,6 +85,7 @@ class Login extends React.Component<IProps, IState> {
                 console.log(e);
             }
         }
+        this.props.navigate("/search/")
     };
 
     renderEmailStage = () => (

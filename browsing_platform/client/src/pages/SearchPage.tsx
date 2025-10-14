@@ -2,14 +2,13 @@ import React from 'react';
 import withRouter, {IRouterProps} from "../services/withRouter";
 import {
     Box, Button, Card,
-    CircularProgress, Divider, FormControl, IconButton, MenuItem, OutlinedInput, Stack, Typography,
+    CircularProgress, Divider, FormControl, IconButton, MenuItem, OutlinedInput, Stack, Typography, Select
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import {
     ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode
 } from "../UIComponents/Entities/DataFetcher";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
-import Select from '@mui/material/Select';
 
 type IProps = {} & IRouterProps;
 
@@ -167,7 +166,7 @@ class SearchPage extends React.Component<IProps, IState> {
                                                 await this.performSearch()
                                             })
                                         }}
-                                        sx={{width: "100%"}}
+                                        sx={{width: "100%", '::before': {borderBottom: 'none !important'}}}
                                     >
                                         {
                                             SEARCH_MODES.map((mode) => (

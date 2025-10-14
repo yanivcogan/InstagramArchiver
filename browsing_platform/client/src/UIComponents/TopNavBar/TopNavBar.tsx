@@ -6,10 +6,12 @@ import {
     AppBar, Toolbar, Drawer,
     List, ListItemButton,
     Stack, Divider,
-    IconButton
+    IconButton, ListItemIcon, ListItemText
 } from "@mui/material";
 import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
 import MenuIcon from '@mui/icons-material/Menu';
+import SearchIcon from "@mui/icons-material/Search";
+import LogoutIcon from '@mui/icons-material/Logout';
 
 type IProps = {
     children: ReactNode
@@ -94,35 +96,47 @@ class TopNavBar extends React.Component<IProps, IState> {
                     </Stack>
                 </Toolbar>
             </AppBar>
-                <Drawer open={this.state.menuOpened} onClose={this.toggleMenu}
-                        anchor={"left"}>
-                        <Stack direction={"column"} sx={{height: "100vh"}}>
-                            <AppBar position="static" sx={{backgroundColor: "#282c34"}}>
-                                <Toolbar>
-                                    <Stack direction={"row"} justifyContent={"center"} sx={{width: "100%"}}>
-                                        <LocalFloristIcon/>
-                                    </Stack>
-                                </Toolbar>
-                            </AppBar>
-                            <List
-                                sx={{
-                                    paddingTop: 0,
-                                    paddingBottom: 0,
-                                    height: "100%",
-                                    overflow: "auto",
-                                }}
-                            >
-                                <Divider/>
-                                <ListItemButton
-                                    onClick={(_) => {
-                                        this.logout()
-                                    }}
-                                >
-                                    Logout
-                                </ListItemButton>
-                            </List>
-                        </Stack>
-                </Drawer>
+            <Drawer open={this.state.menuOpened} onClose={this.toggleMenu}
+                    anchor={"left"}>
+                <Stack direction={"column"} sx={{height: "100vh"}}>
+                    <AppBar position="static" sx={{backgroundColor: "#282c34"}}>
+                        <Toolbar>
+                            <Stack direction={"row"} justifyContent={"center"} sx={{width: "100%"}}>
+                                <LocalFloristIcon/>
+                            </Stack>
+                        </Toolbar>
+                    </AppBar>
+                    <List
+                        sx={{
+                            paddingTop: 0,
+                            paddingBottom: 0,
+                            height: "100%",
+                            width: 250,
+                            overflow: "auto",
+                        }}
+                    >
+                        <Divider/>
+                        <ListItemButton onClick={(_) => {
+                            this.goToPage("search")
+                        }}>
+                            <ListItemIcon>
+                                <SearchIcon/>
+                            </ListItemIcon>
+                            <ListItemText primary="Search" />
+                        </ListItemButton>
+                        <ListItemButton
+                            onClick={(_) => {
+                                this.logout()
+                            }}
+                        >
+                            <ListItemIcon>
+                                <LogoutIcon/>
+                            </ListItemIcon>
+                            <ListItemText primary="Logout" />
+                        </ListItemButton>
+                    </List>
+                </Stack>
+            </Drawer>
         </>
     }
 }
