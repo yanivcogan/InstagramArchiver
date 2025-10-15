@@ -39,6 +39,7 @@ class SearchPage extends React.Component<IProps, IState> {
     }
 
     componentDidUpdate(prevProps: IProps) {
+        this.props.setPageTitle(`Search`);
         const newQuery = this.extractQueryFromParams();
         const prevQuery = this.extractQueryFromParams(prevProps.searchParams);
         if (

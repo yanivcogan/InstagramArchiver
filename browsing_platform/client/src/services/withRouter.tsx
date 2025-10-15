@@ -18,7 +18,7 @@ export interface IRouterProps {
 
 export default function withRouter(Component: any) {
     const setPageTitle = (newTitle: string) => {
-            document.title = `${newTitle} | Magrefa`;
+            document.title = `${newTitle} | Browsing Platform`;
         }
 
     function ComponentWithRouterProp(props:any) {
