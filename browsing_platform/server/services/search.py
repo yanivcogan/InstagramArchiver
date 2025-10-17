@@ -30,17 +30,21 @@ def search_base(query: ISearchQuery) -> list[SearchResult]:
         print(f"Search mode {query.search_mode} not implemented yet.")
         return []
 
+def default_fulltext_query(search_term: str) -> str:
+    if "+" in search_term or "-" in search_term or "*" in search_term:
+        return search_term
+    return " ".join([f'+"{word}' for word in search_term.split() if word])
+
 def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
     results = db.execute_query(
         """SELECT * 
            FROM archive_session 
            WHERE
-               archived_url LIKE %(search_term)s OR
-               notes LIKE %(search_term)s
+               MATCH (`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
-            "search_term": f"%{query.search_term}%",
+            "search_term": default_fulltext_query(query.search_term),
             "limit": query.page_size,
             "offset": (query.page_number - 1) * query.page_size,
         }
@@ -59,14 +63,11 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
         """SELECT * 
            FROM account 
            WHERE
-               url LIKE %(search_term)s OR
-               bio LIKE %(search_term)s OR
-               display_name LIKE %(search_term)s OR
-               notes LIKE %(search_term)s
+               MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)
            ORDER BY id DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
-            "search_term": f"%{query.search_term}%",
+            "search_term": default_fulltext_query(query.search_term),
             "limit": query.page_size,
             "offset": (query.page_number - 1) * query.page_size,
         }
@@ -85,13 +86,11 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
         """SELECT * 
            FROM post 
            WHERE
-               url LIKE %(search_term)s OR
-               caption LIKE %(search_term)s OR
-               notes LIKE %(search_term)s
+               MATCH(`url`, `caption`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)
            ORDER BY publication_date DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
-            "search_term": f"%{query.search_term}%",
+            "search_term": default_fulltext_query(query.search_term),
             "limit": query.page_size,
             "offset": (query.page_number - 1) * query.page_size,
         }

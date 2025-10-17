@@ -2,9 +2,11 @@ import React from 'react';
 import withRouter, {IRouterProps} from "../services/withRouter";
 import {
     Box, Button, Card,
-    CircularProgress, Divider, FormControl, IconButton, MenuItem, OutlinedInput, Stack, Typography, Select
+    CircularProgress, Divider, FormControl, IconButton, MenuItem, OutlinedInput, Stack, Typography, Select, Fab, Tooltip
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
+import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import {
     ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode
 } from "../UIComponents/Entities/DataFetcher";
@@ -33,6 +35,7 @@ class SearchPage extends React.Component<IProps, IState> {
         const query = this.extractQueryFromParams();
         this.state = {
             query,
+            typedSearchTerm: query.search_term || "",
             results: [],
             queryPromise: null,
         }
@@ -45,7 +48,7 @@ class SearchPage extends React.Component<IProps, IState> {
         if (
             JSON.stringify(newQuery) !== JSON.stringify(prevQuery)
         ) {
-            this.setState((curr) => ({...curr, query: newQuery}), async () => {
+            this.setState((curr) => ({...curr, query: newQuery, typedSearchTerm: newQuery.search_term}), async () => {
                 await this.fetchData();
             })
         }
@@ -138,7 +141,7 @@ class SearchPage extends React.Component<IProps, IState> {
                         <Stack direction="row" spacing={2}>
                             <OutlinedInput
                                 value={
-                                    this.state.typedSearchTerm || this.state.query.search_term || ""
+                                    this.state.typedSearchTerm || ""
                                 }
                                 onChange={e => this.setState((curr) => ({
                                     ...curr,
@@ -158,29 +161,55 @@ class SearchPage extends React.Component<IProps, IState> {
                                     }
                                 }}
                                 size="small"
-                                endAdornment={<FormControl
-                                    variant="standard"
-                                    sx={{width: "200px"}}
-                                >
-                                    <Select
-                                        value={this.state.query.search_mode}
-                                        onChange={(e) => {
-                                            this.setState((curr) => ({
-                                                ...curr,
-                                                query: {...curr.query, search_mode: e.target.value as T_Search_Mode}
-                                            }), async () => {
-                                                this.performSearch()
-                                            })
-                                        }}
-                                        sx={{width: "100%", '::before': {borderBottom: 'none !important'}}}
+                                endAdornment={
+                                    <Stack
+                                        direction="row"
+                                        gap={2}
+                                        alignItems="center"
                                     >
-                                        {
-                                            SEARCH_MODES.map((mode) => (
-                                                <MenuItem key={mode.key} value={mode.key}>{mode.label}</MenuItem>
-                                            ))
-                                        }
-                                    </Select>
-                                </FormControl>
+                                        <Tooltip title={"Boolean Search Syntax Explainer"} arrow disableInteractive>
+                                            <Fab
+                                                color={"info"}
+                                                href={"https://dev.mysql.com/doc/refman/8.4/en/fulltext-boolean.html"}
+                                                size={"small"}
+                                                target={"_blank"}
+                                                sx={{
+                                                    width: 24,
+                                                    height: 24,
+                                                    minHeight: 24,
+                                                }}
+                                            >
+                                                <QuestionMarkIcon fontSize="small" sx={{fontSize: "1em"}}/>
+                                            </Fab>
+                                        </Tooltip>
+                                        <FormControl
+                                            variant="standard"
+                                            sx={{width: "200px"}}
+                                        >
+                                            <Select
+                                                value={this.state.query.search_mode}
+                                                onChange={(e) => {
+                                                    this.setState((curr) => ({
+                                                        ...curr,
+                                                        query: {
+                                                            ...curr.query,
+                                                            search_mode: e.target.value as T_Search_Mode
+                                                        }
+                                                    }), async () => {
+                                                        this.performSearch()
+                                                    })
+                                                }}
+                                                sx={{width: "100%", '::before': {borderBottom: 'none !important'}}}
+                                            >
+                                                {
+                                                    SEARCH_MODES.map((mode) => (
+                                                        <MenuItem key={mode.key}
+                                                                  value={mode.key}>{mode.label}</MenuItem>
+                                                    ))
+                                                }
+                                            </Select>
+                                        </FormControl>
+                                    </Stack>
                                 }
                             />
                             <IconButton
@@ -189,6 +218,12 @@ class SearchPage extends React.Component<IProps, IState> {
                                 sx={{padding: '8px'}}
                             >
                                 <SearchIcon/>
+                            </IconButton>
+                            <IconButton
+                                color="primary"
+                                sx={{padding: '8px'}}
+                            >
+                                <FilterListIcon/>
                             </IconButton>
                         </Stack>
                     </Box>
