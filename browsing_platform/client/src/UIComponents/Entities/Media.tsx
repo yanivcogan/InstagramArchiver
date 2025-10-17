@@ -63,7 +63,7 @@ export default class Media extends React.Component <IProps, IState> {
             <Box
                 sx={{
                     position: "absolute",
-                    bottom: 0,
+                    top: 0,
                     left: 0,
                     width: "100%",
                     pointerEvents: "auto",

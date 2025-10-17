@@ -64,17 +64,15 @@ export default class Account extends React.Component <IProps, IState> {
                         enableClipboard={false}
                     />
                 </Collapse>
-                <Box>
-                    <Grid container gap={1}>
-                        {
-                            account.account_posts.map((p, p_i) => {
-                                return <React.Fragment key={p_i}>
-                                    <Post post={p} mediaStyle={this.props.mediaStyle}/>
-                                </React.Fragment>
-                            })
-                        }
-                    </Grid>
-                </Box>
+                <Stack direction={"column"} sx={{width: "100%"}} gap={1}>
+                    {
+                        account.account_posts.map((p, p_i) => {
+                            return <React.Fragment key={p_i}>
+                                <Post post={p} mediaStyle={this.props.mediaStyle}/>
+                            </React.Fragment>
+                        })
+                    }
+                </Stack>
             </Stack>
         </Paper>
     }
