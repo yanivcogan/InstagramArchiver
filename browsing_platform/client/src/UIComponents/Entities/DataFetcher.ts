@@ -66,14 +66,43 @@ export const fetchArchivingSessionsMedia = async (mediaId: number): Promise<IArc
 }
 
 export const SEARCH_MODES: readonly { key: string, label: string }[] = [
-    {key: 'media', label: 'Media'},
-    {key: 'posts', label: 'Posts'},
     {key: 'accounts', label: 'Accounts'},
+    {key: 'posts', label: 'Posts'},
+    {key: 'media', label: 'Media'},
     {key: 'archive_sessions', label: 'Archive Sessions'},
-    {key: 'all', label: 'All'},
+    //{key: 'all', label: 'All'},
 ] as const;
 
 export type T_Search_Mode = typeof SEARCH_MODES[number]['key'];
+
+
+export const EXTRA_SEARCH_FILTERS: {[key: T_Search_Mode]: readonly { key: string, label: string }[]} = {
+    'accounts': [
+        {key: 'username', label: 'Username'},
+        {key: 'full_name', label: 'Full Name'},
+        {key: 'biography', label: 'Biography'},
+        {key: 'notes', label: 'Notes'},
+        {key: 'data', label: 'Account Data (slow)'},
+    ],
+    'posts': [
+        {key: 'publication_date', label: 'Publication Date'},
+        {key: 'caption', label: 'Caption'},
+        {key: 'notes', label: 'Notes'},
+        {key: 'data', label: 'Post Data (slow)'},
+        {key: 'url', label: 'Post URL'},
+    ],
+    'media': [
+        {key: 'ai_caption', label: 'AI Generated Caption'},
+        {key: 'notes', label: 'Notes'},
+        {key: 'data', label: 'Media Data (slow)'},
+    ],
+    'archive_sessions': [
+        {key: 'archiving_date', label: 'Archiving Date'},
+        {key: 'archived_url', label: 'Archived URL'},
+        {key: 'notes', label: 'Notes'},
+        {key: 'structures', label: 'Full Accounts / Posts Data (slow)'},
+    ],
+} as const;
 
 export interface ISearchQuery {
     search_term: string;
