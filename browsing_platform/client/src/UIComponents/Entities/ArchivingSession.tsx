@@ -77,7 +77,7 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
                                     controls
                                 />
                             } else {
-                                return <Card sx={{width: 300}}>
+                                return <Card sx={{width: 300}} key={sr}>
                                     <a
                                         title={"download video"}
                                         href={resourceUrl} target={"_blank"}

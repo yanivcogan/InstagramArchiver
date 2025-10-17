@@ -104,6 +104,7 @@ class AccountPage extends React.Component<IProps, IState> {
             mediaStyle={{
                 maxWidth: '100%',
                 maxHeight: '40vh',
+                minHeight: '300px'
             }}
         />
     }
