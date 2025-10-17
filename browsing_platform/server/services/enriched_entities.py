@@ -6,7 +6,7 @@ from browsing_platform.server.services.account import get_account_by_id
 from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, get_archiving_session_by_id, \
     ArchiveSession
 from browsing_platform.server.services.entities_hierarchy import nest_entities
-from browsing_platform.server.services.media import get_media_by_posts
+from browsing_platform.server.services.media import get_media_by_posts, get_media_by_id
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
 from extractors.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post
@@ -15,6 +15,7 @@ from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEnt
 class FlattenedEntitiesTransform(BaseModel):
     local_files_root: Optional[str] = None
     retain_only_media_with_local_files: bool = False
+    strip_raw_data: bool = True
 
 
 def apply_flattened_entities_transform(
@@ -30,6 +31,13 @@ def apply_flattened_entities_transform(
             if m.local_url is not None and m.local_url.strip() != "":
                 if m.local_url.startswith(f"{LOCAL_ARCHIVES_DIR_ALIAS}/"):
                     m.local_url = m.local_url.replace(LOCAL_ARCHIVES_DIR_ALIAS, transform.local_files_root, 1)
+    if transform.strip_raw_data:
+        for a in entities.accounts:
+            a.data = None
+        for p in entities.posts:
+            p.data = None
+        for m in entities.media:
+            m.data = None
     return entities
 
 
@@ -84,17 +92,9 @@ def get_enriched_media_by_id(
         media_id: int,
         config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
-    row = db.execute_query(
-        """SELECT *
-           FROM media
-           WHERE id = %(id)s""",
-        {"id": media_id},
-        return_type="single_row"
-    )
-    if row is None:
+    media = get_media_by_id(media_id)
+    if media is None:
         return None
-
-    media = Media(**row)
     post = get_post_by_id(media.post_id)
     account = get_account_by_id(post.account_id)
 
