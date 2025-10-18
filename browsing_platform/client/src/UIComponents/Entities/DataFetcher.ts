@@ -1,5 +1,6 @@
 import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested} from "../../types/entities";
 import server, {HTTP_METHODS} from "../../services/server";
+import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
 
 interface FlattenedEntitiesTransform {
     local_files_root?: string | null;
@@ -76,37 +77,89 @@ export const SEARCH_MODES: readonly { key: string, label: string }[] = [
 export type T_Search_Mode = typeof SEARCH_MODES[number]['key'];
 
 
-export const EXTRA_SEARCH_FILTERS: {[key: T_Search_Mode]: readonly { key: string, label: string }[]} = {
-    'accounts': [
-        {key: 'username', label: 'Username'},
-        {key: 'full_name', label: 'Full Name'},
-        {key: 'biography', label: 'Biography'},
-        {key: 'notes', label: 'Notes'},
-        {key: 'data', label: 'Account Data (slow)'},
-    ],
-    'posts': [
-        {key: 'publication_date', label: 'Publication Date'},
-        {key: 'caption', label: 'Caption'},
-        {key: 'notes', label: 'Notes'},
-        {key: 'data', label: 'Post Data (slow)'},
-        {key: 'url', label: 'Post URL'},
-    ],
-    'media': [
-        {key: 'ai_caption', label: 'AI Generated Caption'},
-        {key: 'notes', label: 'Notes'},
-        {key: 'data', label: 'Media Data (slow)'},
-    ],
-    'archive_sessions': [
-        {key: 'archiving_date', label: 'Archiving Date'},
-        {key: 'archived_url', label: 'Archived URL'},
-        {key: 'notes', label: 'Notes'},
-        {key: 'structures', label: 'Full Accounts / Posts Data (slow)'},
-    ],
-} as const;
+export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
+    'accounts': {
+        url_parts: {
+            label: 'User Name',
+            type: 'text',
+        },
+        display_name: {
+            label: 'Display Name',
+            type: 'text',
+        },
+        bio: {
+            label: 'Bio',
+            type: 'text',
+        },
+        notes: {
+            label: 'Notes',
+            type: 'text',
+        },
+        data: {
+            label: 'Account Data (Slow)',
+            type: 'text',
+        },
+    },
+    'posts': {
+        publication_date: {
+            label: 'Publication Date',
+            type: 'date',
+        },
+        caption: {
+            label: 'Caption',
+            type: 'text',
+        },
+        notes: {
+            label: 'Notes',
+            type: 'text',
+        },
+        data: {
+            label: 'Post Data (Slow)',
+            type: 'text',
+        },
+        url: {
+            label: 'Post URL',
+            type: 'text',
+        },
+    },
+    'media': {
+        ai_caption: {
+            label: 'AI Generated Caption',
+            type: 'text',
+        },
+        notes: {
+            label: 'Notes',
+            type: 'text',
+        },
+        data: {
+            label: 'Media Data (Slow)',
+            type: 'text',
+        },
+    },
+    'archive_sessions': {
+        archiving_date: {
+            label: 'Archiving Date',
+            type: 'date',
+        },
+        archived_url: {
+            label: 'Archived URL',
+            type: 'text',
+        },
+        notes: {
+            label: 'Notes',
+            type: 'text',
+        },
+        structures: {
+            label: 'Full Accounts / Posts Data (Slow)',
+            type: 'text',
+        },
+    }
+}
 
 export interface ISearchQuery {
-    search_term: string;
     search_mode: T_Search_Mode;
+    search_term: string;
+    advanced_filters: JsonLogicFunction | null;
     page_number: number;
     page_size: number;
 }
@@ -121,5 +174,5 @@ export const searchData = async (
     query: ISearchQuery,
     options: { signal: AbortSignal }
 ): Promise<SearchResult[]> => {
-    return await server.post("search/", query, HTTP_METHODS.post, { abortSignal: options.signal } );
+    return await server.post("search/", query, HTTP_METHODS.post, {abortSignal: options.signal});
 }

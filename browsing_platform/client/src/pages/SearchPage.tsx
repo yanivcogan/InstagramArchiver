@@ -1,16 +1,37 @@
 import React from 'react';
 import withRouter, {IRouterProps} from "../services/withRouter";
 import {
-    Box, Button, Card,
-    CircularProgress, Divider, FormControl, IconButton, MenuItem, OutlinedInput, Stack, Typography, Select, Fab, Tooltip
+    Box,
+    Button,
+    Card,
+    CircularProgress,
+    Divider,
+    FormControl,
+    IconButton,
+    MenuItem,
+    OutlinedInput,
+    Stack,
+    Typography,
+    Select,
+    Fab,
+    Tooltip,
+    Collapse
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import {
-    ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode
+    ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode, ADVANCED_FILTERS_CONFIG
 } from "../UIComponents/Entities/DataFetcher";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
+import {ImmutableTree, BuilderProps, Utils, JsonLogicFunction} from '@react-awesome-query-builder/mui'; // for TS example
+import {Query, Builder, Utils as QbUtils} from '@react-awesome-query-builder/mui';
+import {MuiConfig} from '@react-awesome-query-builder/mui';
+import '@react-awesome-query-builder/mui/css/styles.css';
+import rison from "rison";
+import {removeUndefinedValues} from "../services/utils";
+
+const InitialConfig = MuiConfig;
 
 type IProps = {} & IRouterProps;
 
@@ -26,7 +47,29 @@ interface IState {
     typedSearchTerm?: string;
     query: ISearchQuery;
     queryPromise: AbortController | null;
-    results: SearchResult[]
+    showAdvancedFilters: boolean;
+    results: SearchResult[];
+    advancedFiltersTree: ImmutableTree;
+}
+
+const getEmptyTree = (search_mode: T_Search_Mode): ImmutableTree => {
+    return QbUtils.loadTree({
+        id: QbUtils.uuid(),
+        type: "group",
+        children1: [
+            {
+                type: "rule",
+                id: QbUtils.uuid(),
+                properties: {
+                    fieldSrc: "field",
+                    field: Object.keys(ADVANCED_FILTERS_CONFIG[search_mode])?.[0],
+                    operator: null,
+                    value: [""],
+                    valueSrc: ["value"]
+                }
+            }
+        ]
+    })
 }
 
 class SearchPage extends React.Component<IProps, IState> {
@@ -34,30 +77,51 @@ class SearchPage extends React.Component<IProps, IState> {
         super(props);
         const query = this.extractQueryFromParams();
         this.state = {
+            showAdvancedFilters: !!query.advanced_filters,
             query,
             typedSearchTerm: query.search_term || "",
+            advancedFiltersTree: query.advanced_filters ?
+                Utils.Import.loadFromJsonLogic(
+                    query.advanced_filters,
+                    {
+                        ...InitialConfig,
+                        fields: ADVANCED_FILTERS_CONFIG[query.search_mode as T_Search_Mode]
+                    }
+                ) || getEmptyTree(query.search_mode) : getEmptyTree(query.search_mode),
             results: [],
             queryPromise: null,
-        }
+        };
+    }
+
+    async componentDidMount() {
+        this.props.setPageTitle(`Search`);
+        await Promise.all([
+            this.fetchData(),
+        ])
     }
 
     componentDidUpdate(prevProps: IProps) {
-        this.props.setPageTitle(`Search`);
         const newQuery = this.extractQueryFromParams();
         const prevQuery = this.extractQueryFromParams(prevProps.searchParams);
         if (
             JSON.stringify(newQuery) !== JSON.stringify(prevQuery)
         ) {
-            this.setState((curr) => ({...curr, query: newQuery, typedSearchTerm: newQuery.search_term}), async () => {
+            this.setState((curr) => ({
+                ...curr,
+                query: newQuery,
+                typedSearchTerm: newQuery.search_term,
+                advancedFiltersTree: newQuery.advanced_filters ?
+                Utils.Import.loadFromJsonLogic(
+                    newQuery.advanced_filters,
+                    {
+                        ...InitialConfig,
+                        fields: ADVANCED_FILTERS_CONFIG[newQuery.search_mode as T_Search_Mode]
+                    }
+                ) || getEmptyTree(newQuery.search_mode) : getEmptyTree(newQuery.search_mode)
+            }), async () => {
                 await this.fetchData();
             })
         }
-    }
-
-    async componentDidMount() {
-        await Promise.all([
-            this.fetchData(),
-        ])
     }
 
     encodeQueryToParams = (query: ISearchQuery) => {
@@ -65,28 +129,56 @@ class SearchPage extends React.Component<IProps, IState> {
         if (query.search_term) {
             params.append("s", query.search_term);
         }
+        const defaultFilters = QbUtils.Export.jsonLogicFormat(getEmptyTree(query.search_mode), {
+            ...InitialConfig,
+            fields: ADVANCED_FILTERS_CONFIG[query.search_mode]
+        }).logic;
+        const currentFilters = query.advanced_filters || null;
+        if (
+            currentFilters &&
+            JSON.stringify(currentFilters) !== JSON.stringify(defaultFilters)
+        ) {
+            params.append("f", rison.encode(removeUndefinedValues(currentFilters)));
+        }
         if (query.page_number && query.page_number > 1) {
             params.append("p", query.page_number.toString());
         }
         if (query.page_size && query.page_size !== 20) {
             params.append("ps", query.page_size.toString());
         }
-        if (query.search_mode && query.search_mode !== "posts") {
+        if (query.search_mode && query.search_mode !== "accounts") {
             params.append("sm", query.search_mode);
         }
-        debugger
         this.props.navigate({
             pathname: this.props.location.pathname,
             search: params.toString()
+                .replaceAll("%28", "(")
+                .replaceAll("%29", ")")
+                .replaceAll("%27", "'")
+                .replaceAll("%3A", ":")
+                .replaceAll("%3D", "=")
+                .replaceAll("%21", "!")
+                .replaceAll("%2C", ",")
+                .replaceAll("%3C", "<")
+                .replaceAll("%3E", ">")
         }, {replace: true});
     }
 
     extractQueryFromParams = (searchParams?: URLSearchParams): ISearchQuery => {
         searchParams = searchParams || this.props.searchParams;
         const search_term = searchParams.get("s") || ""
-        let search_mode = searchParams.get("sm") || "posts";
+        let search_mode = searchParams.get("sm") || "accounts";
         if (!SEARCH_MODES.map(m => m.key).includes(search_mode)) {
-            search_mode = "posts";
+            search_mode = "accounts";
+        }
+        const advanced_filters_rison = searchParams.get("f") || null;
+        let advanced_filters: JsonLogicFunction | null = null;
+        if (advanced_filters_rison) {
+            try {
+                advanced_filters = rison.decode(advanced_filters_rison);
+            } catch (e) {
+                advanced_filters = null;
+            }
         }
         let page_number = parseInt(searchParams.get("p") || "1");
         page_number = isNaN(page_number) || page_number < 1 ? 1 : page_number;
@@ -94,6 +186,7 @@ class SearchPage extends React.Component<IProps, IState> {
         page_size = isNaN(page_size) || page_size < 20 ? 20 : page_size;
         return {
             search_term,
+            advanced_filters,
             page_number,
             page_size,
             search_mode: search_mode as T_Search_Mode,
@@ -103,11 +196,19 @@ class SearchPage extends React.Component<IProps, IState> {
     performSearch = () => {
         this.setState((curr) => ({
                 ...curr,
-                query: {...curr.query, search_term: curr.typedSearchTerm || ""}
+                query: {
+                    ...curr.query,
+                    search_term: curr.typedSearchTerm || "",
+                    advanced_filters: QbUtils.Export.jsonLogicFormat(this.state.advancedFiltersTree, {
+                        ...InitialConfig,
+                        fields: ADVANCED_FILTERS_CONFIG[curr.query.search_mode]
+                    }).logic ?? null
+                }
             }),
             () => {
                 this.encodeQueryToParams(this.state.query);
-            })
+            }
+        )
     }
 
     fetchData = async () => {
@@ -128,6 +229,22 @@ class SearchPage extends React.Component<IProps, IState> {
             }
         });
     }
+
+    // Add this method to handle changes:
+    onAdvancedFiltersChange = (immutableTree: ImmutableTree) => {
+        this.setState({advancedFiltersTree: immutableTree});
+        const jsonTree = QbUtils.getTree(immutableTree);
+        console.log(jsonTree);
+    };
+
+    // Add this method to render the builder:
+    renderAdvancedFiltersBuilder = (props: BuilderProps) => (
+        <div className="query-builder-container" style={{padding: "10px"}}>
+            <div className="query-builder qb-lite">
+                <Builder {...props} />
+            </div>
+        </div>
+    );
 
     render() {
         return <div className={"page-wrap"}>
@@ -157,7 +274,7 @@ class SearchPage extends React.Component<IProps, IState> {
                                     flex: 1,
                                     width: '100%',
                                     '& .MuiOutlinedInput-input': {
-                                        'width': 'calc(100% - 200px)'
+                                        width: 'calc(100% - 200px)',
                                     }
                                 }}
                                 size="small"
@@ -194,17 +311,28 @@ class SearchPage extends React.Component<IProps, IState> {
                                                         query: {
                                                             ...curr.query,
                                                             search_mode: e.target.value as T_Search_Mode
-                                                        }
+                                                        },
+                                                        advancedFiltersTree: getEmptyTree(e.target.value as T_Search_Mode)
                                                     }), async () => {
                                                         this.performSearch()
                                                     })
                                                 }}
-                                                sx={{width: "100%", '::before': {borderBottom: 'none !important'}}}
+                                                sx={{
+                                                    width: "100%",
+                                                    '& .MuiSelect-select': {
+                                                        paddingLeft: '8px',
+                                                    },
+                                                    '::before': {borderBottom: 'none !important'}
+                                                }}
                                             >
                                                 {
                                                     SEARCH_MODES.map((mode) => (
-                                                        <MenuItem key={mode.key}
-                                                                  value={mode.key}>{mode.label}</MenuItem>
+                                                        <MenuItem
+                                                            key={mode.key}
+                                                            value={mode.key}
+                                                        >
+                                                            {mode.label}
+                                                        </MenuItem>
                                                     ))
                                                 }
                                             </Select>
@@ -214,19 +342,34 @@ class SearchPage extends React.Component<IProps, IState> {
                             />
                             <IconButton
                                 color="primary"
-                                onClick={() => this.performSearch()}
                                 sx={{padding: '8px'}}
+                                onClick={() => this.performSearch()}
                             >
                                 <SearchIcon/>
                             </IconButton>
                             <IconButton
                                 color="primary"
                                 sx={{padding: '8px'}}
+                                onClick={() => this.setState((curr) => ({
+                                    ...curr,
+                                    showAdvancedFilters: !curr.showAdvancedFilters
+                                }))}
                             >
                                 <FilterListIcon/>
                             </IconButton>
                         </Stack>
                     </Box>
+                    <Collapse in={this.state.showAdvancedFilters} timeout="auto" unmountOnExit>
+                        <Query
+                            {
+                                ...InitialConfig
+                            }
+                            fields={ADVANCED_FILTERS_CONFIG[this.state.query.search_mode]}
+                            value={this.state.advancedFiltersTree}
+                            onChange={this.onAdvancedFiltersChange}
+                            renderBuilder={this.renderAdvancedFiltersBuilder}
+                        />
+                    </Collapse>
                     {/* Search Results */}
                     <Box sx={{minHeight: 200}}>
                         {this.state.queryPromise !== null ? (

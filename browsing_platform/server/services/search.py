@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 
 import db
 from browsing_platform.server.services.archiving_session import ArchiveSession
@@ -7,17 +7,21 @@ from extractors.entity_types import Account, Post
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
 
+
 class ISearchQuery(BaseModel):
-    search_term: str
+    search_term: Optional[str] = None
+    advanced_filters: Optional[dict] = None
     search_mode: T_Search_Mode
     page_number: int
     page_size: int
+
 
 class SearchResult(BaseModel):
     page: str
     id: int
     title: str
     details: Optional[str]
+
 
 def search_base(query: ISearchQuery) -> list[SearchResult]:
     if query.search_mode == "archive_sessions":
@@ -30,17 +34,20 @@ def search_base(query: ISearchQuery) -> list[SearchResult]:
         print(f"Search mode {query.search_mode} not implemented yet.")
         return []
 
-def default_fulltext_query(search_term: str) -> str:
+
+def default_fulltext_query(search_term: Optional[str]) -> Optional[str]:
+    if not search_term or search_term.strip() == "":
+        return None
     if "+" in search_term or "-" in search_term or "*" in search_term:
         return search_term
     return " ".join([f'+"{word}' for word in search_term.split() if word])
 
+
 def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
     results = db.execute_query(
-        """SELECT * 
-           FROM archive_session 
-           WHERE
-               MATCH (`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)
+        """SELECT *
+           FROM archive_session
+           WHERE MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
@@ -59,18 +66,25 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
 
 
 def search_accounts(query: ISearchQuery) -> list[SearchResult]:
+    query_args: dict["str", Any] = {
+        "limit": query.page_size,
+        "offset": (query.page_number - 1) * query.page_size,
+    }
+    where_clauses = []
+    if query.search_term:
+        query_args["search_term"] = default_fulltext_query(query.search_term)
+        where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+    if query.advanced_filters:
+        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
+        where_clauses.append(general_filter)
+        query_args.update(general_args)
     results = db.execute_query(
-        """SELECT * 
-           FROM account 
-           WHERE
-               MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)
+        f"""SELECT *
+           FROM account
+           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY id DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
-        {
-            "search_term": default_fulltext_query(query.search_term),
-            "limit": query.page_size,
-            "offset": (query.page_number - 1) * query.page_size,
-        }
+        query_args
     )
     accounts = [Account(**row) for row in results]
     return [SearchResult(
@@ -83,10 +97,9 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
 
 def search_posts(query: ISearchQuery) -> list[SearchResult]:
     results = db.execute_query(
-        """SELECT * 
-           FROM post 
-           WHERE
-               MATCH(`url`, `caption`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)
+        """SELECT *
+           FROM post
+           WHERE MATCH(`url`, `caption`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)
            ORDER BY publication_date DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         {
@@ -102,3 +115,63 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
         title=p.url,
         details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or "")
     ) for p in posts]
+
+
+def sanitize_column(column: str, table: str) -> str:
+    column = column.get("var") if isinstance(column, dict) and "var" in column else column
+    # TODO: Implement proper sanitization based on allowed columns
+    return column
+
+
+def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tuple[str, dict]:
+    """
+    Converts a JSONLogic object to a MySQL WHERE clause and argument dict.
+    """
+
+    def parse_logic(logic_rec: dict, args_rec: dict, table_rec: str) -> str:
+        if not isinstance(logic_rec, dict):
+            raise ValueError("Logic must be a dict")
+        for op, val in logic_rec.items():
+            if op == "==":
+                col, v = val
+                col = sanitize_column(col, table_rec)
+                arg_key = f"{col}_eq"
+                args_rec[arg_key] = v
+                return f"`{col}` = %({arg_key})s"
+            if op == "in":
+                v, col = val
+                col = sanitize_column(col, table_rec)
+                arg_key = f"{col}_like"
+                args_rec[arg_key] = f'%{v}%'
+                return f"`{col}` LIKE %({arg_key})s"
+            elif op == "!=":
+                col, v = val
+                col = sanitize_column(col, table_rec)
+                arg_key = f"{col}_neq"
+                args_rec[arg_key] = v
+                return f"`{col}` != %({arg_key})s"
+            elif op == ">":
+                col, v = val
+                col = sanitize_column(col, table_rec)
+                arg_key = f"{col}_gt"
+                args_rec[arg_key] = v
+                return f"`{col}` > %({arg_key})s"
+            elif op == "<":
+                col, v = val
+                col = sanitize_column(col, table_rec)
+                arg_key = f"{col}_lt"
+                args_rec[arg_key] = v
+                return f"`{col}` < %({arg_key})s"
+            elif op == "and":
+                clauses = [parse_logic(item, args_rec, table_rec) for item in val]
+                return "(" + " AND ".join(clauses) + ")"
+            elif op == "or":
+                clauses = [parse_logic(item, args_rec, table_rec) for item in val]
+                return "(" + " OR ".join(clauses) + ")"
+            else:
+                raise NotImplementedError(f"Operator {op} not supported")
+        raise ValueError("Invalid logic structure")
+
+    args = {}
+    where_clause = parse_logic(json_logic, args, table_name)
+    return where_clause, args
