@@ -5,7 +5,7 @@ import {
     CircularProgress, Divider, Stack,
 } from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
-import {fetchAccount, fetchArchivingSessionsAccount} from "../UIComponents/Entities/DataFetcher";
+import {fetchAccount, fetchArchivingSessionsAccount} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";

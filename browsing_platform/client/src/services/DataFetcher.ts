@@ -1,5 +1,5 @@
-import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested} from "../../types/entities";
-import server, {HTTP_METHODS} from "../../services/server";
+import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested} from "../types/entities";
+import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
 
 interface FlattenedEntitiesTransform {
@@ -77,27 +77,36 @@ export const SEARCH_MODES: readonly { key: string, label: string }[] = [
 export type T_Search_Mode = typeof SEARCH_MODES[number]['key'];
 
 
+const disabled_operators_by_type: { [key: string]: string[] } = {
+    'text': ['starts_with', 'ends_with', 'proximity'],
+}
+
 export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
     'accounts': {
         url_parts: {
             label: 'User Name',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         display_name: {
             label: 'Display Name',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         bio: {
             label: 'Bio',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         notes: {
             label: 'Notes',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         data: {
             label: 'Account Data (Slow)',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
     },
     'posts': {
@@ -108,32 +117,39 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         caption: {
             label: 'Caption',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         notes: {
             label: 'Notes',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         data: {
             label: 'Post Data (Slow)',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         url: {
             label: 'Post URL',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
     },
     'media': {
         ai_caption: {
             label: 'AI Generated Caption',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         notes: {
             label: 'Notes',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         data: {
             label: 'Media Data (Slow)',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
     },
     'archive_sessions': {
@@ -144,14 +160,17 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         archived_url: {
             label: 'Archived URL',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         notes: {
             label: 'Notes',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
         structures: {
             label: 'Full Accounts / Posts Data (Slow)',
             type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
         },
     }
 }

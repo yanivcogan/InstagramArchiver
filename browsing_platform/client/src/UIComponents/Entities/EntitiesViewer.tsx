@@ -29,6 +29,7 @@ export default class EntitiesViewer extends React.Component <IProps, IState> {
             }
             {
                 this.props.entities.posts
+                    .sort((a, b) => (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime()))
                     .map(
                         (post: IPostAndAssociatedEntities, index: number) => <Post post={post} key={index} mediaStyle={this.props.mediaStyle}/>
                     )

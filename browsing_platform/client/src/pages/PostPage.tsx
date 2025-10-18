@@ -8,7 +8,7 @@ import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {
     fetchArchivingSessionsPost,
     fetchPost
-} from "../UIComponents/Entities/DataFetcher";
+} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSession from "src/UIComponents/Entities/ArchivingSession";

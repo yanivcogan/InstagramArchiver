@@ -22,7 +22,7 @@ import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import {
     ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode, ADVANCED_FILTERS_CONFIG
-} from "../UIComponents/Entities/DataFetcher";
+} from "../services/DataFetcher";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import {ImmutableTree, BuilderProps, Utils, JsonLogicFunction} from '@react-awesome-query-builder/mui'; // for TS example
 import {Query, Builder, Utils as QbUtils} from '@react-awesome-query-builder/mui';
@@ -111,13 +111,13 @@ class SearchPage extends React.Component<IProps, IState> {
                 query: newQuery,
                 typedSearchTerm: newQuery.search_term,
                 advancedFiltersTree: newQuery.advanced_filters ?
-                Utils.Import.loadFromJsonLogic(
-                    newQuery.advanced_filters,
-                    {
-                        ...InitialConfig,
-                        fields: ADVANCED_FILTERS_CONFIG[newQuery.search_mode as T_Search_Mode]
-                    }
-                ) || getEmptyTree(newQuery.search_mode) : getEmptyTree(newQuery.search_mode)
+                    Utils.Import.loadFromJsonLogic(
+                        newQuery.advanced_filters,
+                        {
+                            ...InitialConfig,
+                            fields: ADVANCED_FILTERS_CONFIG[newQuery.search_mode as T_Search_Mode]
+                        }
+                    ) || getEmptyTree(newQuery.search_mode) : getEmptyTree(newQuery.search_mode)
             }), async () => {
                 await this.fetchData();
             })
@@ -360,15 +360,26 @@ class SearchPage extends React.Component<IProps, IState> {
                         </Stack>
                     </Box>
                     <Collapse in={this.state.showAdvancedFilters} timeout="auto" unmountOnExit>
-                        <Query
-                            {
-                                ...InitialConfig
-                            }
-                            fields={ADVANCED_FILTERS_CONFIG[this.state.query.search_mode]}
-                            value={this.state.advancedFiltersTree}
-                            onChange={this.onAdvancedFiltersChange}
-                            renderBuilder={this.renderAdvancedFiltersBuilder}
-                        />
+                        <Stack direction={"column"} gap={1} sx={{width: "100%"}}>
+                            <Box onKeyDown={(e: React.KeyboardEvent) => {
+                                if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    this.performSearch();
+                                }
+                            }}>
+                                <Query
+                                    {
+                                        ...InitialConfig
+                                    }
+                                    fields={ADVANCED_FILTERS_CONFIG[this.state.query.search_mode]}
+                                    value={this.state.advancedFiltersTree}
+                                    onChange={this.onAdvancedFiltersChange}
+                                    renderBuilder={this.renderAdvancedFiltersBuilder}
+                                />
+                            </Box>
+                            <Button variant={"contained"} onClick={() => this.performSearch()}>Apply Filters</Button>
+                        </Stack>
                     </Collapse>
                     {/* Search Results */}
                     <Box sx={{minHeight: 200}}>

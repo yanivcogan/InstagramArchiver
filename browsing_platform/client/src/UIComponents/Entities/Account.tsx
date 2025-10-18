@@ -70,6 +70,7 @@ export default class Account extends React.Component <IProps, IState> {
                 <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
                     {
                         account.account_posts
+                            .sort((a, b) => (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime()))
                             .slice(0, this.state.postsToShow)
                             .map((p, p_i) => {
                                 return <React.Fragment key={p_i}>
