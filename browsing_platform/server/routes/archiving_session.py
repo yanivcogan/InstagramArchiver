@@ -1,9 +1,11 @@
 from http.client import HTTPException
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
-from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, ArchiveSession
+from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, ArchiveSession, \
+    get_archiving_session_by_id
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
     get_enriched_archiving_session_by_id, get_archiving_sessions_by_account_id, get_archiving_sessions_by_post_id, \
     get_archiving_sessions_by_media_id
@@ -15,6 +17,14 @@ router = APIRouter(
     dependencies=[Depends(get_auth_user)],
     responses={404: {"description": "Not found"}},
 )
+
+
+@router.get("/data/{item_id:int}", dependencies=[Depends(get_auth_user)])
+async def get_archiving_session_data(item_id:int) -> Any:
+    session = get_archiving_session_by_id(item_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session Not Found")
+    return session.structures
 
 
 @router.get("/{item_id:int}", dependencies=[Depends(get_auth_user)])

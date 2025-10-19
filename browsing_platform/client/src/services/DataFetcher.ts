@@ -54,6 +54,22 @@ export const fetchArchivingSession = async (archivingSessionId: number, config: 
     return await server.get("archiving_session/" + archivingSessionId + "/?" + entitiesTransformConfigToQueryParams(config));
 }
 
+export const fetchAccountData = async (accountId: number): Promise<any> => {
+    return await server.get("account/data/" + accountId);
+}
+
+export const fetchPostData = async (postId: number): Promise<any> => {
+    return await server.get("post/data/" + postId);
+}
+
+export const fetchMediaData = async (mediaId: number): Promise<any> => {
+    return await server.get("media/data/" + mediaId);
+}
+
+export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<any> => {
+    return await server.get("archiving_session/data/" + archivingSessionId);
+}
+
 export const fetchArchivingSessionsAccount = async (accountId: number): Promise<IArchiveSession[]> => {
     return await server.get("archiving_session/account/" + accountId);
 }

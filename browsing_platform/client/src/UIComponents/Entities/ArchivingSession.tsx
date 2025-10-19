@@ -10,6 +10,7 @@ import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import ReactJson from "react-json-view";
 import {Skeleton} from "@mui/lab";
 import {Download, LocalMovies} from "@mui/icons-material";
+import {fetchArchivingSessionData, fetchPostData} from "../../services/DataFetcher";
 
 interface IProps {
     session: IArchiveSession,
@@ -18,6 +19,7 @@ interface IProps {
 
 interface IState {
     expandDetails: boolean
+    awaitingDetailsFetch: boolean
 }
 
 
@@ -32,8 +34,20 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
     constructor(props: IProps) {
         super(props);
         this.state = {
-            expandDetails: false
+            expandDetails: false,
+            awaitingDetailsFetch: false
         };
+    }
+
+    private fetchPostDetails = async () => {
+        const itemId = this.props.session.id;
+        if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
+            return;
+        }
+        this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
+            this.props.session.structures = await fetchArchivingSessionData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+        });
     }
 
     render() {

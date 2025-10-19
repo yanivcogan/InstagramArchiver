@@ -2,11 +2,12 @@ import React from 'react';
 import {
     IMediaAndAssociatedEntities,
 } from "../../types/entities";
-import {Box, Fade, IconButton, Stack} from "@mui/material";
+import {Box, CircularProgress, Fade, IconButton, Stack} from "@mui/material";
 import SelfContainedPopover from "../SelfContainedComponents/selfContainedPopover";
 import ReactJson from "react-json-view";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import LinkIcon from "@mui/icons-material/Link";
+import {fetchMediaData, fetchPostData} from "../../services/DataFetcher";
 
 interface IProps {
     media: IMediaAndAssociatedEntities
@@ -15,6 +16,7 @@ interface IProps {
 
 interface IState {
     expandDetails: boolean
+    awaitingDetailsFetch: boolean
 }
 
 
@@ -22,8 +24,20 @@ export default class Media extends React.Component <IProps, IState> {
     constructor(props: IProps) {
         super(props);
         this.state = {
-            expandDetails: false
+            expandDetails: false,
+            awaitingDetailsFetch: false
         };
+    }
+
+    private fetchPostDetails = async () => {
+        const itemId = this.props.media.id;
+        if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
+            return;
+        }
+        this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
+            this.props.media.data = await fetchMediaData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+        });
     }
 
     render() {
@@ -95,15 +109,31 @@ export default class Media extends React.Component <IProps, IState> {
                                     <IconButton
                                         size="small"
                                         color={"primary"}
-                                        onClick={(e) => popupVisibilitySetter(e, true)}
+                                        onClick={(e) => this.setState((curr) => ({
+                                            ...curr,
+                                            expandDetails: !curr.expandDetails
+                                        }), async () => {
+                                            if (this.state.expandDetails && (media.data === undefined || media.data === null)) {
+                                                await this.fetchPostDetails();
+                                                popupVisibilitySetter(e, true)
+                                            }
+                                        })}
                                     >
                                         <MoreHorizIcon/>
                                     </IconButton>
                                 )}
-                                content={() => (<ReactJson
-                                    src={media.data}
-                                    enableClipboard={false}
-                                />)}
+                                content={() => (<span>
+                                    {
+                                        this.state.awaitingDetailsFetch ?
+                                            <CircularProgress size={20}/> :
+                                            this.props.media.data ?
+                                                <ReactJson
+                                                    src={media.data}
+                                                    enableClipboard={false}
+                                                /> :
+                                                null
+                                    }
+                                </span>)}
                                 popoverProps={
                                     {
                                         anchorOrigin: {

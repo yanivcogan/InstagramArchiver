@@ -2,7 +2,7 @@ import React from 'react';
 import {IAccountAndAssociatedEntities} from "../../types/entities";
 import {
     Box,
-    Button,
+    Button, CircularProgress,
     Collapse,
     Grid,
     IconButton,
@@ -14,6 +14,7 @@ import LinkIcon from '@mui/icons-material/Link';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Post from "./Post";
 import ReactJson from "react-json-view";
+import {fetchAccountData, fetchPostData} from "../../services/DataFetcher";
 
 interface IProps {
     account: IAccountAndAssociatedEntities
@@ -23,6 +24,7 @@ interface IProps {
 interface IState {
     expandDetails: boolean
     postsToShow: number
+    awaitingDetailsFetch: boolean
 }
 
 
@@ -31,8 +33,20 @@ export default class Account extends React.Component <IProps, IState> {
         super(props);
         this.state = {
             expandDetails: false,
+            awaitingDetailsFetch: false,
             postsToShow: 5
         };
+    }
+
+    private fetchPostDetails = async () => {
+        const itemId = this.props.account.id;
+        if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
+            return;
+        }
+        this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
+            this.props.account.data = await fetchAccountData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+        });
     }
 
     render() {
@@ -56,16 +70,28 @@ export default class Account extends React.Component <IProps, IState> {
                     <IconButton
                         size="small"
                         color={"primary"}
-                        onClick={() => this.setState((curr) => ({...curr, expandDetails: !curr.expandDetails}))}
-                    >
+                        onClick={() => this.setState((curr) => ({
+                            ...curr,
+                            expandDetails: !curr.expandDetails
+                        }), async () => {
+                            if (this.state.expandDetails && (account.data === undefined || account.data === null)) {
+                                await this.fetchPostDetails();
+                            }
+                        })}>
                         <MoreHorizIcon/>
                     </IconButton>
                 </span>
                 <Collapse in={this.state.expandDetails}>
-                    <ReactJson
-                        src={account.data}
-                        enableClipboard={false}
-                    />
+                    {
+                        this.state.awaitingDetailsFetch ?
+                            <CircularProgress size={20}/> :
+                            this.props.account.data ?
+                                <ReactJson
+                                    src={account.data}
+                                    enableClipboard={false}
+                                /> :
+                                null
+                    }
                 </Collapse>
                 <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
                     {
@@ -85,7 +111,7 @@ export default class Account extends React.Component <IProps, IState> {
                             ...curr,
                             postsToShow: (curr.postsToShow) + 5
                         }))}
-                        onDoubleClick={()=> this.setState({postsToShow: account.account_posts.length}) }
+                        onDoubleClick={() => this.setState({postsToShow: account.account_posts.length})}
                     >
                         Load More Posts
                     </Button>
