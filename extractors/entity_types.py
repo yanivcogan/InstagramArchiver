@@ -49,7 +49,6 @@ class Post(EntityBase):
     publication_date: Optional[datetime] = None
     caption: Optional[str] = None
     data: Optional[Any] = None
-    annotation: Optional[str] = None
 
     @field_validator('id_on_platform', 'account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -85,6 +84,8 @@ class Media(EntityBase):
     local_url: Optional[str] = None
     media_type: t_media_type
     data: Optional[Any] = None
+    annotation: Optional[str] = None
+    thumbnail_path: Optional[str] = None
 
     @field_validator('id_on_platform', 'post_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):

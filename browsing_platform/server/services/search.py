@@ -21,6 +21,7 @@ class SearchResult(BaseModel):
     id: int
     title: str
     details: Optional[str]
+    thumbnails: Optional[list[str]] = None
 
 
 def search_base(query: ISearchQuery) -> list[SearchResult]:
@@ -157,7 +158,8 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
         page="media",
         id=m.id,
         title=m.url,
-        details=""
+        details="",
+        thumbnails=[m.thumbnail_path] if m.thumbnail_path else [m.local_url]
     ) for m in media]
 
 
