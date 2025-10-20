@@ -3,7 +3,7 @@ from typing import Literal, Optional, Any
 
 import db
 from browsing_platform.server.services.archiving_session import ArchiveSession
-from extractors.entity_types import Account, Post
+from extractors.entity_types import Account, Post, Media
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
 
@@ -30,6 +30,8 @@ def search_base(query: ISearchQuery) -> list[SearchResult]:
         return search_accounts(query)
     elif query.search_mode == "posts":
         return search_posts(query)
+    elif query.search_mode == "media":
+        return search_media(query)
     else:
         print(f"Search mode {query.search_mode} not implemented yet.")
         return []
@@ -44,17 +46,21 @@ def default_fulltext_query(search_term: Optional[str]) -> Optional[str]:
 
 
 def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
+    query_args: dict["str", Any] = {
+        "limit": query.page_size,
+        "offset": (query.page_number - 1) * query.page_size,
+    }
+    where_clauses = []
+    if query.search_term:
+        query_args["search_term"] = default_fulltext_query(query.search_term)
+        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
     results = db.execute_query(
-        """SELECT *
+        f"""SELECT *
            FROM archive_session
-           WHERE MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)
+              {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
-        {
-            "search_term": default_fulltext_query(query.search_term),
-            "limit": query.page_size,
-            "offset": (query.page_number - 1) * query.page_size,
-        }
+        query_args
     )
     sessions = [ArchiveSession(**row) for row in results]
     return [SearchResult(
@@ -96,17 +102,25 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
 
 
 def search_posts(query: ISearchQuery) -> list[SearchResult]:
+    query_args: dict["str", Any] = {
+        "limit": query.page_size,
+        "offset": (query.page_number - 1) * query.page_size,
+    }
+    where_clauses = []
+    if query.search_term:
+        query_args["search_term"] = default_fulltext_query(query.search_term)
+        where_clauses.append("MATCH(`url`, `caption`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+    if query.advanced_filters:
+        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
+        where_clauses.append(general_filter)
+        query_args.update(general_args)
     results = db.execute_query(
-        """SELECT *
+        f"""SELECT *
            FROM post
-           WHERE MATCH(`url`, `caption`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)
+           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY publication_date DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
-        {
-            "search_term": default_fulltext_query(query.search_term),
-            "limit": query.page_size,
-            "offset": (query.page_number - 1) * query.page_size,
-        }
+        query_args
     )
     posts = [Post(**row) for row in results]
     return [SearchResult(
@@ -115,6 +129,36 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
         title=p.url,
         details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or "")
     ) for p in posts]
+
+
+def search_media(query: ISearchQuery) -> list[SearchResult]:
+    query_args: dict["str", Any] = {
+        "limit": query.page_size,
+        "offset": (query.page_number - 1) * query.page_size,
+    }
+    where_clauses = []
+    if query.search_term:
+        query_args["search_term"] = default_fulltext_query(query.search_term)
+        where_clauses.append("MATCH(`annotation`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+    if query.advanced_filters:
+        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
+        where_clauses.append(general_filter)
+        query_args.update(general_args)
+    results = db.execute_query(
+        f"""SELECT *
+           FROM media
+           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
+           ORDER BY id DESC
+           LIMIT %(limit)s OFFSET %(offset)s""",
+        query_args
+    )
+    media = [Media(**row) for row in results]
+    return [SearchResult(
+        page="media",
+        id=m.id,
+        title=m.url,
+        details=""
+    ) for m in media]
 
 
 def sanitize_column(column: str, table: str) -> str:

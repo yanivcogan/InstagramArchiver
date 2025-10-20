@@ -49,6 +49,7 @@ class Post(EntityBase):
     publication_date: Optional[datetime] = None
     caption: Optional[str] = None
     data: Optional[Any] = None
+    annotation: Optional[str] = None
 
     @field_validator('id_on_platform', 'account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
