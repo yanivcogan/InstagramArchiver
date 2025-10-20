@@ -17,3 +17,4 @@ open_ssl_location.txt
 /packaged_archives/
 browsing_platform/server/routes/__pycache__/*
 browsing_platform/server/services/__pycache__/*
+/thumbnails
