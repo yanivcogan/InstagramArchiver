@@ -17,6 +17,7 @@ app.add_middleware(
 
 # Serve the 'archives' directory statically
 app.mount("/archives", StaticFiles(directory="archives"), name="archives")
+app.mount("/thumbnails", StaticFiles(directory="thumbnails"), name="thumbnails")
 for r in [
     account.router,
     post.router,

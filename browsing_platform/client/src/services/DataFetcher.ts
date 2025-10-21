@@ -202,7 +202,9 @@ export interface ISearchQuery {
 export interface SearchResult {
     page: string,
     id: number,
-    title: string
+    title: string,
+    details?: string;
+    thumbnails?: string[]
 }
 
 export const searchData = async (

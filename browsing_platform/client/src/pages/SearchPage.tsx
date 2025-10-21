@@ -15,13 +15,13 @@ import {
     Select,
     Fab,
     Tooltip,
-    Collapse
+    Collapse, CardMedia
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import {
-    ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode, ADVANCED_FILTERS_CONFIG
+    ISearchQuery, SEARCH_MODES, searchData, T_Search_Mode, ADVANCED_FILTERS_CONFIG, SearchResult
 } from "../services/DataFetcher";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import {ImmutableTree, BuilderProps, Utils, JsonLogicFunction} from '@react-awesome-query-builder/mui'; // for TS example
@@ -30,18 +30,12 @@ import {MuiConfig} from '@react-awesome-query-builder/mui';
 import '@react-awesome-query-builder/mui/css/styles.css';
 import rison from "rison";
 import {removeUndefinedValues} from "../services/utils";
+import {anchor_local_static_files} from "../services/server";
 
 const InitialConfig = MuiConfig;
 
 type IProps = {} & IRouterProps;
 
-
-interface SearchResult {
-    page: string;
-    id: number
-    title: string;
-    details?: string;
-}
 
 interface IState {
     typedSearchTerm?: string;
@@ -412,6 +406,23 @@ class SearchPage extends React.Component<IProps, IState> {
                                                         {result.details}
                                                     </Typography>
                                                 )}
+                                                <CardMedia>
+                                                    {
+                                                        <Stack direction="row" gap={1}>
+                                                            {result.thumbnails?.map((tn, i) => {
+                                                                return <img
+                                                                    key={i}
+                                                                    src={anchor_local_static_files(tn) || undefined}
+                                                                    alt={`Thumbnail ${i + 1}`}
+                                                                    style={{
+                                                                        maxWidth: '100px',
+                                                                        maxHeight: '100px',
+                                                                    }}
+                                                                />
+                                                            })}
+                                                        </Stack>
+                                                    }
+                                                </CardMedia>
                                             </Card>
                                         </a>
                                     ))

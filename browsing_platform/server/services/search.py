@@ -3,6 +3,7 @@ from typing import Literal, Optional, Any
 
 import db
 from browsing_platform.server.services.archiving_session import ArchiveSession
+from browsing_platform.server.services.media import get_media_by_posts, get_media_thumbnail_path
 from extractors.entity_types import Account, Post, Media
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
@@ -124,12 +125,26 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
         query_args
     )
     posts = [Post(**row) for row in results]
-    return [SearchResult(
-        page="post",
-        id=p.id,
-        title=p.url,
-        details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or "")
-    ) for p in posts]
+    media = get_media_by_posts(posts)
+    post_thumbnails: dict[int, list[str]] = {}
+    for m in media:
+        if m.post_id not in post_thumbnails:
+            post_thumbnails[m.post_id] = []
+        media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
+        if media_thumbnail:
+            post_thumbnails[m.post_id].append(media_thumbnail)
+    search_results: list[SearchResult] = []
+    for p in posts:
+        search_results.append(
+            SearchResult(
+                page="post",
+                id=p.id,
+                title=p.url,
+                details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or ""),
+                thumbnails=post_thumbnails[p.id] if p.id in post_thumbnails else None
+            )
+        )
+    return search_results
 
 
 def search_media(query: ISearchQuery) -> list[SearchResult]:
@@ -137,7 +152,9 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
     }
-    where_clauses = []
+    where_clauses = [
+        "local_url IS NOT NULL"
+    ]
     if query.search_term:
         query_args["search_term"] = default_fulltext_query(query.search_term)
         where_clauses.append("MATCH(`annotation`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
@@ -154,13 +171,19 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
         query_args
     )
     media = [Media(**row) for row in results]
-    return [SearchResult(
-        page="media",
-        id=m.id,
-        title=m.url,
-        details="",
-        thumbnails=[m.thumbnail_path] if m.thumbnail_path else [m.local_url]
-    ) for m in media]
+    search_results: list[SearchResult] = []
+    for m in media:
+        media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
+        search_results.append(
+            SearchResult(
+                page="media",
+                id=m.id,
+                title=m.url,
+                details="",
+                thumbnails=[media_thumbnail] if media_thumbnail else None
+            )
+        )
+    return search_results
 
 
 def sanitize_column(column: str, table: str) -> str:

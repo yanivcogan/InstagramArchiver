@@ -8,6 +8,7 @@ import ReactJson from "react-json-view";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import LinkIcon from "@mui/icons-material/Link";
 import {fetchMediaData, fetchPostData} from "../../services/DataFetcher";
+import {anchor_local_static_files} from "../../services/server";
 
 interface IProps {
     media: IMediaAndAssociatedEntities
@@ -42,10 +43,7 @@ export default class Media extends React.Component <IProps, IState> {
 
     render() {
         const media = this.props.media;
-        let localUrl = media.local_url;
-        if (localUrl && localUrl.startsWith("local_archive_har")) {
-            localUrl = localUrl.replace("local_archive_har", "http://127.0.0.1:4444/archives");
-        }
+        let localUrl = anchor_local_static_files(media.local_url) || undefined;
         return <Box
             sx={{cursor: "pointer", position: "relative"}}
             onMouseEnter={() => this.setState({expandDetails: true})}

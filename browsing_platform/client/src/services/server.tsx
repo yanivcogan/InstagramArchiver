@@ -122,9 +122,21 @@ function handleResult(json: any, method: HTTP_METHODS, path: string, data?: {
     });
 }
 
+export const anchor_local_static_files = (path?: string) => {
+    if (path === undefined || path === null) {
+        return null;
+    }
+    if (path && path.startsWith("local_archive_har")) {
+        return path.replace("local_archive_har", "http://127.0.0.1:4444/archives");
+    } else if (path && path.startsWith("local_thumbnails")) {
+        return path.replace("local_thumbnails", "http://127.0.0.1:4444/thumbnails");
+    }
+    return path;
+}
+
 const server = {
     get,
-    post
+    post,
 }
 
 export default (server)
