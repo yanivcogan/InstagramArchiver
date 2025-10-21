@@ -220,17 +220,65 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 args_rec[arg_key] = v
                 return f"`{col}` != %({arg_key})s"
             elif op == ">":
-                col, v = val
-                col = sanitize_column(col, table_rec)
-                arg_key = f"{col}_gt"
-                args_rec[arg_key] = v
-                return f"`{col}` > %({arg_key})s"
+                if len(val) == 2:
+                    col, v = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key = f"{col}_gt"
+                    args_rec[arg_key] = v
+                    return f"`{col}` > %({arg_key})s"
+                elif len(val) == 3:
+                    v1, col, v2 = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key1 = f"{col}_gt"
+                    arg_key2 = f"{col}_lt"
+                    args_rec[arg_key1] = v1
+                    args_rec[arg_key2] = v2
+                    return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
             elif op == "<":
-                col, v = val
-                col = sanitize_column(col, table_rec)
-                arg_key = f"{col}_lt"
-                args_rec[arg_key] = v
-                return f"`{col}` < %({arg_key})s"
+                if len(val) == 2:
+                    col, v = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key = f"{col}_lt"
+                    args_rec[arg_key] = v
+                    return f"`{col}` < %({arg_key})s"
+                elif len(val) == 3:
+                    v1, col, v2 = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key1 = f"{col}_gt"
+                    arg_key2 = f"{col}_lt"
+                    args_rec[arg_key1] = v1
+                    args_rec[arg_key2] = v2
+                    return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
+            elif op == "<=":
+                if len(val) == 2:
+                    col, v = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key = f"{col}_lte"
+                    args_rec[arg_key] = v
+                    return f"`{col}` <= %({arg_key})s"
+                elif len(val) == 3:
+                    v1, col, v2 = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key1 = f"{col}_gte"
+                    arg_key2 = f"{col}_lte"
+                    args_rec[arg_key1] = v1
+                    args_rec[arg_key2] = v2
+                    return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
+            elif op == ">=":
+                if len(val) == 2:
+                    col, v = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key = f"{col}_gte"
+                    args_rec[arg_key] = v
+                    return f"`{col}` >= %({arg_key})s"
+                elif len(val) == 3:
+                    v1, col, v2 = val
+                    col = sanitize_column(col, table_rec)
+                    arg_key1 = f"{col}_gte"
+                    arg_key2 = f"{col}_lte"
+                    args_rec[arg_key1] = v1
+                    args_rec[arg_key2] = v2
+                    return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
             elif op == "and":
                 clauses = [parse_logic(item, args_rec, table_rec) for item in val]
                 return "(" + " AND ".join(clauses) + ")"
