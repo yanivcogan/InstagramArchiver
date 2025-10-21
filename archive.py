@@ -17,6 +17,7 @@ from git_helper import ensure_committed
 import cv2
 import pyautogui
 import threading
+import shutil
 
 from pydantic import BaseModel
 from har2warc.har2warc import har2warc
@@ -247,9 +248,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     if storage_config is None:
         print("Archiving cancelled by user. Deleting archive directory.")
         if archive_dir.exists():
-            for item in archive_dir.iterdir():
-                item.unlink(missing_ok=True)
-            archive_dir.rmdir()
+            shutil.rmtree(archive_dir)
         return
 
     # video downloading configuration
