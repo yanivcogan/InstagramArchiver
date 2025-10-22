@@ -127,9 +127,17 @@ export const anchor_local_static_files = (path?: string) => {
         return null;
     }
     if (path && path.startsWith("local_archive_har")) {
-        return path.replace("local_archive_har", "http://127.0.0.1:4444/archives");
+        path = path.replace("local_archive_har", "http://127.0.0.1:4444/archives");
     } else if (path && path.startsWith("local_thumbnails")) {
-        return path.replace("local_thumbnails", "http://127.0.0.1:4444/thumbnails");
+        path = path.replace("local_thumbnails", "http://127.0.0.1:4444/thumbnails");
+    }
+    const token = cookie.get("token");
+    if (token) {
+        if (path.indexOf("?") === -1) {
+            path += "?token=" + token;
+        } else {
+            path += "&token=" + token;
+        }
     }
     return path;
 }
