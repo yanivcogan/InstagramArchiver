@@ -55,7 +55,11 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
     where_clauses = []
     if query.search_term:
         query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+    if query.advanced_filters:
+        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
+        where_clauses.append(general_filter)
+        query_args.update(general_args)
     results = db.execute_query(
         f"""SELECT *
            FROM archive_session
@@ -81,7 +85,7 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
     where_clauses = []
     if query.search_term:
         query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+        where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
@@ -111,7 +115,7 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
     where_clauses = []
     if query.search_term:
         query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`url`, `caption`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+        where_clauses.append("MATCH(`url`, `caption`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
@@ -157,7 +161,7 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
     ]
     if query.search_term:
         query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`annotation`, `notes`) AGAINST(%(search_term)s IN BOOLEAN MODE)")
+        where_clauses.append("MATCH(`annotation`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
