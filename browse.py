@@ -3,7 +3,8 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from browsing_platform.server.routes import account, post, media, archiving_session, login, search, permissions
+from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
+    permissions
 from browsing_platform.server.services.token_manager import check_token
 
 app = FastAPI()
@@ -39,13 +40,13 @@ for r in [
     account.router,
     post.router,
     media.router,
+    media_part.router,
     archiving_session.router,
     search.router,
     login.router,
     permissions.router
 ]:
     app.include_router(r, prefix="/api")
-
 
 if __name__ == "__main__":
     uvicorn.run("browse:app", host="127.0.0.1", port=4444, reload=True)

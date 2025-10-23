@@ -54,8 +54,10 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
     }
     where_clauses = []
     if query.search_term:
-        query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
+        query_args["search_term_like"] = f'%{query.search_term}%'
+        where_clauses.append('''MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE) OR 
+        `notes` LIKE %(search_term_like)s''')
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)

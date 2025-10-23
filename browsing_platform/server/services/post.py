@@ -1,8 +1,10 @@
+from typing import Optional
+
 import db
 from extractors.entity_types import Account, Post
 
 
-def get_post_by_id(post_id: int) -> Post | None:
+def get_post_by_id(post_id: int) -> Optional[Post]:
     row = db.execute_query(
         """SELECT * FROM post WHERE id = %(id)s""",
         {"id": post_id},

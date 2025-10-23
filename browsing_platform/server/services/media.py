@@ -1,13 +1,10 @@
 from typing import Optional
 
 import db
-from extractors.db_intake import ROOT_ARCHIVES, LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import Post, Media
-from extractors.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS, ROOT_THUMBNAILS
-from utils import ROOT_DIR
 
 
-def get_media_by_id(media_id: int) -> Media | None:
+def get_media_by_id(media_id: int) -> Optional[Media]:
     row = db.execute_query(
         """SELECT * FROM media WHERE id = %(id)s""",
         {"id": media_id},
