@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.enriched_entities import get_enriched_media_by_id
 from browsing_platform.server.services.media import get_media_by_id
+from browsing_platform.server.services.media_part import get_media_part_by_media
 from browsing_platform.server.services.permissions import get_auth_user
 from extractors.entity_types import ExtractedEntitiesNested
 
@@ -23,6 +24,14 @@ async def get_media_data(item_id:int) -> Any:
     if not media:
         raise HTTPException(status_code=404, detail="Media Not Found")
     return media.data
+
+
+@router.get("/parts/{item_id:int}", dependencies=[Depends(get_auth_user)])
+async def get_media_parts(item_id:int) -> Any:
+    media = get_media_by_id(item_id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Media Not Found")
+    return get_media_part_by_media([media])
 
 
 @router.get("/{item_id:int}", dependencies=[Depends(get_auth_user)])

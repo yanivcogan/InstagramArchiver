@@ -37,6 +37,14 @@ export interface IMedia extends IEntityBase {
     data?: any;
 }
 
+export interface IMediaPart extends IEntityBase {
+    media_id?: number;
+    timestamp_range_start?: number;
+    timestamp_range_end?: number;
+    crop_area?: Record<string, any>;
+    notes?: string;
+}
+
 export interface IComment extends IEntityBase {
     id_on_platform?: string;
     url: string;
