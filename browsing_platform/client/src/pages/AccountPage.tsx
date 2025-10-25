@@ -9,6 +9,7 @@ import {fetchAccount, fetchArchivingSessionsAccount} from "../services/DataFetch
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
+import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
 
 type IProps = {} & IRouterProps;
 
@@ -101,11 +102,17 @@ class AccountPage extends React.Component<IProps, IState> {
         }
         return <EntitiesViewer
             entities={data}
-            mediaStyle={{
-                maxWidth: '100%',
-                maxHeight: '40vh',
-                minHeight: '300px'
-            }}
+            viewerConfig={
+                new EntityViewerConfig({
+                    media: {
+                        style: {
+                            maxWidth: '100%',
+                            maxHeight: '40vh',
+                            minHeight: '300px'
+                        }
+                    }
+                })
+            }
         />
     }
 

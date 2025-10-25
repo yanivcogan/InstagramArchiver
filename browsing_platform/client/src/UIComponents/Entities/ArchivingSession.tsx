@@ -1,20 +1,17 @@
 import React from 'react';
 import {IArchiveSession} from "../../types/entities";
 import {
-    Box, Card, CardContent, CardHeader, Divider, Fade, IconButton, Stack, Typography,
+    Box, Card, CardContent, CardHeader, Divider, Stack, Typography, Skeleton
 } from "@mui/material";
 import {DataGrid} from "@mui/x-data-grid";
-import LinkIcon from "@mui/icons-material/Link";
-import SelfContainedPopover from "../SelfContainedComponents/selfContainedPopover";
-import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
-import ReactJson from "react-json-view";
-import {Skeleton} from "@mui/lab";
 import {Download, LocalMovies} from "@mui/icons-material";
-import {fetchArchivingSessionData, fetchPostData} from "../../services/DataFetcher";
+import {fetchArchivingSessionData} from "../../services/DataFetcher";
+import {anchor_local_static_files} from "../../services/server";
+import {EntityViewerConfig} from "./EntitiesViewerConfig";
 
 interface IProps {
     session: IArchiveSession,
-    mediaStyle?: React.CSSProperties
+    viewerConfig?: EntityViewerConfig
 }
 
 interface IState {
@@ -78,8 +75,8 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
                 >
                     {
                         session.attachments?.screen_recordings?.map((sr) => {
-                            const resourceUrl = session.archive_location?.replace('local_archive_har', 'http://127.0.0.1:4444/archives') + '/' + sr
-                            if (isPlayableVideo(resourceUrl)) {
+                            const resourceUrl = anchor_local_static_files(session.archive_location + '/' + sr) || undefined
+                            if (isPlayableVideo(sr)) {
                                 return <video
                                     key={sr}
                                     src={resourceUrl}

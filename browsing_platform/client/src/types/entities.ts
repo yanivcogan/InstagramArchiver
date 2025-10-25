@@ -41,7 +41,7 @@ export interface IMediaPart extends IEntityBase {
     media_id?: number;
     timestamp_range_start?: number;
     timestamp_range_end?: number;
-    crop_area?: Record<string, any>;
+    crop_area?: number[];
     notes?: string;
 }
 
@@ -102,6 +102,7 @@ export interface IExtractedEntitiesFlattened {
 
 export interface IMediaAndAssociatedEntities extends IMedia {
     media_parent_post?: IPostAndAssociatedEntities;
+    media_parts?: IMediaPart[];
 }
 
 export interface IPostAndAssociatedEntities extends IPost {

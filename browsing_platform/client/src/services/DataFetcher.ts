@@ -1,4 +1,4 @@
-import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested} from "../types/entities";
+import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested, IMediaPart} from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
 
@@ -64,6 +64,14 @@ export const fetchPostData = async (postId: number): Promise<any> => {
 
 export const fetchMediaData = async (mediaId: number): Promise<any> => {
     return await server.get("media/data/" + mediaId);
+}
+
+export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> => {
+    return await server.get("media/parts/" + mediaId);
+}
+
+export const deleteMediaPart = async (mediaId: number): Promise<IMediaPart[]> => {
+    return await server.post("media_part/" + mediaId, {}, HTTP_METHODS.delete);
 }
 
 export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<any> => {

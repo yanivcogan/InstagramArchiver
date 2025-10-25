@@ -2,20 +2,23 @@ import React from 'react';
 import {
     IMediaAndAssociatedEntities,
 } from "../../types/entities";
-import {Box, CircularProgress, Fade, IconButton, Stack} from "@mui/material";
+import {Box, Button, CircularProgress, Fade, IconButton, Stack, Typography} from "@mui/material";
 import SelfContainedPopover from "../SelfContainedComponents/selfContainedPopover";
 import ReactJson from "react-json-view";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import LinkIcon from "@mui/icons-material/Link";
-import {fetchMediaData, fetchPostData} from "../../services/DataFetcher";
+import {fetchMediaData, fetchMediaParts, fetchPostData} from "../../services/DataFetcher";
 import {anchor_local_static_files} from "../../services/server";
+import MediaPart from "./MediaPart";
+import {EntityViewerConfig} from "./EntitiesViewerConfig";
 
 interface IProps {
     media: IMediaAndAssociatedEntities
-    mediaStyle?: React.CSSProperties
+    viewerConfig?: EntityViewerConfig
 }
 
 interface IState {
+    media: IMediaAndAssociatedEntities
     expandDetails: boolean
     awaitingDetailsFetch: boolean
 }
@@ -25,83 +28,95 @@ export default class Media extends React.Component <IProps, IState> {
     constructor(props: IProps) {
         super(props);
         this.state = {
+            media: props.media,
             expandDetails: false,
             awaitingDetailsFetch: false
         };
     }
 
-    private fetchPostDetails = async () => {
-        const itemId = this.props.media.id;
+    private fetchMediaDetails = async () => {
+        const media = this.state.media;
+        const itemId = media.id;
         if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
             return;
         }
         this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
-            this.props.media.data = await fetchMediaData(itemId);
-            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+            media.data = await fetchMediaData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false, media})));
         });
+    }
+
+    private fetchMediaParts = async () => {
+        const itemId = this.props.media.id;
+        if (itemId === undefined || itemId === null) {
+            return;
+        }
+        this.props.media.media_parts = await fetchMediaParts(itemId);
+        this.setState((curr => ({...curr})));
     }
 
     render() {
         const media = this.props.media;
         let localUrl = anchor_local_static_files(media.local_url) || undefined;
-        return <Box
-            sx={{cursor: "pointer", position: "relative"}}
-            onMouseEnter={() => this.setState({expandDetails: true})}
-            onMouseLeave={() => this.setState({expandDetails: false})}
-        >
-            {
-                media.media_type === "video" ?
-                    <video
-                        src={localUrl}
-                        style={
-                            {
-                                backgroundColor: '#000',
-                                ...this.props.mediaStyle
-                            }
-                        }
-                        controls
-                    /> :
-                    null
-            }
-            {
-                media.media_type === "image" ?
-                    <img
-                        src={localUrl}
-                        alt={"photo"}
-                        style={this.props.mediaStyle}
-                    /> :
-                    null
-            }
+        return <div>
             <Box
-                sx={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    pointerEvents: "auto",
-                }}
+                sx={{cursor: "pointer", position: "relative"}}
+                onMouseEnter={() => this.setState({expandDetails: true})}
+                onMouseLeave={() => this.setState({expandDetails: false})}
             >
-                <Fade in={this.state.expandDetails} timeout={300}>
-                    <Stack
-                        direction={"row"}
-                        alignItems={"center"}
-                        gap={1}
-                        sx={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            backgroundColor: "rgba(0,0,0,0.7)",
-                            color: "#fff",
-                            p: 2,
-                            textAlign: "center",
-                        }}
-                    >
-                        <IconButton
-                            color={"primary"}
-                            href={"/media/" + media.id}
+                {
+                    media.media_type === "video" ?
+                        <video
+                            src={localUrl}
+                            style={
+                                {
+                                    backgroundColor: '#000',
+                                    ...this.props.viewerConfig?.media?.style
+                                }
+                            }
+                            controls
+                        /> :
+                        null
+                }
+                {
+                    media.media_type === "image" ?
+                        <img
+                            src={localUrl}
+                            alt={"photo"}
+                            style={this.props.viewerConfig?.media.style}
+                        /> :
+                        null
+                }
+                <Box
+                    sx={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        pointerEvents: "auto",
+                    }}
+                >
+                    <Fade in={this.state.expandDetails} timeout={300}>
+                        <Stack
+                            direction={"row"}
+                            alignItems={"center"}
+                            gap={1}
+                            sx={{
+                                width: "100%",
+                                boxSizing: "border-box",
+                                backgroundColor: "rgba(0,0,0,0.7)",
+                                color: "#fff",
+                                p: 2,
+                                textAlign: "center",
+                            }}
                         >
-                            <LinkIcon/>
-                        </IconButton>
-                        <span>
+                            <IconButton
+                                color={"primary"}
+                                href={"/media/" + media.id}
+                            >
+                                <LinkIcon/>
+                            </IconButton>
+                            <span>
                             <SelfContainedPopover
                                 trigger={(popupVisibilitySetter) => (
                                     <IconButton
@@ -112,7 +127,7 @@ export default class Media extends React.Component <IProps, IState> {
                                             expandDetails: !curr.expandDetails
                                         }), async () => {
                                             if (this.state.expandDetails && (media.data === undefined || media.data === null)) {
-                                                await this.fetchPostDetails();
+                                                await this.fetchMediaDetails();
                                                 popupVisibilitySetter(e, true)
                                             }
                                         })}
@@ -146,9 +161,51 @@ export default class Media extends React.Component <IProps, IState> {
                                 }
                             />
                         </span>
-                    </Stack>
-                </Fade>
+                        </Stack>
+                    </Fade>
+                </Box>
             </Box>
-        </Box>
+            {
+                this.props.viewerConfig?.mediaPart.display === "display" ? <Stack direction={"column"} gap={1}>
+                    <Typography>Segments</Typography>
+                    {
+                        (media.media_parts || []).map(
+                            (mediaPart, index: number) => <MediaPart
+                                mediaPart={mediaPart}
+                                media={this.props.media}
+                                key={index}
+                                refetchMediaParts={this.fetchMediaParts}
+                                onDelete={() => {
+                                    try {
+                                        const mediaParts = media.media_parts || [];
+                                        mediaParts?.splice(index, 1);
+                                        this.setState((curr) => ({...curr, media}));
+                                    } catch (_) {
+                                    }
+                                }}
+                            />
+                        )
+                    }
+                    <Button
+                        variant={"contained"} color={"primary"}
+                        onClick={() => {
+                            const newPart = {
+                                id: undefined,
+                                media_id: this.props.media.id,
+                                crop_area: [0, 100, 0, 100],
+                                timestamp_range_start: 0,
+                                timestamp_range_end: undefined,
+                                notes: "",
+                            };
+                            this.props.media.media_parts = this.props.media.media_parts || [];
+                            this.props.media.media_parts.push(newPart);
+                            this.setState((curr) => ({...curr}));
+                        }}
+                    >
+                        New Part
+                    </Button>
+                </Stack> : null
+            }
+        </div>
     }
 }

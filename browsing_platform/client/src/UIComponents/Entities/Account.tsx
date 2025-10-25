@@ -1,10 +1,8 @@
 import React from 'react';
 import {IAccountAndAssociatedEntities} from "../../types/entities";
 import {
-    Box,
     Button, CircularProgress,
     Collapse,
-    Grid,
     IconButton,
     Paper,
     Stack,
@@ -14,14 +12,16 @@ import LinkIcon from '@mui/icons-material/Link';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Post from "./Post";
 import ReactJson from "react-json-view";
-import {fetchAccountData, fetchPostData} from "../../services/DataFetcher";
+import {fetchAccountData} from "../../services/DataFetcher";
+import {EntityViewerConfig} from "./EntitiesViewerConfig";
 
 interface IProps {
     account: IAccountAndAssociatedEntities
-    mediaStyle?: React.CSSProperties
+    viewerConfig?: EntityViewerConfig
 }
 
 interface IState {
+    account: IAccountAndAssociatedEntities
     expandDetails: boolean
     postsToShow: number
     awaitingDetailsFetch: boolean
@@ -32,6 +32,7 @@ export default class Account extends React.Component <IProps, IState> {
     constructor(props: IProps) {
         super(props);
         this.state = {
+            account: props.account,
             expandDetails: false,
             awaitingDetailsFetch: false,
             postsToShow: 5
@@ -39,18 +40,19 @@ export default class Account extends React.Component <IProps, IState> {
     }
 
     private fetchPostDetails = async () => {
-        const itemId = this.props.account.id;
+        const account = this.state.account;
+        const itemId = account.id;
         if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
             return;
         }
         this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
-            this.props.account.data = await fetchAccountData(itemId);
-            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+            this.state.account.data = await fetchAccountData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false, account})));
         });
     }
 
     render() {
-        const account = this.props.account;
+        const account = this.state.account;
         return <Paper sx={{padding: '1em'}}>
             <Stack gap={0.5} sx={{height: "100%"}}>
                 <Stack gap={1} direction={"row"} alignItems={"center"}>
@@ -100,7 +102,7 @@ export default class Account extends React.Component <IProps, IState> {
                             .slice(0, this.state.postsToShow)
                             .map((p, p_i) => {
                                 return <React.Fragment key={p_i}>
-                                    <Post post={p} mediaStyle={this.props.mediaStyle}/>
+                                    <Post post={p} viewerConfig={this.props.viewerConfig}/>
                                 </React.Fragment>
                             })
                     }

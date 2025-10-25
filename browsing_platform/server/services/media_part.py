@@ -8,7 +8,7 @@ class MediaPart(EntityBase):
     media_id: int
     timestamp_range_start: Optional[float] = None
     timestamp_range_end: Optional[float] = None
-    crop_area: Optional[dict] = None
+    crop_area: Optional[list[float]] = None
     notes: Optional[str] = None
 
     @field_validator('crop_area', mode='before')

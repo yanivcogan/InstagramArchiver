@@ -6,13 +6,15 @@ import Media from "./Media";
 import ReactJson from "react-json-view";
 import LinkIcon from "@mui/icons-material/Link";
 import {fetchPostData} from "../../services/DataFetcher";
+import {EntityViewerConfig} from "./EntitiesViewerConfig";
 
 interface IProps {
     post: IPostAndAssociatedEntities
-    mediaStyle?: React.CSSProperties
+    viewerConfig?: EntityViewerConfig
 }
 
 interface IState {
+    post: IPostAndAssociatedEntities
     expandDetails: boolean
     awaitingDetailsFetch: boolean
 }
@@ -22,24 +24,26 @@ export default class Post extends React.Component <IProps, IState> {
     constructor(props: IProps) {
         super(props);
         this.state = {
+            post: props.post,
             expandDetails: false,
             awaitingDetailsFetch: false
         };
     }
 
     private fetchPostDetails = async () => {
-        const itemId = this.props.post.id;
+        const post = this.state.post;
+        const itemId = post.id;
         if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
             return;
         }
         this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
-            this.props.post.data = await fetchPostData(itemId);
-            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+            post.data = await fetchPostData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false, post})));
         });
     }
 
     render() {
-        const post = this.props.post;
+        const post = this.state.post;
         return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
             <Stack gap={0.5}>
                 <Stack gap={1} direction={"row"} alignItems={"center"}>
@@ -86,7 +90,7 @@ export default class Post extends React.Component <IProps, IState> {
                 <Stack direction={"row"} useFlexGap={true} gap={1} flexWrap={"wrap"}>
                     {
                         post.post_media.map((m, m_i) => {
-                            return <Media media={m} mediaStyle={this.props.mediaStyle} key={m_i}/>
+                            return <Media media={m} viewerConfig={this.props.viewerConfig} key={m_i}/>
                         })
                     }
                 </Stack>
