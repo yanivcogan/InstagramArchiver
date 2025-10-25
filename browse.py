@@ -4,7 +4,7 @@ import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions
+    permissions, tags
 from browsing_platform.server.services.token_manager import check_token
 
 app = FastAPI()
@@ -44,7 +44,8 @@ for r in [
     archiving_session.router,
     search.router,
     login.router,
-    permissions.router
+    permissions.router,
+    tags.router
 ]:
     app.include_router(r, prefix="/api")
 

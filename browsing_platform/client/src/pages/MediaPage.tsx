@@ -110,7 +110,8 @@ class MediaPage extends React.Component<IProps, IState> {
                         style: {
                             maxWidth: '100%',
                             maxHeight: '75vh',
-                        }
+                        },
+                        annotator: "show"
                     },
                     mediaPart: {
                         display: "display"

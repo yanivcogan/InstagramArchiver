@@ -7,6 +7,8 @@ import ReactJson from "react-json-view";
 import LinkIcon from "@mui/icons-material/Link";
 import {fetchPostData} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
+import TextField from "@mui/material/TextField";
+import TagSelector from "../Tags/TagSelector";
 
 interface IProps {
     post: IPostAndAssociatedEntities
@@ -94,6 +96,24 @@ export default class Post extends React.Component <IProps, IState> {
                         })
                     }
                 </Stack>
+                {
+                    this.props.viewerConfig?.post?.annotator === "show" && <Stack gap={1}>
+                        <TextField
+                            label={"Notes"}
+                            multiline
+                            value={this.state.post.notes || ""}
+                            onChange={(e) => {
+                                const post = this.state.post;
+                                post.notes = e.target.value;
+                                this.setState((curr) => ({...curr, post}))
+                            }}
+                        />
+                        <TagSelector
+                            selectedTags={[]}
+                            onChange={() => {}}
+                        />
+                    </Stack>
+                }
             </Stack>
         </Paper>
     }

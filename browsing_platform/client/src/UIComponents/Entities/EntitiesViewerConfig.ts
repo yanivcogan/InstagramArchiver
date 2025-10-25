@@ -1,3 +1,5 @@
+import React from "react";
+
 type IEntityDisplayOption = "display" | "hide" | "collapse";
 type IEntityAnnotatorOption = "show" | "hide";
 type DeepPartial<T> = {
@@ -40,32 +42,32 @@ interface IEntityViewerConfig {
 export class EntityViewerConfig implements IEntityViewerConfig {
     account = {
         display: "display" as IEntityDisplayOption,
-        annotator: "show" as IEntityAnnotatorOption,
+        annotator: "hide" as IEntityAnnotatorOption,
     };
     post = {
         display: "display" as IEntityDisplayOption,
-        annotator: "show" as IEntityAnnotatorOption,
+        annotator: "hide" as IEntityAnnotatorOption,
     };
     media = {
         display: "display" as IEntityDisplayOption,
-        annotator: "show" as IEntityAnnotatorOption,
+        annotator: "hide" as IEntityAnnotatorOption,
         style: {} as React.CSSProperties,
     };
     mediaPart = {
-        display: "collapse" as IEntityDisplayOption,
-        annotator: "hide" as IEntityAnnotatorOption,
+        display: "hide" as IEntityDisplayOption,
+        annotator: "show" as IEntityAnnotatorOption,
         style: {} as React.CSSProperties,
     };
     archivingSession = {
-        display: "collapse" as IEntityDisplayOption,
+        display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
     comment = {
-        display: "collapse" as IEntityDisplayOption,
+        display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
     like = {
-        display: "collapse" as IEntityDisplayOption,
+        display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
 

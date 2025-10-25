@@ -104,6 +104,9 @@ class AccountPage extends React.Component<IProps, IState> {
             entities={data}
             viewerConfig={
                 new EntityViewerConfig({
+                    account: {
+                        annotator: "show"
+                    },
                     media: {
                         style: {
                             maxWidth: '100%',

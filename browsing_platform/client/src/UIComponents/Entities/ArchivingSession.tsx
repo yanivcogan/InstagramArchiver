@@ -8,13 +8,15 @@ import {Download, LocalMovies} from "@mui/icons-material";
 import {fetchArchivingSessionData} from "../../services/DataFetcher";
 import {anchor_local_static_files} from "../../services/server";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
+import TextField from "@mui/material/TextField";
 
 interface IProps {
-    session: IArchiveSession,
+    archiveSession: IArchiveSession,
     viewerConfig?: EntityViewerConfig
 }
 
 interface IState {
+    archiveSession: IArchiveSession,
     expandDetails: boolean
     awaitingDetailsFetch: boolean
 }
@@ -31,25 +33,27 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
     constructor(props: IProps) {
         super(props);
         this.state = {
+            archiveSession: props.archiveSession,
             expandDetails: false,
             awaitingDetailsFetch: false
         };
     }
 
     private fetchPostDetails = async () => {
-        const itemId = this.props.session.id;
+        const archiveSession = this.state.archiveSession;
+        const itemId = archiveSession.id;
         if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
             return;
         }
         this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
-            this.props.session.structures = await fetchArchivingSessionData(itemId);
-            this.setState((curr => ({...curr, awaitingDetailsFetch: false})));
+            archiveSession.structures = await fetchArchivingSessionData(itemId);
+            this.setState((curr => ({...curr, awaitingDetailsFetch: false, archiveSession})));
         });
     }
 
     render() {
-        const session = this.props.session;
-        const metadata = session.metadata || {};
+        const archiveSession = this.state.archiveSession;
+        const metadata = archiveSession.metadata || {};
         // Convert metadata object to array of { key, value } for DataGrid
         const rows = Object.entries(metadata).map(([key, value], idx) => ({
             id: idx,
@@ -74,8 +78,8 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
                     sx={{height: 400, width: "100%", overflow: 'auto'}}
                 >
                     {
-                        session.attachments?.screen_recordings?.map((sr) => {
-                            const resourceUrl = anchor_local_static_files(session.archive_location + '/' + sr) || undefined
+                        archiveSession.attachments?.screen_recordings?.map((sr) => {
+                            const resourceUrl = anchor_local_static_files(archiveSession.archive_location + '/' + sr) || undefined
                             if (isPlayableVideo(sr)) {
                                 return <video
                                     key={sr}
@@ -146,6 +150,19 @@ export default class ArchiveSessionMetadata extends React.Component <IProps, ISt
                         hideFooter
                     />
                 </Box>
+                {
+                    this.props.viewerConfig?.archivingSession?.annotator === "show" && <Stack gap={1}>
+                        <TextField
+                            label={"Notes"}
+                            multiline
+                            value={archiveSession.notes || ""}
+                            onChange={(e) => {
+                                archiveSession.notes = e.target.value;
+                                this.setState((curr) => ({...curr, archiveSession}))
+                            }}
+                        />
+                    </Stack>
+                }
             </Stack>
         );
     }

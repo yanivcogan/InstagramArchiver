@@ -38,7 +38,7 @@ class ArchivingSessionsList extends React.Component<IProps, IState> {
                                     sessions.map((s, s_i) => {
                                         return <Box key={s_i}>
                                             <ArchivingSession
-                                                session={s}
+                                                archiveSession={s}
                                             />
                                         </Box>
                                     })

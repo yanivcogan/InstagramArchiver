@@ -1,6 +1,7 @@
 import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested, IMediaPart} from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
+import {ITagWithType} from "../types/tags";
 
 interface FlattenedEntitiesTransform {
     local_files_root?: string | null;
@@ -74,6 +75,10 @@ export const deleteMediaPart = async (mediaId: number): Promise<IMediaPart[]> =>
     return await server.post("media_part/" + mediaId, {}, HTTP_METHODS.delete);
 }
 
+export const saveMediaPart = async (mediaPart: IMediaPart): Promise<IMediaPart[]> => {
+    return await server.post("media_part/", mediaPart);
+}
+
 export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<any> => {
     return await server.get("archiving_session/data/" + archivingSessionId);
 }
@@ -88,6 +93,10 @@ export const fetchArchivingSessionsPost = async (postId: number): Promise<IArchi
 
 export const fetchArchivingSessionsMedia = async (mediaId: number): Promise<IArchiveSession[]> => {
     return await server.get("archiving_session/media/" + mediaId);
+}
+
+export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {
+    return await server.get("tags/?q=" + encodeURIComponent(tagQuery));
 }
 
 export const SEARCH_MODES: readonly { key: string, label: string }[] = [

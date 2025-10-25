@@ -3,6 +3,7 @@ export interface IEntityBase {
     created_at?: string; // ISO date string
     updated_at?: string;
     canonical_id?: number;
+    notes?: string;
 }
 
 export interface IAccount extends IEntityBase {
