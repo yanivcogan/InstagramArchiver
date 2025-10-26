@@ -5,13 +5,13 @@ import TextField from '@mui/material/TextField';
 import Stack from '@mui/material/Stack';
 import {lookupTags} from "../../services/DataFetcher";
 import {ITagWithType} from "../../types/tags";
-import {CircularProgress, Tooltip, Typography} from "@mui/material";
+import {Tooltip, Typography} from "@mui/material";
 
 
 interface IProps {
     selectedTags: ITagWithType[]
     readOnly?: boolean
-    onChange: (tags: string[]) => void
+    onChange: (tags: ITagWithType[]) => void
 }
 
 interface IState {
@@ -47,7 +47,7 @@ export default class TagSelector extends React.Component <IProps, IState> {
             value={this.state.selectedTags}
             onChange={(_, newValue) => {
                 this.setState({selectedTags: newValue});
-                this.props.onChange(newValue.map(tag => tag.name));
+                this.props.onChange(newValue);
             }}
             disabled={this.props.readOnly === true}
             inputValue={this.state.inputValue}
@@ -55,7 +55,7 @@ export default class TagSelector extends React.Component <IProps, IState> {
                 this.setState({inputValue: newInputValue}, this.fetchMatchingOptions);
             }}
             multiple
-            id="tags-filled"
+            noOptionsText={fetchingOptions ? 'Loading…' : (this.state.inputValue ? 'No tags found' : 'Start typing to search tags')}
             isOptionEqualToValue={(option, value) => option.name === value.name}
             getOptionLabel={(option) => option.name}
             options={options}

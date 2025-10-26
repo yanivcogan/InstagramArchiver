@@ -22,6 +22,7 @@ interface IState {
     media: IMediaAndAssociatedEntities
     expandDetails: boolean
     awaitingDetailsFetch: boolean
+    savingAnnotations: boolean
 }
 
 
@@ -31,7 +32,8 @@ export default class Media extends React.Component <IProps, IState> {
         this.state = {
             media: props.media,
             expandDetails: false,
-            awaitingDetailsFetch: false
+            awaitingDetailsFetch: false,
+            savingAnnotations: false
         };
     }
 

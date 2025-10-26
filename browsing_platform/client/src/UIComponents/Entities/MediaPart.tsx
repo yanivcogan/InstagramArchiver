@@ -18,8 +18,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
 import {anchor_local_static_files} from "../../services/server";
 import TextField from "@mui/material/TextField";
-import {deleteMediaPart} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
+import {deleteMediaPart, saveMediaPart} from "../../services/DataSaver";
 
 interface IProps {
     media: IMedia
@@ -258,8 +258,14 @@ export default class MediaPart extends React.Component <IProps, IState> {
                     editing ?
                         <Button
                             variant={"contained"} color={"primary"} disabled={awaitingSave}
-                            startIcon={awaitingSave ? <CircularProgress size={20}/> : <SaveIcon/>}
-                            onClick={() => this.setState({editing: false})}
+                            startIcon={awaitingSave ? <CircularProgress size={20} color={"inherit"}/> : <SaveIcon/>}
+                            onClick={() => {
+                                this.setState({awaitingSave: true}, async () => {
+                                    await saveMediaPart(this.state.mediaPart);
+                                    await this.props.refetchMediaParts();
+                                    this.setState({editing: false, awaitingSave: false});
+                                })
+                            }}
                         >
                             Save
                         </Button> :

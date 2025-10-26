@@ -71,14 +71,6 @@ export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> =>
     return await server.get("media/parts/" + mediaId);
 }
 
-export const deleteMediaPart = async (mediaId: number): Promise<IMediaPart[]> => {
-    return await server.post("media_part/" + mediaId, {}, HTTP_METHODS.delete);
-}
-
-export const saveMediaPart = async (mediaPart: IMediaPart): Promise<IMediaPart[]> => {
-    return await server.post("media_part/", mediaPart);
-}
-
 export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<any> => {
     return await server.get("archiving_session/data/" + archivingSessionId);
 }

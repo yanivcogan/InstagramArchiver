@@ -1,6 +1,6 @@
 import React from 'react';
 import {IPostAndAssociatedEntities} from "../../types/entities";
-import {Box, CircularProgress, Collapse, Grid, IconButton, Paper, Stack, Typography} from "@mui/material";
+import {Box, Button, CircularProgress, Collapse, Grid, IconButton, Paper, Stack, Typography} from "@mui/material";
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import Media from "./Media";
 import ReactJson from "react-json-view";
@@ -9,6 +9,8 @@ import {fetchPostData} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import TextField from "@mui/material/TextField";
 import TagSelector from "../Tags/TagSelector";
+import SaveIcon from "@mui/icons-material/Save";
+import {savePostAnnotations} from "../../services/DataSaver";
 
 interface IProps {
     post: IPostAndAssociatedEntities
@@ -19,6 +21,7 @@ interface IState {
     post: IPostAndAssociatedEntities
     expandDetails: boolean
     awaitingDetailsFetch: boolean
+    savingAnnotations: boolean
 }
 
 
@@ -28,7 +31,8 @@ export default class Post extends React.Component <IProps, IState> {
         this.state = {
             post: props.post,
             expandDetails: false,
-            awaitingDetailsFetch: false
+            awaitingDetailsFetch: false,
+            savingAnnotations: false
         };
     }
 
@@ -97,7 +101,7 @@ export default class Post extends React.Component <IProps, IState> {
                     }
                 </Stack>
                 {
-                    this.props.viewerConfig?.post?.annotator === "show" && <Stack gap={1}>
+                    this.props.viewerConfig?.post?.annotator === "show" ? <Stack gap={1}>
                         <TextField
                             label={"Notes"}
                             multiline
@@ -110,8 +114,47 @@ export default class Post extends React.Component <IProps, IState> {
                         />
                         <TagSelector
                             selectedTags={[]}
-                            onChange={() => {}}
+                            onChange={(tags) => {
+                                const post = this.state.post;
+                                post.tags = tags;
+                                this.setState((curr) => ({...curr, post}))
+                            }}
                         />
+                        <Button
+                            variant="contained"
+                            startIcon={this.state.savingAnnotations ? <CircularProgress size={20} color={"inherit"}/> : <SaveIcon/>}
+                            onClick={async () => {
+                                this.setState((curr) => ({...curr, savingAnnotations: true}) , async () => {
+                                    const post = this.state.post;
+                                    await savePostAnnotations(post);
+                                    this.setState((curr) => ({...curr, savingAnnotations: false}))
+                                });
+                            }}
+                            color={"success"}
+                        >
+                            Save Annotations
+                        </Button>
+                    </Stack> : <Stack gap={1}>
+                        {
+                            post?.tags?.length ? (<React.Fragment>
+                                <Typography variant={"subtitle2"}>Tags:</Typography>
+                                <Stack direction={"row"} gap={1} flexWrap={"wrap"}>
+                                    {
+                                        post?.tags?.map((t, t_i) => {
+                                            return <Typography variant={"body2"} key={t_i}>{t.name}</Typography>
+                                        })
+                                    }
+                                </Stack>
+                            </React.Fragment>) :
+                                null
+                        }
+                        {
+                            post?.notes?.length ? (<React.Fragment>
+                                <Typography variant={"subtitle2"}>Notes:</Typography>
+                                <Typography variant={"body2"}>{post.notes}</Typography>
+                            </React.Fragment>) :
+                                null
+                        }
                     </Stack>
                 }
             </Stack>

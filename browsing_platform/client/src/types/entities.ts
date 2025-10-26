@@ -1,9 +1,12 @@
+import {ITagWithType} from "./tags";
+
 export interface IEntityBase {
     id?: number;
     created_at?: string; // ISO date string
     updated_at?: string;
     canonical_id?: number;
     notes?: string;
+    tags?: ITagWithType[];
 }
 
 export interface IAccount extends IEntityBase {
