@@ -12,6 +12,7 @@ import {anchor_local_static_files} from "../../services/server";
 import MediaPart from "./MediaPart";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import TextField from "@mui/material/TextField";
+import EntityAnnotator from "./Annotator";
 
 interface IProps {
     media: IMediaAndAssociatedEntities
@@ -169,18 +170,7 @@ export default class Media extends React.Component <IProps, IState> {
                 </Box>
             </Box>
             {
-                this.props.viewerConfig?.media?.annotator === "show" && <Stack gap={1}>
-                    <TextField
-                        label={"Notes"}
-                        multiline
-                        value={this.state.media.notes || ""}
-                        onChange={(e) => {
-                            const media = this.state.media;
-                            media.notes = e.target.value;
-                            this.setState((curr) => ({...curr, media}))
-                        }}
-                    />
-                </Stack>
+                this.props.viewerConfig?.media?.annotator === "show" && <EntityAnnotator entity={this.state.media} entityType={"media"} readonly={false}/>
             }
             {
                 this.props.viewerConfig?.mediaPart.display === "display" ? <Stack direction={"column"} gap={1}>

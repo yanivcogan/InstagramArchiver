@@ -11,6 +11,7 @@ import TextField from "@mui/material/TextField";
 import TagSelector from "../Tags/TagSelector";
 import SaveIcon from "@mui/icons-material/Save";
 import {savePostAnnotations} from "../../services/DataSaver";
+import EntityAnnotator from "./Annotator";
 
 interface IProps {
     post: IPostAndAssociatedEntities
@@ -101,61 +102,9 @@ export default class Post extends React.Component <IProps, IState> {
                     }
                 </Stack>
                 {
-                    this.props.viewerConfig?.post?.annotator === "show" ? <Stack gap={1}>
-                        <TextField
-                            label={"Notes"}
-                            multiline
-                            value={this.state.post.notes || ""}
-                            onChange={(e) => {
-                                const post = this.state.post;
-                                post.notes = e.target.value;
-                                this.setState((curr) => ({...curr, post}))
-                            }}
-                        />
-                        <TagSelector
-                            selectedTags={[]}
-                            onChange={(tags) => {
-                                const post = this.state.post;
-                                post.tags = tags;
-                                this.setState((curr) => ({...curr, post}))
-                            }}
-                        />
-                        <Button
-                            variant="contained"
-                            startIcon={this.state.savingAnnotations ? <CircularProgress size={20} color={"inherit"}/> : <SaveIcon/>}
-                            onClick={async () => {
-                                this.setState((curr) => ({...curr, savingAnnotations: true}) , async () => {
-                                    const post = this.state.post;
-                                    await savePostAnnotations(post);
-                                    this.setState((curr) => ({...curr, savingAnnotations: false}))
-                                });
-                            }}
-                            color={"success"}
-                        >
-                            Save Annotations
-                        </Button>
-                    </Stack> : <Stack gap={1}>
-                        {
-                            post?.tags?.length ? (<React.Fragment>
-                                <Typography variant={"subtitle2"}>Tags:</Typography>
-                                <Stack direction={"row"} gap={1} flexWrap={"wrap"}>
-                                    {
-                                        post?.tags?.map((t, t_i) => {
-                                            return <Typography variant={"body2"} key={t_i}>{t.name}</Typography>
-                                        })
-                                    }
-                                </Stack>
-                            </React.Fragment>) :
-                                null
-                        }
-                        {
-                            post?.notes?.length ? (<React.Fragment>
-                                <Typography variant={"subtitle2"}>Notes:</Typography>
-                                <Typography variant={"body2"}>{post.notes}</Typography>
-                            </React.Fragment>) :
-                                null
-                        }
-                    </Stack>
+                    this.props.viewerConfig?.post?.annotator === "show" ?
+                        <EntityAnnotator entity={this.state.post} entityType={"post"} readonly={false}/> :
+                        null
                 }
             </Stack>
         </Paper>

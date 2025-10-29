@@ -15,6 +15,7 @@ import ReactJson from "react-json-view";
 import {fetchAccountData} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import TextField from "@mui/material/TextField";
+import EntityAnnotator from "./Annotator";
 
 interface IProps {
     account: IAccountAndAssociatedEntities
@@ -98,16 +99,7 @@ export default class Account extends React.Component <IProps, IState> {
                 </Collapse>
                 {
                     this.props.viewerConfig?.account?.annotator === "show" && <Stack gap={1}>
-                        <TextField
-                            label={"Notes"}
-                            multiline
-                            value={this.state.account.notes || ""}
-                            onChange={(e) => {
-                                const account = this.state.account;
-                                account.notes = e.target.value;
-                                this.setState((curr) => ({...curr, account}))
-                            }}
-                        />
+                        <EntityAnnotator entity={this.state.account} entityType={"account"} readonly={false}/>
                     </Stack>
                 }
                 <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
