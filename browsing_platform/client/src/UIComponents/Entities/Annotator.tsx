@@ -1,6 +1,6 @@
 import React from 'react';
 import {IAccount, IMedia, IMediaPart, IPost} from "../../types/entities";
-import {Button, CircularProgress, Stack, Typography} from "@mui/material";
+import {Button, CircularProgress, Grow, Stack, Typography} from "@mui/material";
 import {ITagWithType} from "../../types/tags";
 import TextField from "@mui/material/TextField";
 import TagSelector from "../Tags/TagSelector";
@@ -21,6 +21,7 @@ interface IAnnotations {
 
 interface IState {
     annotations: IAnnotations
+    unsavedChanges?: boolean
     awaitingSave: boolean;
 }
 
@@ -33,6 +34,7 @@ export default class EntityAnnotator extends React.Component <IProps, IState> {
                 notes: props.entity.notes || "",
                 tags: props.entity.tags || [],
             },
+            unsavedChanges: false,
             awaitingSave: false
         };
     }
@@ -42,7 +44,7 @@ export default class EntityAnnotator extends React.Component <IProps, IState> {
             const {annotations} = this.state;
             const {entityType, entity} = this.props;
             const updatedEntity = {...entity, notes: annotations.notes, tags: annotations.tags};
-            switch(entityType){
+            switch (entityType) {
                 case "media":
                     await saveMediaAnnotations(updatedEntity as IMedia);
                     break;
@@ -58,7 +60,7 @@ export default class EntityAnnotator extends React.Component <IProps, IState> {
             if (this.props.onSave) {
                 this.props.onSave();
             }
-            this.setState((curr) => ({...curr, savingAnnotations: false}))
+            this.setState((curr) => ({...curr, savingAnnotations: false, unsavedChanges: false}));
         });
     }
 
@@ -74,7 +76,11 @@ export default class EntityAnnotator extends React.Component <IProps, IState> {
                         ? <Typography variant={"body2"}>No tags available.</Typography>
                         : <Stack direction={"row"} gap={1} flexWrap={"wrap"}>
                             {
-                                tags.map((tag, index) => <Typography variant={"body2"} key={index} sx={{padding: '0.2em 0.5em', backgroundColor: '#e0e0e0', borderRadius: '4px'}}>{tag.name}</Typography>)
+                                tags.map((tag, index) => <Typography variant={"body2"} key={index} sx={{
+                                    padding: '0.2em 0.5em',
+                                    backgroundColor: '#e0e0e0',
+                                    borderRadius: '4px'
+                                }}>{tag.name}</Typography>)
                             }
                         </Stack>
                 }
@@ -88,7 +94,7 @@ export default class EntityAnnotator extends React.Component <IProps, IState> {
                     onChange={(e) => {
                         const annotations = this.state.annotations;
                         annotations.notes = e.target.value;
-                        this.setState((curr) => ({...curr, annotations}))
+                        this.setState((curr) => ({...curr, annotations, unsavedChanges: true}))
                     }}
                 />
                 <TagSelector
@@ -96,19 +102,22 @@ export default class EntityAnnotator extends React.Component <IProps, IState> {
                     onChange={(tags) => {
                         const annotations = this.state.annotations;
                         annotations.tags = tags;
-                        this.setState((curr) => ({...curr, annotations}))
+                        this.setState((curr) => ({...curr, annotations, unsavedChanges: true}))
                     }}
                 />
-                <Button
-                    variant="contained"
-                    startIcon={this.state.awaitingSave ? <CircularProgress size={20} color={"inherit"}/> : <SaveIcon/>}
-                    onClick={async () => {
-                        await this.saveAnnotations();
-                    }}
-                    color={"success"}
-                >
-                    Save Annotations
-                </Button>
+                <Grow in={this.state.unsavedChanges} unmountOnExit>
+                    <Button
+                        variant="contained"
+                        startIcon={this.state.awaitingSave ? <CircularProgress size={20} color={"inherit"}/> :
+                            <SaveIcon/>}
+                        onClick={async () => {
+                            await this.saveAnnotations();
+                        }}
+                        color={"success"}
+                    >
+                        Save Annotations
+                    </Button>
+                </Grow>
             </Stack>
         }
     }
