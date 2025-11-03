@@ -10,6 +10,7 @@ interface IEntityViewerConfig {
     account: {
         display: IEntityDisplayOption;
         annotator: IEntityAnnotatorOption;
+        postsPageSize?: number | null;
     }
     post: {
         display: IEntityDisplayOption;
@@ -43,6 +44,7 @@ export class EntityViewerConfig implements IEntityViewerConfig {
     account = {
         display: "display" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
+        postsPageSize: 5
     };
     post = {
         display: "display" as IEntityDisplayOption,

@@ -19,6 +19,7 @@ interface IState {
     loadingData: boolean;
     sessions: IArchiveSession[] | null;
     loadingSessions: boolean;
+    showAllPosts: boolean;
 }
 
 class AccountPage extends React.Component<IProps, IState> {
@@ -32,6 +33,7 @@ class AccountPage extends React.Component<IProps, IState> {
             loadingData: id !== null,
             sessions: null,
             loadingSessions: false,
+            showAllPosts: this.props.searchParams.get("expand_all") === "1",
         }
     }
 
@@ -105,7 +107,8 @@ class AccountPage extends React.Component<IProps, IState> {
             viewerConfig={
                 new EntityViewerConfig({
                     account: {
-                        annotator: "show"
+                        annotator: "show",
+                        postsPageSize: this.state.showAllPosts ? null : 5,
                     },
                     media: {
                         style: {

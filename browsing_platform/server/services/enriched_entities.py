@@ -68,6 +68,7 @@ def apply_nested_entities_transform(
 class EntitiesTransformConfig(BaseModel):
     flattened_entities_transform: Optional[FlattenedEntitiesTransform] = None
     nested_entities_transform: Optional[NestedEntitiesTransform] = None
+    cluster_posts_under_accounts: bool = True
 
 
 def transform_and_nest(

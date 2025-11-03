@@ -14,7 +14,6 @@ import Post from "./Post";
 import ReactJson from "react-json-view";
 import {fetchAccountData} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
-import TextField from "@mui/material/TextField";
 import EntityAnnotator from "./Annotator";
 
 interface IProps {
@@ -37,7 +36,7 @@ export default class Account extends React.Component <IProps, IState> {
             account: props.account,
             expandDetails: false,
             awaitingDetailsFetch: false,
-            postsToShow: 5
+            postsToShow: props.viewerConfig?.account?.postsPageSize || props.account.account_posts.length || 5,
         };
     }
 
@@ -113,17 +112,21 @@ export default class Account extends React.Component <IProps, IState> {
                                 </React.Fragment>
                             })
                     }
-                    <Button
-                        variant="contained"
-                        disabled={account.account_posts.length <= this.state.postsToShow}
-                        onClick={() => this.setState((curr) => ({
-                            ...curr,
-                            postsToShow: (curr.postsToShow) + 5
-                        }))}
-                        onDoubleClick={() => this.setState({postsToShow: account.account_posts.length})}
-                    >
-                        Load More Posts
-                    </Button>
+                    {
+                        this.props.viewerConfig?.account?.postsPageSize ?
+                            <Button
+                                variant="contained"
+                                disabled={account.account_posts.length <= this.state.postsToShow}
+                                onClick={() => this.setState((curr) => ({
+                                    ...curr,
+                                    postsToShow: (curr.postsToShow) + 5
+                                }))}
+                                onDoubleClick={() => this.setState({postsToShow: account.account_posts.length})}
+                            >
+                                Load More Posts
+                            </Button>
+                            : null
+                    }
                 </Stack>
             </Stack>
         </Paper>
