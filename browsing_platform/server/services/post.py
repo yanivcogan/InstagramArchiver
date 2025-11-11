@@ -1,6 +1,7 @@
 from typing import Optional
 
 import db
+from browsing_platform.server.services.annotation import Annotation
 from extractors.entity_types import Account, Post
 
 
@@ -26,3 +27,24 @@ def get_posts_by_accounts(accounts: list[Account]) -> list[Post]:
         return_type="rows"
     )
     return [Post(**p) for p in posts]
+
+def annotate_post(post_id: int, annotation: Annotation) -> None:
+    # Set notes field
+    db.execute_query(
+        """UPDATE post SET notes = %(notes)s WHERE id = %(id)s""",
+        {"id": post_id, "notes": annotation.notes},
+        return_type="none"
+    )
+    # Clear associated tags
+    db.execute_query(
+        """DELETE FROM post_tag WHERE post_id = %(id)s""",
+        {"id": post_id},
+        return_type="none"
+    )
+    # Add new tags
+    for tag_id in annotation.tags:
+        db.execute_query(
+            """INSERT INTO post_tag (post_id, tag_id) VALUES (%(post_id)s, %(tag_id)s)""",
+            {"post_id": post_id, "tag_id": tag_id},
+            return_type="none"
+        )

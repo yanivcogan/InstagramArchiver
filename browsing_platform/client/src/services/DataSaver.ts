@@ -12,24 +12,24 @@ export const saveMediaPart = async (mediaPart: IMediaPart): Promise<void> => {
 
 /* Media */
 export const saveMediaAnnotations = async (media: IMedia): Promise<void> => {
-    return await server.post("media/", {
+    return await server.post(`annotate/media/${media.id}`, {
         notes: media.notes,
-        tags: media.tags,
+        tags: media.tags?.map(t => t.id),
     });
 }
 
 /* Post */
 export const savePostAnnotations = async (post: IPost): Promise<void> => {
-    return await server.post("post/", {
+    return await server.post(`annotate/post/${post.id}`, {
         notes: post.notes,
-        tags: post.tags,
+        tags: post.tags?.map(t => t.id),
     });
 }
 
 /* Account */
 export const saveAccountAnnotations = async (account: IAccount): Promise<void> => {
-    return await server.post("account/", {
+    return await server.post(`annotate/account/${account.id}`, {
         notes: account.notes,
-        tags: account.tags,
+        tags: account.tags?.map(t => t.id),
     });
 }

@@ -5,7 +5,7 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags
+    permissions, tags, annotate
 from browsing_platform.server.services.token_manager import check_token
 from dotenv import load_dotenv
 
@@ -50,6 +50,7 @@ for r in [
     post.router,
     media.router,
     media_part.router,
+    annotate.router,
     archiving_session.router,
     search.router,
     login.router,

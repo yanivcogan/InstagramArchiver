@@ -2,6 +2,8 @@ from typing import Optional
 from pydantic import field_validator
 import db
 import json
+
+from browsing_platform.server.services.annotation import Annotation
 from extractors.entity_types import Media, EntityBase
 
 class MediaPart(EntityBase):
@@ -90,3 +92,24 @@ def get_media_part_by_media(media: list[Media]) -> list[MediaPart]:
         return_type="rows"
     )
     return [MediaPart(**m) for m in media_parts]
+
+def annotate_media_part(media_part_id: int, annotation: Annotation) -> None:
+    # Set notes field
+    db.execute_query(
+        """UPDATE media_part SET notes = %(notes)s WHERE id = %(id)s""",
+        {"id": media_part_id, "notes": annotation.notes},
+        return_type="none"
+    )
+    # Clear associated tags
+    db.execute_query(
+        """DELETE FROM media_part_tag WHERE media_part_id = %(id)s""",
+        {"id": media_part_id},
+        return_type="none"
+    )
+    # Add new tags
+    for tag_id in annotation.tags:
+        db.execute_query(
+            """INSERT INTO media_part_tag (media_part_id, tag_id) VALUES (%(media_part_id)s, %(tag_id)s)""",
+            {"media_part_id": media_part_id, "tag_id": tag_id},
+            return_type="none"
+        )

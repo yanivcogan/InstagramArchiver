@@ -1,6 +1,7 @@
 from typing import Optional
 
 import db
+from browsing_platform.server.services.annotation import Annotation
 from extractors.entity_types import Post, Media
 
 
@@ -37,3 +38,25 @@ def get_media_thumbnail_path(thumbnail_path: str, local_url: str) -> Optional[st
     # elif thumbnail_path.startswith(LOCAL_ARCHIVES_DIR_ALIAS):
     #     thumbnail_path = thumbnail_path.replace(LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES.relative_to(ROOT_DIR).as_posix())
     return thumbnail_path
+
+
+def annotate_media(media_id: int, annotation: Annotation) -> None:
+    # Set notes field
+    db.execute_query(
+        """UPDATE media SET notes = %(notes)s WHERE id = %(id)s""",
+        {"id": media_id, "notes": annotation.notes},
+        return_type="none"
+    )
+    # Clear associated tags
+    db.execute_query(
+        """DELETE FROM media_tag WHERE media_id = %(id)s""",
+        {"id": media_id},
+        return_type="none"
+    )
+    # Add new tags
+    for tag_id in annotation.tags:
+        db.execute_query(
+            """INSERT INTO media_tag (media_id, tag_id) VALUES (%(media_id)s, %(tag_id)s)""",
+            {"media_id": media_id, "tag_id": tag_id},
+            return_type="none"
+        )
