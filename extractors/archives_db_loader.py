@@ -1,6 +1,6 @@
 import json
 import traceback
-from datetime import datetime
+import asyncio
 from tzlocal import get_localzone_name
 
 from dateutil import parser
@@ -13,6 +13,7 @@ from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.session_attachments import get_session_attachments
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
 from extractors.db_intake import incorporate_structures_into_db
+from extractors.thumbnail_generator import generate_missing_thumbnails
 
 
 def register_archives():
@@ -331,6 +332,7 @@ if __name__ == "__main__":
         register_archives()
         parse_archives()
         extract_entities()
+        asyncio.run(generate_missing_thumbnails())
     elif stage == "add_attachments":
         add_missing_attachments()
     elif stage == "add_metadata":
