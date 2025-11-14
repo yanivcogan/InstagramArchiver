@@ -17,8 +17,8 @@ _ph = PasswordHasher(
 
 def hash_password(password: str) -> tuple[str, str]:
     if len(password) < 12 or len(password) > 512:
-        raise ValueError("Password length invalid")
-    # Add breached password check here (omitted for brevity)
+        raise ValueError("Password length invalid (12-512 chars required)")
+
     h = _ph.hash(password)
     return h, "argon2id"
 
