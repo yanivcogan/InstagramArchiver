@@ -3,12 +3,16 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Any, Literal
 import json
 
+from browsing_platform.server.services.tag import ITagWithType
+
+
 class EntityBase(BaseModel):
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     canonical_id: Optional[int] = None
     notes: Optional[str] = None
+    tags: Optional[list[ITagWithType]] = None
 
 
 class Account(EntityBase):
