@@ -2,9 +2,9 @@ from typing import Optional
 
 from argon2 import PasswordHasher, exceptions as argon_exc
 
-import db
 from browsing_platform.server.services.event_logger import log_event
 from browsing_platform.server.services.token_manager import generate_token
+from utils import db
 
 # Tuned Argon2id parameters (adjust memory/time for your infra)
 _ph = PasswordHasher(

@@ -1,9 +1,12 @@
-import platform,socket,re,uuid,json,psutil,logging
+import json
+import platform
+import psutil
+import re
+import socket
+import uuid
 from typing import Optional
-import os
-import requests
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+import requests
 
 
 def get_my_private_ip():

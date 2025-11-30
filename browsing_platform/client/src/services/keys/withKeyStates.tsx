@@ -1,5 +1,5 @@
 import React from 'react';
-import { KeyStatesContext, KeyStatesContextType } from './keyStates';
+import {KeyStatesContext, KeyStatesContextType} from './keyStates';
 
 function withKeyStates<P extends KeyStatesContextType>(Component: React.ComponentType<P>) {
   return function KeyStatesComponent(props: Omit<P, keyof KeyStatesContextType>) {

@@ -1,9 +1,9 @@
 from datetime import datetime
-
-from pydantic import BaseModel
 from typing import Optional
 
-import db
+from pydantic import BaseModel
+
+from utils import db
 
 
 class ITag(BaseModel):

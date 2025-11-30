@@ -1,13 +1,15 @@
+import asyncio
+import os
 from hashlib import md5
 from pathlib import Path
-from PIL import Image
-import asyncio
+
 import cv2
-import os
-import db
-from extractors.db_intake import ROOT_ARCHIVES, LOCAL_ARCHIVES_DIR_ALIAS
+from PIL import Image
+
+from db_loaders.db_intake import ROOT_ARCHIVES, LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import Media
-from utils import ROOT_DIR
+from root_anchor import ROOT_DIR
+from utils import db
 
 ROOT_THUMBNAILS = Path(ROOT_DIR) / "thumbnails"
 LOCAL_THUMBNAILS_DIR_ALIAS = 'local_thumbnails'

@@ -1,13 +1,15 @@
-from fastapi import FastAPI, Request, Response
-from fastapi.staticfiles import StaticFiles
-import uvicorn
 import os
+
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
     permissions, tags, annotate
 from browsing_platform.server.services.token_manager import check_token
-from dotenv import load_dotenv
 
 load_dotenv()
 is_dev = os.getenv("BROWSING_PLATFORM_DEV", "")

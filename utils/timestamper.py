@@ -9,7 +9,7 @@ from pyasn1.codec.der import encoder
 from pydantic import BaseModel
 from rfc3161ng import RemoteTimestamper
 
-from utils import ROOT_DIR
+from misc import ROOT_DIR
 
 
 class TsaCertsLocation(BaseModel):
@@ -54,9 +54,9 @@ def get_tsa_certs() -> TsaCertsLocation:
 def ensure_openssl_on_path():
     openssl_exe_exists = False
     openssl_dir = None
-    has_stored_path = Path("open_ssl_location.txt").exists()
+    has_stored_path = Path("../open_ssl_location.txt").exists()
     if has_stored_path:
-        with open("open_ssl_location.txt", "r", encoding="utf-8") as f:
+        with open("../open_ssl_location.txt", "r", encoding="utf-8") as f:
             open_ssl_containing_dir = f.read().strip()
         openssl_dir = Path(open_ssl_containing_dir)
         openssl_exe = openssl_dir / "openssl.exe"
@@ -84,7 +84,7 @@ def ensure_openssl_on_path():
             print("OpenSSL installation complete.")
         open_ssl_location = input("Input the directory where OpenSSL was installed (e.g., C:\\OpenSSL-Win64): ")
         openssl_dir = Path(open_ssl_location) / "bin"
-        with open("open_ssl_location.txt", "w", encoding="utf-8") as f:
+        with open("../open_ssl_location.txt", "w", encoding="utf-8") as f:
             f.write(str(openssl_dir))
         ensure_openssl_on_path()
         return

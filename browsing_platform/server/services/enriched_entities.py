@@ -1,7 +1,7 @@
 from typing import Optional
+
 from pydantic import BaseModel
 
-import db
 from browsing_platform.server.services.account import get_account_by_id
 from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, get_archiving_session_by_id, \
     ArchiveSession
@@ -9,8 +9,9 @@ from browsing_platform.server.services.entities_hierarchy import nest_entities
 from browsing_platform.server.services.media import get_media_by_posts, get_media_by_id
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
 from browsing_platform.server.services.tag import get_tags_by_entity_ids
-from extractors.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post
+from utils import db
 
 
 class FlattenedEntitiesTransform(BaseModel):

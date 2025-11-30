@@ -3,16 +3,7 @@ import server from '../services/server';
 import cookie from 'js-cookie';
 import './login/Login.scss';
 import withRouter, {IRouterProps} from "../services/withRouter";
-import {
-    CircularProgress,
-    FormControl,
-    IconButton,
-    Input,
-    InputLabel,
-    Modal,
-    Stack,
-    Tooltip
-} from "@mui/material";
+import {CircularProgress, FormControl, IconButton, Input, InputLabel, Modal, Stack, Tooltip} from "@mui/material";
 import {createTheme, ThemeProvider} from '@mui/material/styles';
 import {LocalFlorist, Visibility, VisibilityOff} from "@mui/icons-material";
 

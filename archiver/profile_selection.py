@@ -1,5 +1,5 @@
-import sys
 import json
+import sys
 from pathlib import Path
 
 import toga
@@ -11,7 +11,7 @@ from profile_registration import Profile, register_instagram_account
 
 def select_profile() -> Profile:
     print("Fetching available profiles...")
-    available_profiles_path = Path("profiles/map.json")
+    available_profiles_path = Path("../profiles/map.json")
     if not available_profiles_path.exists():
         if input("No profiles found. Would you like to register a new profile? (yes/no): "):
             register_instagram_account()
@@ -47,7 +47,7 @@ def select_profile() -> Profile:
     return profile
 
 def select_profile_toga(app: toga.App):
-    available_profiles_path = Path("profiles/map.json")
+    available_profiles_path = Path("../profiles/map.json")
     if not available_profiles_path.exists():
         dialog = toga.Window(title="No Profiles Found")
         dialog.content = toga.Box(children=[

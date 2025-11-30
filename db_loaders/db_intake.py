@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
 from typing import Optional, TypeVar, Generic, Callable
+
 from pydantic import BaseModel
 
-import db
 from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
-from utils import ROOT_DIR
+from root_anchor import ROOT_DIR
+from utils import db
 
 LOCAL_ARCHIVES_DIR_ALIAS = 'local_archive_har'
 ROOT_ARCHIVES = Path(ROOT_DIR) / "archives"

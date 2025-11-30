@@ -4,8 +4,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
-from browsing_platform.server.services.permissions import get_auth_user
 from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id
+from browsing_platform.server.services.permissions import get_auth_user
 from browsing_platform.server.services.post import get_post_by_id
 from extractors.entity_types import ExtractedEntitiesNested
 

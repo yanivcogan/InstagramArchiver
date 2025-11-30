@@ -6,7 +6,7 @@ import TextField from "@mui/material/TextField";
 import TagSelector from "../Tags/TagSelector";
 import SaveIcon from "@mui/icons-material/Save";
 import {saveAccountAnnotations, saveMediaAnnotations, savePostAnnotations} from "../../services/DataSaver";
-import { toast } from "material-react-toastify";
+import {toast} from "material-react-toastify";
 
 interface IProps {
     entity: IMedia | IPost | IAccount | IMediaPart

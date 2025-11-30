@@ -1,19 +1,19 @@
+import asyncio
 import json
 import traceback
-import asyncio
-from tzlocal import get_localzone_name
 
 from dateutil import parser
 from pytz import timezone as pytz_timezone
+from tzlocal import get_localzone_name
 
-import db
-from extractors.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES
+from db_loaders.db_intake import incorporate_structures_into_db
+from db_loaders.thumbnail_generator import generate_missing_thumbnails
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.session_attachments import get_session_attachments
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
-from extractors.db_intake import incorporate_structures_into_db
-from extractors.thumbnail_generator import generate_missing_thumbnails
+from utils import db
 
 
 def register_archives():

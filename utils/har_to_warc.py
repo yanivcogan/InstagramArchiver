@@ -1,6 +1,5 @@
-import os
 import asyncio
-from pathlib import Path
+
 from har2warc.har2warc import har2warc
 
 
