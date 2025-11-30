@@ -6,7 +6,7 @@ import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN
 
-from profile_registration import Profile, register_instagram_account
+from archiver.profile_registration import Profile, register_instagram_account
 
 
 def select_profile() -> Profile:

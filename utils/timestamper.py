@@ -9,7 +9,7 @@ from pyasn1.codec.der import encoder
 from pydantic import BaseModel
 from rfc3161ng import RemoteTimestamper
 
-from misc import ROOT_DIR
+from root_anchor import ROOT_DIR
 
 
 class TsaCertsLocation(BaseModel):
