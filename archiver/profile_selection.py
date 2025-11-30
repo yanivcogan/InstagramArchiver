@@ -7,11 +7,12 @@ from toga.style import Pack
 from toga.style.pack import COLUMN
 
 from archiver.profile_registration import Profile, register_instagram_account
+from root_anchor import ROOT_DIR
 
 
 def select_profile() -> Profile:
     print("Fetching available profiles...")
-    available_profiles_path = Path("../profiles/map.json")
+    available_profiles_path = Path(ROOT_DIR) / "profiles/map.json"
     if not available_profiles_path.exists():
         if input("No profiles found. Would you like to register a new profile? (yes/no): "):
             register_instagram_account()
