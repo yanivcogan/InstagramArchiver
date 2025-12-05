@@ -53,12 +53,14 @@ export default class Post extends React.Component <IProps, IState> {
                     <a href={post.url}>
                         <Typography variant={"body1"}>{post.url}</Typography>
                     </a>
-                    <IconButton
-                        color={"primary"}
-                        href={"/post/" + post.id}
-                    >
-                        <LinkIcon/>
-                    </IconButton>
+                    {
+                        this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
+                            color={"primary"}
+                            href={"/post/" + post.id}
+                        >
+                            <LinkIcon/>
+                        </IconButton>
+                    }
                 </Stack>
                 <Typography variant="caption">{post.publication_date}</Typography>
                 {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
@@ -86,6 +88,7 @@ export default class Post extends React.Component <IProps, IState> {
                                 <ReactJson
                                     src={post.data}
                                     enableClipboard={false}
+                                    style={{wordBreak: 'break-word'}}
                                 /> :
                                 null
                     }
@@ -98,8 +101,12 @@ export default class Post extends React.Component <IProps, IState> {
                     }
                 </Stack>
                 {
-                    this.props.viewerConfig?.post?.annotator === "show" ?
-                        <EntityAnnotator entity={this.state.post} entityType={"post"} readonly={false}/> :
+                    this.props.viewerConfig?.post?.annotator !== "hide" ?
+                        <EntityAnnotator
+                            entity={this.state.post}
+                            entityType={"post"}
+                            readonly={this.props.viewerConfig?.post?.annotator === "disable"}
+                        /> :
                         null
                 }
             </Stack>

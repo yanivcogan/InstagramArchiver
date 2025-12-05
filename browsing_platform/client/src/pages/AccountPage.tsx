@@ -16,7 +16,12 @@ interface IState {
     loadingData: boolean;
     sessions: IArchiveSession[] | null;
     loadingSessions: boolean;
+
     showAllPosts: boolean;
+    hideHeader: boolean;
+    hideInnerLinks: boolean;
+    disableAnnotator: boolean;
+    preloadMetadata: boolean;
 }
 
 class AccountPage extends React.Component<IProps, IState> {
@@ -24,13 +29,29 @@ class AccountPage extends React.Component<IProps, IState> {
         super(props);
         const idArg = this.props.params.id;
         const id = idArg === undefined ? null : parseInt(idArg);
+
+        const export_mode = this.props.searchParams.get("export") === "1";
+        const config = !export_mode ? {
+            showAllPosts: false,
+            hideHeader: false,
+            hideInnerLinks: false,
+            disableAnnotator: false,
+            preloadMetadata: false,
+        } : {
+            showAllPosts: true,
+            hideHeader: true,
+            hideInnerLinks: true,
+            disableAnnotator: true,
+            preloadMetadata: true,
+        }
+
         this.state = {
             id,
             data: null,
             loadingData: id !== null,
             sessions: null,
             loadingSessions: false,
-            showAllPosts: this.props.searchParams.get("expand_all") === "1",
+            ...config
         }
     }
 
@@ -64,6 +85,7 @@ class AccountPage extends React.Component<IProps, IState> {
                 id,
                 {
                     flattened_entities_transform: {
+                        strip_raw_data: !this.state.preloadMetadata,
                         retain_only_media_with_local_files: true,
                         local_files_root: null,
                     },
@@ -103,8 +125,11 @@ class AccountPage extends React.Component<IProps, IState> {
             entities={data}
             viewerConfig={
                 new EntityViewerConfig({
+                    all: {
+                        hideInnerLinks: this.state.hideInnerLinks,
+                    },
                     account: {
-                        annotator: "show",
+                        annotator: this.state.disableAnnotator ? "disable" : "show",
                         postsPageSize: this.state.showAllPosts ? null : 5,
                     },
                     media: {
@@ -121,9 +146,11 @@ class AccountPage extends React.Component<IProps, IState> {
 
     render() {
         return <div className={"page-wrap"}>
-            <TopNavBar>
-                Account Data
-            </TopNavBar>
+            {
+                this.state.hideHeader ? null : <TopNavBar>
+                    Account Data
+                </TopNavBar>
+            }
             <div className={"page-content content-wrap"}>
                 <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
                     {this.renderData()}

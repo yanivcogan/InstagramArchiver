@@ -111,12 +111,14 @@ export default class Media extends React.Component <IProps, IState> {
                                 textAlign: "center",
                             }}
                         >
-                            <IconButton
-                                color={"primary"}
-                                href={"/media/" + media.id}
-                            >
-                                <LinkIcon/>
-                            </IconButton>
+                            {
+                                this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
+                                    color={"primary"}
+                                    href={"/media/" + media.id}
+                                >
+                                    <LinkIcon/>
+                                </IconButton>
+                            }
                             <span>
                             <SelfContainedPopover
                                 trigger={(popupVisibilitySetter) => (
@@ -127,8 +129,10 @@ export default class Media extends React.Component <IProps, IState> {
                                             ...curr,
                                             expandDetails: !curr.expandDetails
                                         }), async () => {
-                                            if (this.state.expandDetails && (media.data === undefined || media.data === null)) {
-                                                await this.fetchMediaDetails();
+                                            if (this.state.expandDetails) {
+                                                if (media.data === undefined || media.data === null) {
+                                                    await this.fetchMediaDetails();
+                                                }
                                                 popupVisibilitySetter(e, true)
                                             }
                                         })}
@@ -144,6 +148,7 @@ export default class Media extends React.Component <IProps, IState> {
                                                 <ReactJson
                                                     src={media.data}
                                                     enableClipboard={false}
+                                                    style={{wordBreak: 'break-word'}}
                                                 /> :
                                                 null
                                     }
@@ -167,7 +172,12 @@ export default class Media extends React.Component <IProps, IState> {
                 </Box>
             </Box>
             {
-                this.props.viewerConfig?.media?.annotator === "show" && <EntityAnnotator entity={this.state.media} entityType={"media"} readonly={false}/>
+                this.props.viewerConfig?.media?.annotator !== "hide" &&
+                <EntityAnnotator
+                    entity={this.state.media}
+                    entityType={"media"}
+                    readonly={this.props.viewerConfig?.media?.annotator === "disable"}
+                />
             }
             {
                 this.props.viewerConfig?.mediaPart.display === "display" ? <Stack direction={"column"} gap={1}>

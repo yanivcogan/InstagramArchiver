@@ -4,6 +4,7 @@ import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
 import {ITagWithType} from "../types/tags";
 
 interface FlattenedEntitiesTransform {
+    strip_raw_data?: boolean;
     local_files_root?: string | null;
     retain_only_media_with_local_files?: boolean;
 }
@@ -26,6 +27,9 @@ const entitiesTransformConfigToQueryParams = (config: EntitiesTransformConfig): 
         }
         if (config.flattened_entities_transform.retain_only_media_with_local_files !== undefined) {
             params.append("mwf", String(config.flattened_entities_transform.retain_only_media_with_local_files));
+        }
+        if (config.flattened_entities_transform.strip_raw_data !== undefined) {
+            params.append("srd", config.flattened_entities_transform.strip_raw_data ? "1" : "0");
         }
     }
     if (config.nested_entities_transform) {

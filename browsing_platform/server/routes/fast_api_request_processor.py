@@ -10,6 +10,7 @@ def extract_entities_transform_config(request: Request) -> EntitiesTransformConf
         flattened_entities_transform=FlattenedEntitiesTransform(
             local_files_root=params.get("lfr", None) or None,
             retain_only_media_with_local_files=params.get("mwf") == "true" if params.get("mwf") is not None else False,
+            strip_raw_data=params.get("srd") is None or int(params.get("srd")),
         ),
         nested_entities_transform=NestedEntitiesTransform(
             retain_only_posts_with_media=params.get("pwm") == "true" if params.get("pwm") is not None else False,

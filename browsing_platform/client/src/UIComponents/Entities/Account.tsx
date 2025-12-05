@@ -53,12 +53,14 @@ export default class Account extends React.Component <IProps, IState> {
                     <a href={account.url}>
                         <Typography variant={"body1"}>{account.url}</Typography>
                     </a>
-                    <IconButton
-                        color={"primary"}
-                        href={"/account/" + account.id}
-                    >
-                        <LinkIcon/>
-                    </IconButton>
+                    {
+                        this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
+                            color={"primary"}
+                            href={"/account/" + account.id}
+                        >
+                            <LinkIcon/>
+                        </IconButton>
+                    }
                 </Stack>
                 {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
                 <Typography variant="caption">{account.bio}</Typography>
@@ -85,13 +87,18 @@ export default class Account extends React.Component <IProps, IState> {
                                 <ReactJson
                                     src={account.data}
                                     enableClipboard={false}
+                                    style={{wordBreak: 'break-word'}}
                                 /> :
                                 null
                     }
                 </Collapse>
                 {
-                    this.props.viewerConfig?.account?.annotator === "show" && <Stack gap={1}>
-                        <EntityAnnotator entity={this.state.account} entityType={"account"} readonly={false}/>
+                    this.props.viewerConfig?.account?.annotator !== "hide" && <Stack gap={1}>
+                        <EntityAnnotator
+                            entity={this.state.account}
+                            entityType={"account"}
+                            readonly={this.props.viewerConfig?.account?.annotator === "disable"}
+                        />
                     </Stack>
                 }
                 <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
