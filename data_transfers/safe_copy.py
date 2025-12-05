@@ -111,16 +111,16 @@ def safe_copy_archive(src_path: Path, dest_dir: Path) -> bool:
                             dest_parent,
                             src_file_path.name,
                             "/COPY:DAT",
-                            "/DCOPY:T",
+                            "/DCOPY:DAT",
                             "/NFL",
                             "/NDL",
                             "/NJH",
                             "/NJS",
                         ]
                         res = subprocess.run(cmd, capture_output=True)
-                        print("robocopy stdout:", res.stdout)
-                        print("robocopy stderr:", res.stderr)
                         if res.returncode >= 8:
+                            print("robocopy stdout:", res.stdout)
+                            print("robocopy stderr:", res.stderr)
                             raise Exception(f"robocopy failed with returncode {res.returncode}")
                     else:
                         shutil.copy2(src_file_path, dest_file_path)
