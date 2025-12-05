@@ -59,3 +59,12 @@ def get_archiving_session_by_id(session_id: int) -> Optional[ArchiveSession]:
     if session is None:
         return None
     return ArchiveSession(**session)
+
+
+def censor_archiving_session(session: ArchiveSession, properties_to_censor: list[str]) -> ArchiveSession:
+    if not session.metadata:
+        return session
+    for prop in properties_to_censor:
+        if prop in session.metadata:
+            session.metadata[prop] = "[CENSORED]"
+    return session

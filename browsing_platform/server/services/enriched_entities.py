@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from browsing_platform.server.services.account import get_account_by_id
 from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, get_archiving_session_by_id, \
-    ArchiveSession
+    ArchiveSession, censor_archiving_session
 from browsing_platform.server.services.entities_hierarchy import nest_entities
 from browsing_platform.server.services.media import get_media_by_posts, get_media_by_id
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
@@ -243,7 +243,9 @@ def get_archiving_sessions_by_account_id(
         query_args,
         return_type="rows"
     )
-    return [ArchiveSession(**s) for s in session_rows]
+    sessions = [ArchiveSession(**s) for s in session_rows]
+    sessions = [censor_archiving_session(s, ["profile_name", "signature", "my_ip", "platform"]) for s in sessions]
+    return sessions
 
 
 def get_archiving_sessions_by_post_id(

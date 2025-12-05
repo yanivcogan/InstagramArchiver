@@ -45,7 +45,7 @@ def default_fulltext_query(search_term: Optional[str]) -> Optional[str]:
         return None
     if "+" in search_term or "-" in search_term or "*" in search_term:
         return search_term
-    return " ".join([f'+"{word}' for word in search_term.split() if word])
+    return " ".join([f'+"{word}"' for word in search_term.split() if word])
 
 
 def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
