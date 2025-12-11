@@ -117,8 +117,8 @@ class CommentUserApiV1(BaseModel):
         extra = "allow"
 
 class CommentCaptionApiV1(BaseModel):
-    pk: str
-    user_id: str
+    pk: Union[str, int]
+    user_id: Union[str, int]
     type: int
     did_report_as_spam: bool
     created_at: int
