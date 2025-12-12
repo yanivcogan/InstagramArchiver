@@ -8,11 +8,11 @@ import datetime
 from hashlib import md5
 from typing import Literal, Optional
 
-from dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
+from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
-from ffmpeg_installer import ensure_ffmpeg_installed
-from git_helper import ensure_committed
+from utils.ffmpeg_installer import ensure_ffmpeg_installed
+from utils.git_helper import ensure_committed
 
 import cv2
 import pyautogui
@@ -26,12 +26,12 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from dotenv import load_dotenv
 
-from profile_selection import select_profile
-from timestamper import timestamp_file
-from profile_registration import Profile
+from archiver.profile_selection import select_profile
+from utils.timestamper import timestamp_file
+from archiver.profile_registration import Profile
 from summarizers.entities_summary_generator import generate_entities_summary
 
-from utils import get_my_public_ip, get_system_info
+from utils.misc import get_my_public_ip, get_system_info
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
