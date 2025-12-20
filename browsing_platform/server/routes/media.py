@@ -18,7 +18,7 @@ router = APIRouter(
 )
 
 
-@router.get("/data/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/data/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_media_data(item_id:int) -> Any:
     media = get_media_by_id(item_id)
     if not media:
@@ -26,7 +26,7 @@ async def get_media_data(item_id:int) -> Any:
     return media.data
 
 
-@router.get("/parts/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/parts/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_media_parts(item_id:int) -> Any:
     media = get_media_by_id(item_id)
     if not media:
@@ -34,7 +34,7 @@ async def get_media_parts(item_id:int) -> Any:
     return get_media_part_by_media([media])
 
 
-@router.get("/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_media(item_id:int, req: Request) -> ExtractedEntitiesNested:
     media = get_enriched_media_by_id(item_id, extract_entities_transform_config(req))
     if not media:

@@ -60,39 +60,39 @@ export const fetchArchivingSession = async (archivingSessionId: number, config: 
 }
 
 export const fetchAccountData = async (accountId: number): Promise<any> => {
-    return await server.get("account/data/" + accountId);
+    return await server.get(`account/data/${accountId}/`);
 }
 
 export const fetchPostData = async (postId: number): Promise<any> => {
-    return await server.get("post/data/" + postId);
+    return await server.get(`post/data/${postId}/`);
 }
 
 export const fetchMediaData = async (mediaId: number): Promise<any> => {
-    return await server.get("media/data/" + mediaId);
+    return await server.get(`media/data/${mediaId}/`);
 }
 
 export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> => {
-    return await server.get("media/parts/" + mediaId);
+    return await server.get(`media/parts/${mediaId}/`);
 }
 
 export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<any> => {
-    return await server.get("archiving_session/data/" + archivingSessionId);
+    return await server.get(`archiving_session/data/${archivingSessionId}/`);
 }
 
 export const fetchArchivingSessionsAccount = async (accountId: number): Promise<IArchiveSession[]> => {
-    return await server.get("archiving_session/account/" + accountId);
+    return await server.get(`archiving_session/account/${accountId}/`);
 }
 
 export const fetchArchivingSessionsPost = async (postId: number): Promise<IArchiveSession[]> => {
-    return await server.get("archiving_session/post/" + postId);
+    return await server.get(`archiving_session/post/${postId}/`);
 }
 
 export const fetchArchivingSessionsMedia = async (mediaId: number): Promise<IArchiveSession[]> => {
-    return await server.get("archiving_session/media/" + mediaId);
+    return await server.get(`archiving_session/media/${mediaId}/`);
 }
 
 export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {
-    return await server.get("tags/?q=" + encodeURIComponent(tagQuery));
+    return await server.get(`tags/?q=` + encodeURIComponent(tagQuery));
 }
 
 export const SEARCH_MODES: readonly { key: string, label: string }[] = [

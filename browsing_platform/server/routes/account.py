@@ -24,7 +24,7 @@ async def get_account_data(item_id:int) -> Any:
     return account.data
 
 
-@router.get("/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_account(item_id:int, req: Request) -> ExtractedEntitiesNested:
     account = get_enriched_account_by_id(item_id, extract_entities_transform_config(req))
     if not account:

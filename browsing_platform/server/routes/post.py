@@ -17,7 +17,7 @@ router = APIRouter(
 )
 
 
-@router.get("/data/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/data/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_post_data(item_id:int) -> Any:
     post = get_post_by_id(item_id)
     if not post:
@@ -25,7 +25,7 @@ async def get_post_data(item_id:int) -> Any:
     return post.data
 
 
-@router.get("/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_post(item_id:int, req: Request) -> ExtractedEntitiesNested:
     post = get_enriched_post_by_id(item_id, extract_entities_transform_config(req))
     if not post:

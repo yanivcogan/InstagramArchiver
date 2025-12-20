@@ -15,7 +15,7 @@ router = APIRouter(
 )
 
 
-@router.get("/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.get("/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def get_media_part(item_id:int) -> MediaPart:
     media_part = get_media_part_by_id(item_id)
     if not media_part:
@@ -34,7 +34,7 @@ async def post_media_part(item: MediaPart) -> Optional[int]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{item_id:int}", dependencies=[Depends(get_auth_user)])
+@router.delete("/{item_id}/", dependencies=[Depends(get_auth_user)])
 async def drop_media_part(item_id:int) -> None:
     media_part = get_media_part_by_id(item_id)
     if not media_part:
