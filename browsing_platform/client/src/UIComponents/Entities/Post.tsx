@@ -8,6 +8,11 @@ import LinkIcon from "@mui/icons-material/Link";
 import {fetchPostData} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
+import dayjs from "dayjs";
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 interface IProps {
     post: IPostAndAssociatedEntities
@@ -47,6 +52,10 @@ export default class Post extends React.Component <IProps, IState> {
 
     render() {
         const post = this.state.post;
+        const dateRaw = post.publication_date;
+        const date = dayjs.utc(dateRaw);
+        const dateInUTC = date.utc().format('YYYY-MM-DD HH:mm:ss');
+        const dateInGaza = date.tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss');
         return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
             <Stack gap={0.5}>
                 <Stack gap={1} direction={"row"} alignItems={"center"}>
@@ -62,7 +71,8 @@ export default class Post extends React.Component <IProps, IState> {
                         </IconButton>
                     }
                 </Stack>
-                <Typography variant="caption">{post.publication_date}</Typography>
+                <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
+                <Typography variant="caption">{dateInGaza} (in Gaza)</Typography>
                 {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
                 <span>
                     <IconButton
