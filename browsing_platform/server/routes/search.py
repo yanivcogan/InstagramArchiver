@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
+from browsing_platform.server.routes.fast_api_request_processor import extract_search_results_config
 from browsing_platform.server.services.permissions import get_auth_user
 from browsing_platform.server.services.search import ISearchQuery, SearchResult, search_base
 
@@ -12,6 +13,6 @@ router = APIRouter(
 
 
 @router.post("/", dependencies=[Depends(get_auth_user)])
-async def search_data(query: ISearchQuery) -> list[SearchResult]:
-    return search_base(query)
+async def search_data(query: ISearchQuery, req: Request) -> list[SearchResult]:
+    return search_base(query, extract_search_results_config(req))
 

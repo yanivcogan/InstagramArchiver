@@ -105,7 +105,7 @@ class AccountPage extends React.Component<IProps, IState> {
             return;
         }
         this.setState((curr) => ({...curr, loadingSessions: true}), async () => {
-            const sessions = await fetchArchivingSessionsAccount(id);
+            const sessions = await fetchArchivingSessionsAccount(id, {});
             this.setState((curr) => ({...curr, sessions, loadingSessions: false}))
         });
     }

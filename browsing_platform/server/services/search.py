@@ -1,7 +1,10 @@
 import logging
 from typing import Literal, Optional, Any
+from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
+from pydantic import BaseModel, field_validator
 
-from pydantic import BaseModel
+from browsing_platform.server.services.file_tokens import generate_file_token
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 
 logger = logging.getLogger(__name__)
 
@@ -21,23 +24,34 @@ class ISearchQuery(BaseModel):
     page_size: int
 
 
+class SearchResultTransform(BaseModel):
+    local_files_root: Optional[str] = None
+    access_token: Optional[str] = None
+
+
 class SearchResult(BaseModel):
     page: str
     id: int
     title: str
     details: Optional[str]
-    thumbnails: Optional[list[str]] = None
+    thumbnails: list[str]
+
+    @field_validator('thumbnails', mode='before')
+    def parse_timestamp(cls, v, _):
+        if not v:
+            v = []
+        return v
 
 
-def search_base(query: ISearchQuery) -> list[SearchResult]:
+def search_base(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     if query.search_mode == "archive_sessions":
-        return search_archive_sessions(query)
+        return search_archive_sessions(query, search_results_transform)
     elif query.search_mode == "accounts":
-        return search_accounts(query)
+        return search_accounts(query, search_results_transform)
     elif query.search_mode == "posts":
-        return search_posts(query)
+        return search_posts(query, search_results_transform)
     elif query.search_mode == "media":
-        return search_media(query)
+        return search_media(query, search_results_transform)
     else:
         print(f"Search mode {query.search_mode} not implemented yet.")
         return []
@@ -51,7 +65,7 @@ def default_fulltext_query(search_term: Optional[str]) -> Optional[str]:
     return " ".join([f'+"{word}"' for word in search_term.split() if word])
 
 
-def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
+def search_archive_sessions(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
@@ -66,7 +80,7 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    results = db.execute_query(
+    rows = db.execute_query(
         f"""SELECT *
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
@@ -74,7 +88,7 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    sessions = [ArchiveSession(**row) for row in results]
+    sessions = [ArchiveSession(**row) for row in rows]
     return [SearchResult(
         page="archive",
         id=s.id,
@@ -83,7 +97,7 @@ def search_archive_sessions(query: ISearchQuery) -> list[SearchResult]:
     ) for s in sessions]
 
 
-def search_accounts(query: ISearchQuery) -> list[SearchResult]:
+def search_accounts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
@@ -96,7 +110,7 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    results = db.execute_query(
+    rows = db.execute_query(
         f"""SELECT *
            FROM account
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
@@ -104,16 +118,18 @@ def search_accounts(query: ISearchQuery) -> list[SearchResult]:
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    accounts = [Account(**row) for row in results]
-    return [SearchResult(
+    accounts = [Account(**row) for row in rows]
+    results = [SearchResult(
         page="account",
         id=a.id,
         title=a.url + (f" ({a.display_name})" if a.display_name else ""),
         details=a.bio or ""
     ) for a in accounts]
+    results = apply_search_results_transform(results, search_results_transform)
+    return results
 
 
-def search_posts(query: ISearchQuery) -> list[SearchResult]:
+def search_posts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
@@ -126,7 +142,7 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    results = db.execute_query(
+    rows = db.execute_query(
         f"""SELECT *
            FROM post
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
@@ -134,7 +150,7 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    posts = [Post(**row) for row in results]
+    posts = [Post(**row) for row in rows]
     media = get_media_by_posts(posts)
     post_thumbnails: dict[int, list[str]] = {}
     for m in media:
@@ -143,9 +159,9 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
         media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
         if media_thumbnail:
             post_thumbnails[m.post_id].append(media_thumbnail)
-    search_results: list[SearchResult] = []
+    results: list[SearchResult] = []
     for p in posts:
-        search_results.append(
+        results.append(
             SearchResult(
                 page="post",
                 id=p.id,
@@ -154,10 +170,11 @@ def search_posts(query: ISearchQuery) -> list[SearchResult]:
                 thumbnails=post_thumbnails[p.id] if p.id in post_thumbnails else None
             )
         )
-    return search_results
+    results = apply_search_results_transform(results, search_results_transform)
+    return results
 
 
-def search_media(query: ISearchQuery) -> list[SearchResult]:
+def search_media(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
@@ -172,7 +189,7 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    results = db.execute_query(
+    rows = db.execute_query(
         f"""SELECT *
            FROM media
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
@@ -180,11 +197,11 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    media = [Media(**row) for row in results]
-    search_results: list[SearchResult] = []
+    media = [Media(**row) for row in rows]
+    results: list[SearchResult] = []
     for m in media:
         media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
-        search_results.append(
+        results.append(
             SearchResult(
                 page="media",
                 id=m.id,
@@ -193,7 +210,38 @@ def search_media(query: ISearchQuery) -> list[SearchResult]:
                 thumbnails=[media_thumbnail] if media_thumbnail else None
             )
         )
-    return search_results
+    results = apply_search_results_transform(results, search_results_transform)
+    return results
+
+
+def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTransform) -> SearchResult:
+    if not res.thumbnails:
+        return res
+    for i in range(len(res.thumbnails)):
+        thumb: str = res.thumbnails[i]
+        if LOCAL_ARCHIVES_DIR_ALIAS in thumb:
+            local_path = thumb.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+        else:
+            local_path = f"{transform.local_files_root}/thumbnails/{thumb}"
+        parsed = urlparse(local_path)
+        qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        qs['ft'] = generate_file_token(
+            transform.access_token,
+            local_path.split(f"{transform.local_files_root}")[-1]
+        )
+        new_query = urlencode(qs, doseq=True)
+        local_signed_url = str(urlunparse(parsed._replace(query=new_query)))
+        res.thumbnails[i] = local_signed_url
+    return res
+
+
+def apply_search_results_transform(
+        results: list[SearchResult],
+        transform: SearchResultTransform
+) -> list[SearchResult]:
+    if transform.access_token is not None:
+        results = [sign_search_result_thumbnails(s, transform) for s in results]
+    return results
 
 
 ALLOWED_COLUMNS = {

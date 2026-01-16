@@ -81,7 +81,7 @@ class PostPage extends React.Component<IProps, IState> {
             return;
         }
         this.setState((curr) => ({...curr, loadingSessions: true}), async () => {
-            const sessions = await fetchArchivingSessionsPost(id);
+            const sessions = await fetchArchivingSessionsPost(id, {});
             this.setState((curr) => ({...curr, sessions, loadingSessions: false}))
         });
     }

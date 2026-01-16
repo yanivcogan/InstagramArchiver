@@ -43,6 +43,16 @@ const entitiesTransformConfigToQueryParams = (config: EntitiesTransformConfig): 
     return params.toString();
 }
 
+const sessionsTransformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
+    const params = new URLSearchParams();
+    if (config.flattened_entities_transform) {
+        if (config.flattened_entities_transform.local_files_root !== undefined) {
+            params.append("lfr", config.flattened_entities_transform.local_files_root || "");
+        }
+    }
+    return params.toString();
+}
+
 export const fetchAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
     return await server.get("account/" + accountId + "/?" + entitiesTransformConfigToQueryParams(config));
 }
@@ -79,16 +89,16 @@ export const fetchArchivingSessionData = async (archivingSessionId: number): Pro
     return await server.get(`archiving_session/data/${archivingSessionId}/`);
 }
 
-export const fetchArchivingSessionsAccount = async (accountId: number): Promise<IArchiveSession[]> => {
-    return await server.get(`archiving_session/account/${accountId}/`);
+export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
+    return await server.get(`archiving_session/account/${accountId}/?${sessionsTransformConfigToQueryParams(config)}`);
 }
 
-export const fetchArchivingSessionsPost = async (postId: number): Promise<IArchiveSession[]> => {
-    return await server.get(`archiving_session/post/${postId}/`);
+export const fetchArchivingSessionsPost = async (postId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
+    return await server.get(`archiving_session/post/${postId}/?${sessionsTransformConfigToQueryParams(config)}`);
 }
 
-export const fetchArchivingSessionsMedia = async (mediaId: number): Promise<IArchiveSession[]> => {
-    return await server.get(`archiving_session/media/${mediaId}/`);
+export const fetchArchivingSessionsMedia = async (mediaId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
+    return await server.get(`archiving_session/media/${mediaId}/?${sessionsTransformConfigToQueryParams(config)}`);
 }
 
 export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {

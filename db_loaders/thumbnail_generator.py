@@ -123,7 +123,7 @@ async def generate_missing_thumbnails(thumbnail_size=(128, 128)):
         # Generate thumbnail and store it under ROOT_THUMBNAILS/{md5_hash}_{thumbnail_size}.jpg
 
         try:
-            logger.info(f"Generating thumbnail for media ID {media.id} at {local_path}")
+            print(f"Generating thumbnail for media ID {media.id} at {local_path}")
             if media.media_type == 'image':
                 img = Image.open(local_path)
             elif media.media_type == 'video':

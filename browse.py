@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 import uvicorn
 import os
 import time
@@ -8,6 +8,11 @@ import logging
 from logging.handlers import RotatingFileHandler
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from starlette.middleware.base import BaseHTTPMiddleware
+from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
+    permissions, tags, annotate
+from browsing_platform.server.services.token_manager import check_token
+from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 
 load_dotenv()
 is_production = os.getenv("ENVIRONMENT") == "production"
@@ -41,21 +46,13 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-from starlette.middleware.base import BaseHTTPMiddleware
-from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate
-from browsing_platform.server.services.token_manager import check_token
 app = FastAPI()
 
 # CORS configuration
 ALLOWED_ORIGINS = [
-    "http://localhost:3000",      # Local React dev server
-    "http://localhost:4444",      # Local API
+    os.getenv("CLIENT_HOST"),
+    "http://localhost:4444",
 ]
-if is_production:
-    ALLOWED_ORIGINS = [
-        "https://evidenceplatform.org",
-    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,14 +79,18 @@ app.mount(
 class TokenAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
-
-        if is_production:
-            if request.url.path.startswith("/archives") or request.url.path.startswith("/thumbnails"):
-                token = request.query_params.get("token")
-                if not token or not check_token(token):
-                    logger.warning(f"Unauthorized access attempt: {request.url.path}")
+        if request.url.path.startswith("/archives") or request.url.path.startswith("/thumbnails"):
+            # Prefer per-file token 'ft' which is bound to the file path and cannot be reused for other files.
+            file_token = request.query_params.get("ft")
+            try:
+                # Use the request path (including leading slash) as the file_path binding.
+                payload = decrypt_file_token(file_token, request.url.path)
+                if not check_token(payload.login_token).valid:
+                    logger.warning(f"Invalid embedded login token for {request.url.path}")
                     return Response("Unauthorized", status_code=401)
-
+            except FileTokenError as e:
+                logger.warning(f"File token validation failed for {request.url.path}: {e}")
+                return Response("Unauthorized", status_code=401)
         response = await call_next(request)
 
         # Security headers

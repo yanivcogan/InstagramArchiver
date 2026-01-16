@@ -52,8 +52,6 @@ async def get_auth_user(request: Request):
 async def get_user_id(request: Request):
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
-    if not token:
-        return None
     token_permissions = check_token(token)
     logger.debug(f"Retrieved user_id {token_permissions.user_id}")
     return token_permissions.user_id
@@ -65,12 +63,11 @@ async def log_server_call(request: Request):
     user_id = None
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
-    if token:
-        try:
-            token_permissions = check_token(token)
-            user_id = token_permissions.user_id
-        except Exception:
-            pass
+    try:
+        token_permissions = check_token(token)
+        user_id = token_permissions.user_id
+    except Exception:
+        pass
     body = await request.body()
     log_event(
         "server_call", user_id,

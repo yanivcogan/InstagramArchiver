@@ -81,7 +81,7 @@ class MediaPage extends React.Component<IProps, IState> {
             return;
         }
         this.setState((curr) => ({...curr, loadingSessions: true}), async () => {
-            const sessions = await fetchArchivingSessionsMedia(id);
+            const sessions = await fetchArchivingSessionsMedia(id, {});
             this.setState((curr) => ({...curr, sessions, loadingSessions: false}))
         });
     }

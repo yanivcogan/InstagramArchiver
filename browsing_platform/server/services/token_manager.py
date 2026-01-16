@@ -30,18 +30,23 @@ class TokenPermissions(BaseModel):
     user_id: Optional[int]
 
 
-def check_token(token: str):
-    token_check = db.execute_query(
-        '''SELECT token.*, u.admin, u.id as user_id FROM token JOIN user AS u ON token.user_id = u.id
-        WHERE token = %(token)s'''
-        , {"token": token}, "single_row"
-    )
-    if token_check is None:
-        return TokenPermissions(valid=False, admin=False, user_id=None)
-    else:
-        token = Token(**token_check)
-        if token.last_use > datetime.now() - TOKEN_EXPIRY:
-            return TokenPermissions(valid=True, admin=(token.admin ==1), user_id=token.user_id)
+def check_token(token: Optional[str]) -> TokenPermissions:
+    try:
+        if not token:
+            return TokenPermissions(valid=False, admin=False, user_id=None)
+        token_check = db.execute_query(
+            '''SELECT token.*, u.admin, u.id as user_id FROM token JOIN user AS u ON token.user_id = u.id
+            WHERE token = %(token)s'''
+            , {"token": token}, "single_row"
+        )
+        if token_check is None:
+            return TokenPermissions(valid=False, admin=False, user_id=None)
+        else:
+            token = Token(**token_check)
+            if token.last_use > datetime.now() - TOKEN_EXPIRY:
+                return TokenPermissions(valid=True, admin=(token.admin ==1), user_id=token.user_id)
+            return TokenPermissions(valid=False, admin=False, user_id=None)
+    except Exception:
         return TokenPermissions(valid=False, admin=False, user_id=None)
 
 

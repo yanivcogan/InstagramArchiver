@@ -3,7 +3,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
-from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
+from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config, \
+    extract_session_transform_config
 from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, ArchiveSession, \
     get_archiving_session_by_id
 from browsing_platform.server.services.enriched_entities import get_enriched_archiving_session_by_id, \
@@ -36,18 +37,18 @@ async def get_archiving_session(item_id:int, req: Request) -> ArchiveSessionWith
 
 
 @router.get("/account/{item_id}/", dependencies=[Depends(get_auth_user)])
-async def get_archiving_sessions_for_account(item_id:int) -> list[ArchiveSession]:
-    sessions = get_archiving_sessions_by_account_id(item_id)
+async def get_archiving_sessions_for_account(item_id:int, req: Request) -> list[ArchiveSession]:
+    sessions = get_archiving_sessions_by_account_id(item_id, extract_session_transform_config(req))
     return sessions
 
 
 @router.get("/post/{item_id}/", dependencies=[Depends(get_auth_user)])
-async def get_archiving_sessions_for_post(item_id:int) -> list[ArchiveSession]:
-    sessions = get_archiving_sessions_by_post_id(item_id)
+async def get_archiving_sessions_for_post(item_id:int, req: Request) -> list[ArchiveSession]:
+    sessions = get_archiving_sessions_by_post_id(item_id, extract_session_transform_config(req))
     return sessions
 
 
 @router.get("/media/{item_id}/", dependencies=[Depends(get_auth_user)])
-async def get_archiving_sessions_for_media(item_id:int) -> list[ArchiveSession]:
-    sessions = get_archiving_sessions_by_media_id(item_id)
+async def get_archiving_sessions_for_media(item_id:int, req: Request) -> list[ArchiveSession]:
+    sessions = get_archiving_sessions_by_media_id(item_id, extract_session_transform_config(req))
     return sessions
