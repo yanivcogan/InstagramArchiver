@@ -1,12 +1,15 @@
 import React from 'react';
 import withRouter, {IRouterProps} from "../services/withRouter";
-import {Box, CircularProgress, Divider, Stack,} from "@mui/material";
+import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchAccount, fetchArchivingSessionsAccount} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
 import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
+import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
+import cookie from "js-cookie";
+import {getShareTokenFromHref} from "../services/linkSharing";
 
 type IProps = {} & IRouterProps;
 
@@ -45,13 +48,19 @@ class AccountPage extends React.Component<IProps, IState> {
             preloadMetadata: true,
         }
 
+        const shareMode = !!getShareTokenFromHref();
+        if(shareMode){
+            config.hideHeader = true;
+            config.disableAnnotator = true
+        }
+
         this.state = {
             id,
             data: null,
             loadingData: id !== null,
             sessions: null,
             loadingSessions: false,
-            ...config
+            ...config,
         }
     }
 
@@ -145,10 +154,35 @@ class AccountPage extends React.Component<IProps, IState> {
     }
 
     render() {
+        const entityId = this.state.id;
+        const isLoggedIn = !!(cookie.get("token"));
         return <div className={"page-wrap"}>
             {
-                this.state.hideHeader ? null : <TopNavBar>
-                    Account Data
+                <TopNavBar hideMenuButton={this.state.hideHeader}>
+                    <Stack
+                        direction={"row"}
+                        alignItems={"center"} justifyContent={"space-between"}
+                        gap={1}
+                        sx={{width: '100%'}}
+                    >
+                        <Stack direction={"row"} alignItems={"center"} gap={1}>
+                            <Typography>
+                                Account Data
+                            </Typography>
+                            {
+                                this.state.data ?
+                                    <Typography>
+                                        {this.state.data.accounts?.[0].display_name || this.state.data.accounts?.[0].url}
+                                    </Typography> :
+                                    <CircularProgress color={"primary"} size={"16"}/>
+                            }
+                        </Stack>
+                        {
+                            isLoggedIn && entityId ?
+                                <LinkSharing entityType={"account"} entityId={entityId}/> :
+                                null
+                        }
+                    </Stack>
                 </TopNavBar>
             }
             <div className={"page-content content-wrap"}>

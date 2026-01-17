@@ -10,6 +10,7 @@ import {anchor_local_static_files} from "../../services/server";
 import MediaPart from "./MediaPart";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
+import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 
 interface IProps {
     media: IMediaAndAssociatedEntities
@@ -59,6 +60,8 @@ export default class Media extends React.Component <IProps, IState> {
     render() {
         const media = this.props.media;
         let localUrl = anchor_local_static_files(media.local_url) || undefined;
+        const shareToken = getShareTokenFromHref()
+
         return <div>
             <Box
                 sx={{cursor: "pointer", position: "relative"}}
@@ -114,7 +117,7 @@ export default class Media extends React.Component <IProps, IState> {
                             {
                                 this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
                                     color={"primary"}
-                                    href={"/media/" + media.id}
+                                    href={"/media/" + media.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '')}
                                 >
                                     <LinkIcon/>
                                 </IconButton>

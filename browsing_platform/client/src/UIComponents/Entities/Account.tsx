@@ -9,6 +9,8 @@ import {fetchAccountData} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
 
+import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
+
 interface IProps {
     account: IAccountAndAssociatedEntities
     viewerConfig?: EntityViewerConfig
@@ -47,16 +49,16 @@ export default class Account extends React.Component <IProps, IState> {
 
     render() {
         const account = this.state.account;
+        const shareToken = getShareTokenFromHref()
+
         return <Paper sx={{padding: '1em'}}>
             <Stack gap={0.5} sx={{height: "100%"}}>
                 <Stack gap={1} direction={"row"} alignItems={"center"}>
-                    <a href={account.url}>
-                        <Typography variant={"body1"}>{account.url}</Typography>
-                    </a>
+                    <Typography variant={"body1"}>{account.url}</Typography>
                     {
                         this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
                             color={"primary"}
-                            href={"/account/" + account.id}
+                            href={"/account/" + account.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : "")}
                         >
                             <LinkIcon/>
                         </IconButton>

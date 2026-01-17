@@ -1,6 +1,6 @@
-import random
 import string
 from datetime import timedelta, datetime
+from secrets import choice
 from typing import Optional
 
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ class Token(BaseModel):
 
 def generate_token() -> str:
     """Generate a random token string of TOKEN_LENGTH characters."""
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=TOKEN_LENGTH))
+    return ''.join(choice(string.ascii_letters + string.digits) for _ in range(TOKEN_LENGTH))
 
 
 class TokenPermissions(BaseModel):

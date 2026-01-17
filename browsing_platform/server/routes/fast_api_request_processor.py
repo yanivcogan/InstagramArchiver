@@ -1,4 +1,5 @@
 import os
+
 from fastapi import Request
 
 from browsing_platform.server.services.archiving_session import ArchivingSessionTransform
@@ -16,7 +17,7 @@ def extract_entities_transform_config(request: Request) -> EntitiesTransformConf
     token = parse_token_from_header(auth_header)
     config: EntitiesTransformConfig = EntitiesTransformConfig(
         flattened_entities_transform=FlattenedEntitiesTransform(
-            access_token=token,
+            access_token=params.get("st", None) or token,
             local_files_root=params.get("lfr", None) or SERVER_HOST,
             retain_only_media_with_local_files=params.get("mwf") == "true" if params.get("mwf") is not None else False,
             strip_raw_data=params.get("srd") is None or int(params.get("srd")),
@@ -34,7 +35,7 @@ def extract_session_transform_config(request: Request) -> ArchivingSessionTransf
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
     config: ArchivingSessionTransform = ArchivingSessionTransform(
-        access_token=token,
+        access_token=params.get("st", None) or token,
         local_files_root=params.get("lfr", None) or SERVER_HOST,
         properties_to_censor=[]
     )

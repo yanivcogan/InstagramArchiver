@@ -1,10 +1,12 @@
 import logging
 from typing import Literal, Optional, Any
 from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
+
 from pydantic import BaseModel, field_validator
 
 from browsing_platform.server.services.file_tokens import generate_file_token
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +36,10 @@ class SearchResult(BaseModel):
     id: int
     title: str
     details: Optional[str]
-    thumbnails: list[str]
+    thumbnails: list[str] = None
 
     @field_validator('thumbnails', mode='before')
-    def parse_timestamp(cls, v, _):
+    def parse_thumbnails(cls, v, _):
         if not v:
             v = []
         return v
@@ -221,8 +223,8 @@ def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTran
         thumb: str = res.thumbnails[i]
         if LOCAL_ARCHIVES_DIR_ALIAS in thumb:
             local_path = thumb.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
-        else:
-            local_path = f"{transform.local_files_root}/thumbnails/{thumb}"
+        if LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
+            local_path = thumb.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
         parsed = urlparse(local_path)
         qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
         qs['ft'] = generate_file_token(

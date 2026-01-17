@@ -11,6 +11,9 @@ import EntityAnnotator from "./Annotator";
 import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
+
+import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
@@ -56,16 +59,15 @@ export default class Post extends React.Component <IProps, IState> {
         const date = dayjs.utc(dateRaw);
         const dateInUTC = date.utc().format('YYYY-MM-DD HH:mm:ss');
         const dateInGaza = date.tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss');
+        const shareToken = getShareTokenFromHref()
         return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
             <Stack gap={0.5}>
                 <Stack gap={1} direction={"row"} alignItems={"center"}>
-                    <a href={post.url}>
-                        <Typography variant={"body1"}>{post.url}</Typography>
-                    </a>
+                    <Typography variant={"body1"}>{post.url}</Typography>
                     {
                         this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
                             color={"primary"}
-                            href={"/post/" + post.id}
+                            href={"/post/" + post.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '')}
                         >
                             <LinkIcon/>
                         </IconButton>

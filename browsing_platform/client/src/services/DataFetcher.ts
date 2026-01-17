@@ -2,6 +2,7 @@ import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested, 
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
 import {ITagWithType} from "../types/tags";
+import {getShareTokenFromHref} from "./linkSharing";
 
 interface FlattenedEntitiesTransform {
     strip_raw_data?: boolean;
@@ -21,6 +22,10 @@ interface EntitiesTransformConfig {
 
 const entitiesTransformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
     const params = new URLSearchParams();
+    const shareToken = getShareTokenFromHref()
+    if (shareToken){
+        params.append("st", shareToken);
+    }
     if (config.flattened_entities_transform) {
         if (config.flattened_entities_transform.local_files_root !== undefined) {
             params.append("lfr", config.flattened_entities_transform.local_files_root || "");
@@ -45,6 +50,10 @@ const entitiesTransformConfigToQueryParams = (config: EntitiesTransformConfig): 
 
 const sessionsTransformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
     const params = new URLSearchParams();
+    const shareToken = getShareTokenFromHref()
+    if (shareToken){
+        params.append("st", shareToken);
+    }
     if (config.flattened_entities_transform) {
         if (config.flattened_entities_transform.local_files_root !== undefined) {
             params.append("lfr", config.flattened_entities_transform.local_files_root || "");

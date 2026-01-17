@@ -1,5 +1,6 @@
 from typing import Optional
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+
 from pydantic import BaseModel
 
 from browsing_platform.server.services.account import get_account_by_id
