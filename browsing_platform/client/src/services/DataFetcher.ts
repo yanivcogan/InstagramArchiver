@@ -201,7 +201,7 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         },
     },
     'archive_sessions': {
-        archiving_date: {
+        archiving_timestamp: {
             label: 'Archiving Date',
             type: 'date',
         },

@@ -1,4 +1,5 @@
 import logging
+from dataclasses import Field
 from typing import Literal, Optional, Any
 from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
 
@@ -36,7 +37,7 @@ class SearchResult(BaseModel):
     id: int
     title: str
     details: Optional[str]
-    thumbnails: list[str] = None
+    thumbnails: Optional[list[str]] = None
 
     @field_validator('thumbnails', mode='before')
     def parse_thumbnails(cls, v, _):
@@ -246,15 +247,80 @@ def apply_search_results_transform(
     return results
 
 
-ALLOWED_COLUMNS = {
-    "account": {"id", "url", "display_name", "bio", "notes", "data", "created_at", "updated_at"},
-    "post": {"id", "url", "caption", "notes", "publication_date", "data", "account_id", "created_at", "updated_at"},
-    "media": {"id", "url", "local_url", "annotation", "notes", "post_id", "media_type", "created_at", "updated_at"},
-    "archive_session": {"id", "external_id", "archived_url", "archiving_timestamp", "notes", "source_type", "created_at", "updated_at"},
+class SearchableColumn(BaseModel):
+    column_name: str
+    data_type: Literal["text", "number", "date"]
+
+
+# compact definition: tuples of (column_name, data_type) per table
+_ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"]]]] = {
+    "account": [
+        ("id", "number"),
+        ("create_date", "date"),
+        ("update_date", "date"),
+        ("id_on_platform", "text"),
+        ("url", "text"),
+        ("display_name", "text"),
+        ("bio", "text"),
+        ("data", "text"),
+        ("notes", "text"),
+        ("url_parts", "text"),
+    ],
+    "archive_session": [
+        ("id", "number"),
+        ("create_date", "date"),
+        ("update_date", "date"),
+        ("external_id", "text"),
+        ("archived_url", "text"),
+        ("archive_location", "text"),
+        ("summary_html", "text"),
+        ("parsed_content", "number"),
+        ("structures", "text"),
+        ("metadata", "text"),
+        ("extracted_entities", "number"),
+        ("archiving_timestamp", "date"),
+        ("notes", "text"),
+        ("extraction_error", "text"),
+        ("source_type", "number"),
+        ("attachments", "text"),
+        ("archived_url_parts", "text"),
+    ],
+    "post": [
+        ("id", "number"),
+        ("create_date", "date"),
+        ("update_date", "date"),
+        ("id_on_platform", "text"),
+        ("url", "text"),
+        ("account_id", "number"),
+        ("publication_date", "date"),
+        ("caption", "text"),
+        ("data", "text"),
+        ("notes", "text"),
+    ],
+    "media": [
+        ("id", "number"),
+        ("create_date", "date"),
+        ("update_date", "date"),
+        ("id_on_platform", "text"),
+        ("url", "text"),
+        ("post_id", "number"),
+        ("local_url", "text"),
+        ("media_type", "text"),
+        ("data", "text"),
+        ("notes", "text"),
+        ("annotation", "text"),
+        ("thumbnail_path", "text"),
+    ],
+}
+
+# instantiate SearchableColumn objects from the compact raw definition
+ALLOWED_COLUMNS: dict[str, dict[str, SearchableColumn]] = {
+    table: {name: SearchableColumn(column_name=name, data_type=data_type) for name, data_type in cols}
+    for table, cols in _ALLOWED_COLUMNS_RAW.items()
 }
 
 
-def sanitize_column(column: str, table: str) -> str:
+def sanitize_column(column: str, table: str) -> SearchableColumn:
     column = column.get("var") if isinstance(column, dict) and "var" in column else column
     if not isinstance(column, str):
         logger.warning(f"SQL injection attempt - column not a string: {type(column)} = {column}")
@@ -265,11 +331,11 @@ def sanitize_column(column: str, table: str) -> str:
         raise ValueError(f"Invalid column name: {column}")
     # Check against whitelist
     allowed = ALLOWED_COLUMNS.get(table, set())
-    if column not in allowed:
+    if not allowed or column not in allowed:
         logger.warning(f"SQL injection attempt - column '{column}' not in whitelist for table '{table}'")
         raise ValueError(f"Column '{column}' not allowed for table '{table}'")
     logger.debug(f"Column sanitization passed: {table}.{column}")
-    return column
+    return allowed[column]
 
 
 def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tuple[str, dict]:
@@ -283,32 +349,40 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
         for op, val in logic_rec.items():
             if op == "==":
                 col, v = val
-                col = sanitize_column(col, table_rec)
+                col_def = sanitize_column(col, table_rec)
+                col = col_def.column_name
                 arg_key = f"{col}_eq"
                 args_rec[arg_key] = v
-                return f"`{col}` = %({arg_key})s"
+                if col_def.data_type == "date":
+                    return f"DATE(`{col}`) = DATE(%({arg_key})s)"
+                else:
+                    return f"`{col}` = %({arg_key})s"
             if op == "in":
                 v, col = val
-                col = sanitize_column(col, table_rec)
+                col_def = sanitize_column(col, table_rec)
+                col = col_def.column_name
                 arg_key = f"{col}_like"
                 args_rec[arg_key] = f'%{v}%'
                 return f"`{col}` LIKE %({arg_key})s"
             elif op == "!=":
                 col, v = val
-                col = sanitize_column(col, table_rec)
+                col_def = sanitize_column(col, table_rec)
+                col = col_def.column_name
                 arg_key = f"{col}_neq"
                 args_rec[arg_key] = v
                 return f"`{col}` != %({arg_key})s"
             elif op == ">":
                 if len(val) == 2:
                     col, v = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key = f"{col}_gt"
                     args_rec[arg_key] = v
                     return f"`{col}` > %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key1 = f"{col}_gt"
                     arg_key2 = f"{col}_lt"
                     args_rec[arg_key1] = v1
@@ -317,13 +391,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
             elif op == "<":
                 if len(val) == 2:
                     col, v = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key = f"{col}_lt"
                     args_rec[arg_key] = v
                     return f"`{col}` < %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key1 = f"{col}_gt"
                     arg_key2 = f"{col}_lt"
                     args_rec[arg_key1] = v1
@@ -332,13 +408,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
             elif op == "<=":
                 if len(val) == 2:
                     col, v = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key = f"{col}_lte"
                     args_rec[arg_key] = v
                     return f"`{col}` <= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key1 = f"{col}_gte"
                     arg_key2 = f"{col}_lte"
                     args_rec[arg_key1] = v1
@@ -347,13 +425,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
             elif op == ">=":
                 if len(val) == 2:
                     col, v = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key = f"{col}_gte"
                     args_rec[arg_key] = v
                     return f"`{col}` >= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
-                    col = sanitize_column(col, table_rec)
+                    col_def = sanitize_column(col, table_rec)
+                    col = col_def.column_name
                     arg_key1 = f"{col}_gte"
                     arg_key2 = f"{col}_lte"
                     args_rec[arg_key1] = v1
