@@ -103,30 +103,51 @@ class ArchiveSessionMetadata(BaseModel):
 
 def screen_record(output_path, stop_event):
     # Screen recording using OpenCV, only capturing the Playwright browser window
+    window_keywords = ("Nightly")
+    browser_window = None
     for attempt in range(5):
         time.sleep(5)
-        windows = [w for w in gw.getAllWindows() if "Nightly" in w.title]
+        windows = [w for w in gw.getAllWindows() if any(k in w.title for k in window_keywords)]
         if windows:
+            browser_window = windows[0]
             break
     else:
         print("Could not find the Firefox browser window for screen recording.")
         return
-    browser_window = windows[0]
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+
     fps = 20.0
-    width, height = browser_window.width, browser_window.height
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = None
+    last_size = None
 
     while not stop_event.is_set():
         try:
+            if browser_window.isMinimized:
+                time.sleep(1 / fps)
+                continue
+
+            width, height = browser_window.width, browser_window.height
+            if width <= 0 or height <= 0:
+                time.sleep(1 / fps)
+                continue
+
+            current_size = (width, height)
+            if out is None or current_size != last_size:
+                if out is not None:
+                    out.release()
+                out = cv2.VideoWriter(output_path, fourcc, fps, current_size)
+                last_size = current_size
+
             img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             out.write(frame)
-        except Exception as _:
-            pass
+        except Exception:
+            time.sleep(1 / fps)
+            continue
         time.sleep(1 / fps)  # Control FPS
 
-    out.release()
+    if out is not None:
+        out.release()
     print(f"Screen recording saved to {output_path}")
 
 
@@ -351,7 +372,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
     with sync_playwright() as p:
         # Start screen recording in a separate thread
-        video_path = archive_dir / "screen_recording.avi"
+        video_path = archive_dir / "screen_recording.mp4"
         stop_event = threading.Event()
         recording_thread = threading.Thread(
             target=screen_record,
