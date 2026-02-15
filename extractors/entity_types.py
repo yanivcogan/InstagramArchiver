@@ -20,6 +20,7 @@ class Account(EntityBase):
     id_on_platform: Optional[str] = None
     url: str = Field(..., max_length=200)
     display_name: Optional[str] = Field(None, max_length=100)
+    identifiers: Optional[list] = None
     bio: Optional[str] = Field(None, max_length=200)
     data: Optional[Any] = None
 
@@ -44,6 +45,17 @@ class Account(EntityBase):
                 v = json.loads(v)
             except json.JSONDecodeError:
                 v = None
+        return v
+
+    @field_validator('identifiers', mode='before')
+    def parse_data(cls, v, _):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                v = []
         return v
 
 class Post(EntityBase):

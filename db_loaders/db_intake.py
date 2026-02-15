@@ -22,7 +22,7 @@ class EntityProcessingConfig(BaseModel, Generic[EntityType]):
     table: str
     get_entity: Callable[[EntityType, Optional[int]], Optional[EntityType]]
     raw_entity_preprocessing: Optional[Callable[[EntityType, Optional[int], Optional[Path]], EntityType]] = None
-    store_entity: Callable[[EntityType, Optional[int], Optional[Path]], int]
+    store_entity: Callable[[EntityType, Optional[EntityType], Optional[Path]], int]
     store_entity_archive: Callable[[EntityType, int, Optional[int], Optional[int], Optional[Path]], int]
     merge: Callable[[EntityType, Optional[EntityType]], EntityType]
 
@@ -57,7 +57,7 @@ def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archi
                 # Store/update the canonical entity record
                 entity_id = entity_config.store_entity(
                     entity_config.merge(entity, existing_entity),
-                    existing_entity_id,
+                    existing_entity,
                     archive_location
                 )
 
@@ -149,38 +149,46 @@ def get_stored_media_archive(media: Media, archive_session_id: Optional[int] = N
 
 
 def store_account(
-        account: Account, existing_id: Optional[int], _: Optional[Path]
+        account: Account, existing_account: Optional[Account], _: Optional[Path]
 ) -> int:
-    if existing_id is not None:
+    account_identifiers: list[str] = (existing_account.identifiers if existing_account else None) or []
+    if account.id_on_platform and f"id_{account.id_on_platform}" not in account_identifiers:
+        account_identifiers.append(f"id_{account.id_on_platform}")
+    if account.url and f"url_{account.url}" not in account_identifiers:
+        account_identifiers.append(f"url_{account.url}")
+    if existing_account is not None:
         db.execute_query(
             """UPDATE account
                SET url            = %(url)s,
                    id_on_platform = %(id_on_platform)s,
                    display_name   = %(display_name)s,
+                   identifiers    = %(identifiers)s,
                    bio            = %(bio)s,
                    data           = %(data)s
                WHERE id = %(id)s""",
             {
-                "id": existing_id,
+                "id": account.id,
                 "id_on_platform": account.id_on_platform,
                 "url": account.url,
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
+                "identifiers": json.dumps(account_identifiers)
             },
             return_type="none"
         )
         return account.id
     else:
         account_id = db.execute_query(
-            """INSERT INTO account (url, id_on_platform, display_name, bio, data)
-               VALUES (%(url)s, %(id_on_platform)s, %(display_name)s, %(bio)s, %(data)s)""",
+            """INSERT INTO account (url, id_on_platform, identifiers, display_name, bio, data)
+               VALUES (%(url)s, %(id_on_platform)s, %(identifiers)s, %(display_name)s, %(bio)s, %(data)s)""",
             {
                 "id_on_platform": account.id_on_platform,
                 "url": account.url,
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
+                "identifiers": json.dumps(account_identifiers)
             },
             return_type="id"
         )
@@ -235,7 +243,7 @@ def store_account_archive(
 
 
 def store_post(
-        post: Post, existing_id: Optional[int], _: Optional[Path]
+        post: Post, existing_post: Optional[Post], _: Optional[Path]
 ) -> int:
     if post.account_id is None:
         stored_account = get_stored_account_archive(
@@ -245,7 +253,7 @@ def store_post(
             raise ValueError("Post must have account_id set before storing.")
         else:
             post.account_id = stored_account.id
-    if existing_id is not None:
+    if existing_post is not None:
         db.execute_query(
             """UPDATE post
                SET url              = %(url)s,
@@ -256,7 +264,7 @@ def store_post(
                    data             = %(data)s
                WHERE id = %(id)s""",
             {
-                "id": existing_id,
+                "id": existing_post.id,
                 "url": post.url,
                 "id_on_platform": post.id_on_platform,
                 "account_id": post.account_id,
@@ -344,7 +352,7 @@ def preprocess_media(media: Media, _: Optional[int], archive_location: Path) -> 
 
 
 def store_media(
-        media: Media, existing_id: Optional[int], archive_location: Path
+        media: Media, existing_media: Optional[Media], archive_location: Path
 ) -> int:
     if media.post_id is None:
         stored_post = get_stored_post_archive(
@@ -354,7 +362,7 @@ def store_media(
             raise ValueError("Media must have post_id set before storing.")
         else:
             media.post_id = stored_post.id
-    if existing_id is not None:
+    if existing_media is not None:
         db.execute_query(
             """UPDATE media
                SET url            = %(url)s,
@@ -365,7 +373,7 @@ def store_media(
                    data           = %(data)s
                WHERE id = %(id)s""",
             {
-                "id": existing_id,
+                "id": existing_media.id,
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
