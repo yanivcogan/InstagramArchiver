@@ -167,6 +167,7 @@ def interactive_timestamp_ui():
     mode = input("would you like to timestamp a file (t) or verify a timestamp (v)? ")
     if mode.lower() == 't':
         file_path = input("Enter the path to the file you want to timestamp: ")
+        file_path = file_path.strip().strip('"').strip("'")
         timestamp_file(Path(file_path))
     elif mode.lower() == 'v':
         data_file = Path(input("Enter the path to the data file: "))
