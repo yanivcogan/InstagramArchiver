@@ -48,7 +48,7 @@ class Account(EntityBase):
         return v
 
     @field_validator('identifiers', mode='before')
-    def parse_data(cls, v, _):
+    def parse_identifiers(cls, v, _):
         if v is None:
             return []
         if isinstance(v, str):

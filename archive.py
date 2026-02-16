@@ -1,6 +1,8 @@
 # archive.py
 import os
 import sys
+import traceback
+
 import pygetwindow as gw
 import time
 import json
@@ -306,6 +308,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     try:
         timestamp_file(har_hash_path)
     except Exception as e:
+        traceback.print_exc()
         print(f"❌ Error timestamping HAR hash file: {e}")
 
     # with open(sanitized_har_path, 'rb') as file:
