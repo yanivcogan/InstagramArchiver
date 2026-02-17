@@ -41,6 +41,8 @@ import subprocess
 import ctypes.util
 from pathlib import Path
 from typing import Optional
+import sys
+import importlib.util
 
 # If your project has a root anchor you usually import, adjust this path.
 # For compatibility, we try to locate a root file named root_anchor.py as in your
@@ -58,59 +60,100 @@ OPENSSL_LOCATION_FILE = Path(ROOT_DIR) / "open_ssl_location.txt"
 
 def ensure_ots_on_path() -> None:
     """
-    Ensure the `ots` CLI executable is available on PATH. Windows systems will
-    often have a wrapper `ots.exe` in the Python Scripts directory.
+    Ensure the `ots` CLI is available for subprocess use.
 
     Behavior:
-    - If `ots` is on PATH, return immediately.
-    - If a saved path exists in `open_timestamps_location.txt` and contains
-      'ots.exe', add that directory to PATH and return.
-    - Otherwise, prompt the user for the directory that contains `ots.exe`,
-      save it in the file, and add it to PATH. If not provided or invalid,
-      raise FileNotFoundError.
-
-    Example:
-      python -m pip install opentimestamps-client
-      Then provide something like:
-      C:/Users/<you>/AppData/Local/Programs/Python/Python313/Scripts
+    - Prefer an `ots` found on PATH (shutil.which).
+    - If a stored path exists (open_timestamps_location.txt) and contains ots.exe, add it to PATH.
+    - If the active Python environment (sys.prefix) contains an ots.exe in its Scripts directory,
+      add that Scripts directory to PATH so subprocesses can find it.
+    - If none of the above is true, do NOT prompt interactively here; callers will
+      attempt to use `python -m otsclient.ots` as fallback if the package is installed.
     """
+    # If already found on PATH, nothing to do.
     if shutil.which("ots"):
         return
 
+    # Try persisted location from repo file.
     ots_dir = None
     if OTS_LOCATION_FILE.exists():
         try:
             stored = OTS_LOCATION_FILE.read_text(encoding="utf-8").strip()
             if stored:
                 candidate = Path(stored)
-                if (candidate / "ots.exe").exists() or shutil.which(str(candidate / "ots.exe")):
+                if (candidate / "ots.exe").exists():
                     ots_dir = candidate
         except Exception:
             pass
 
+    # If persisted not usable, try the active environment's Scripts directory.
     if ots_dir is None:
-        print("OpenTimestamps CLI (ots) not found on PATH.")
-        print("If you haven't installed it, run:")
-        print("  python -m pip install opentimestamps-client")
-        user_dir = input(
-            "Enter the directory containing ots.exe (or press Enter to abort): "
-        ).strip().strip('"').strip("'")
-        if user_dir:
-            ots_dir = Path(user_dir)
-            # store for future runs
-            try:
-                OTS_LOCATION_FILE.write_text(str(ots_dir), encoding="utf-8")
-            except Exception:
-                # Don't fail just because we couldn't persist the path.
-                pass
+        # Windows: Scripts, Unix: bin
+        scripts_dir = Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin")
+        if scripts_dir.exists() and (scripts_dir / ("ots.exe" if os.name == "nt" else "ots")).exists():
+            ots_dir = scripts_dir
 
-    if ots_dir is None or not (ots_dir / "ots.exe").exists():
-        raise FileNotFoundError(
-            "Could not locate ots.exe. Add it to PATH or provide a valid directory."
-        )
+    # If we have a candidate directory with ots.exe, prepend to PATH.
+    if ots_dir:
+        os.environ["PATH"] = str(ots_dir) + os.pathsep + os.environ.get("PATH", "")
+        # Persist the chosen location for convenience if not present already
+        try:
+            OTS_LOCATION_FILE.write_text(str(ots_dir), encoding="utf-8")
+        except Exception:
+            pass
+        return
 
-    # Prepend to PATH so subprocesses inherit it
-    os.environ["PATH"] = str(ots_dir) + os.pathsep + os.environ.get("PATH", "")
+    # If nothing found here, do not prompt. We'll allow callers to fallback to python -m otsclient.ots.
+    return
+
+def find_ots_executable() -> Optional[Path]:
+    """
+    Try to locate a concrete ots executable file. Return Path to executable if found, otherwise None.
+    """
+    # 1) Standard PATH search
+    exe = shutil.which("ots")
+    if exe:
+        return Path(exe)
+
+    # 2) persisted location file
+    if OTS_LOCATION_FILE.exists():
+        try:
+            p = Path(OTS_LOCATION_FILE.read_text(encoding="utf-8").strip())
+            if p.exists() and (p / "ots.exe").exists():
+                return (p / "ots.exe")
+        except Exception:
+            pass
+
+    # 3) current env's Scripts folder
+    scripts_dir = Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin")
+    candidate = scripts_dir / ("ots.exe" if os.name == "nt" else "ots")
+    if candidate.exists():
+        return candidate
+
+    # 4) nothing found
+    return None
+
+
+def build_ots_invocation(extra_args: list) -> list:
+    """
+    Build the subprocess invocation list for running the OTS CLI.
+
+    If an ots executable is found, return [<exe>, ...extra_args].
+    Else if the Python package 'otsclient' (or module 'otsclient.ots') exists, return
+    [sys.executable, '-m', 'otsclient.ots', ...extra_args].
+    Otherwise return ['ots', ...extra_args] (so existing code may prompt or fail).
+    """
+    exe_path = find_ots_executable()
+    if exe_path:
+        return [str(exe_path)] + extra_args
+
+    # If the package is installed as a module, prefer running via python -m otsclient.ots
+    if importlib.util.find_spec("otsclient"):
+        # Use the module path that the console script uses
+        return [sys.executable, "-m", "otsclient.ots"] + extra_args
+
+    # Fallback: return generic 'ots' so previous behavior (and any user prompt) remains
+    return ["ots"] + extra_args
 
 
 def _find_openssl_dlls_in_dir(candidate_dir: Path):
@@ -259,7 +302,7 @@ def timestamp_file(filepath: Path, ots_file: Optional[Path] = None) -> Path:
     default_ots = filepath.with_suffix(filepath.suffix + ".ots")
     target_ots = Path(ots_file).resolve() if ots_file else default_ots
 
-    cmd = ["ots", "stamp", str(filepath)]
+    cmd = build_ots_invocation(["stamp", str(filepath)])
 
     try:
         # Run the OTS CLI. Let CalledProcessError propagate with captured output.
@@ -318,12 +361,12 @@ def verify_timestamp(data_file: Path, ots_file: Optional[Path] = None) -> None:
     default_ots = data_file.with_suffix(data_file.suffix + ".ots")
 
     if ots_file is None:
-        cmd = ["ots", "verify", str(data_file)]
+        cmd = build_ots_invocation(["verify", str(data_file)])
     else:
         ots_file = Path(ots_file).resolve()
         if not ots_file.exists():
             raise FileNotFoundError(f"OTS proof file not found: {ots_file}")
-        cmd = ["ots", "verify", str(ots_file)]
+        cmd = build_ots_invocation(["verify", str(ots_file)])
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, env=os.environ.copy())
