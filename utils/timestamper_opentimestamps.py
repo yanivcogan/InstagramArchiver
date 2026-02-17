@@ -334,7 +334,7 @@ def timestamp_file(filepath: Path, ots_file: Optional[Path] = None) -> Path:
             raise FileNotFoundError(f"Expected proof not found after stamping: {default_ots}")
         target_ots.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(default_ots), str(target_ots))
-
+    print(f"✅ Timestamp response saved to {target_ots}")
     return target_ots
 
 
