@@ -18,7 +18,7 @@ from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
-from utils.timestamper import timestamp_file
+from utils.timestamper_opentimestamps import timestamp_file
 
 
 class MediaSegment(BaseModel):

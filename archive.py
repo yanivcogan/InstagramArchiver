@@ -29,7 +29,7 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from dotenv import load_dotenv
 
 from archiver.profile_selection import select_profile
-from utils.timestamper import timestamp_file
+from utils.timestamper_opentimestamps import timestamp_file
 from archiver.profile_registration import Profile
 from summarizers.entities_summary_generator import generate_entities_summary
 
