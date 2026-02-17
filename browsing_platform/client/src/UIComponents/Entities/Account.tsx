@@ -1,8 +1,20 @@
 import React from 'react';
 import {IAccountAndAssociatedEntities} from "../../types/entities";
-import {Button, CircularProgress, Collapse, IconButton, Paper, Stack, Typography} from "@mui/material";
+import {
+    Button,
+    CircularProgress,
+    Collapse,
+    IconButton,
+    List,
+    ListItem,
+    Paper,
+    Stack,
+    Tooltip,
+    Typography
+} from "@mui/material";
 import LinkIcon from '@mui/icons-material/Link';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import HistoryIcon from '@mui/icons-material/History';
 import Post from "./Post";
 import ReactJson from "react-json-view";
 import {fetchAccountData} from "../../services/DataFetcher";
@@ -49,12 +61,34 @@ export default class Account extends React.Component <IProps, IState> {
 
     render() {
         const account = this.state.account;
+        const urls = (account.identifiers || []).filter(x => x.startsWith("url_")).map(x => x.split("url_")[1])
         const shareToken = getShareTokenFromHref()
 
         return <Paper sx={{padding: '1em'}}>
             <Stack gap={0.5} sx={{height: "100%"}}>
                 <Stack gap={1} direction={"row"} alignItems={"center"}>
                     <Typography variant={"body1"}>{account.url}</Typography>
+                    {
+                        urls.length > 1 ? <Tooltip
+                            title={
+                                <List>
+                                    {
+                                        urls.map((url, i) => <ListItem key={i}>{url}</ListItem>)
+                                    }
+                                </List>
+                            }
+                            arrow
+                        >
+                            <span>
+                    <IconButton
+                        size="small"
+                        color={"info"}
+                    >
+                        <HistoryIcon/>
+                    </IconButton>
+                        </span>
+                        </Tooltip> : null
+                    }
                     {
                         this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
                             color={"primary"}

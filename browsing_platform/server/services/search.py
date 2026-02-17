@@ -99,6 +99,37 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     ) for s in sessions]
 
 
+def string_to_instagram_account_url(s: str) -> Optional[str]:
+    """complete s to https://www.instagram.com/{handle} format if it looks like it could fit it; otherwise return None"""
+    if not s:
+        return None
+    import re
+    s = s.strip()
+    if s.startswith('@'):
+        s = s[1:]
+    # try extract handle from full URL (with or without scheme/www)
+    m = re.search(r'(?:https?://)?(?:www\.)?instagram\.com/([^/?#\s]+)', s, flags=re.I)
+    if m:
+        handle = m.group(1).strip('/')
+    else:
+        # remove query/fragment and any scheme/www prefix
+        s_no_q = re.split(r'[?#]', s, 1)[0]
+        s_no_q = re.sub(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', '', s_no_q)
+        if s_no_q.lower().startswith('www.'):
+            s_no_q = s_no_q[4:]
+        if s_no_q.lower().startswith('instagram.com/'):
+            handle = s_no_q.split('/', 1)[1].strip('/')
+        else:
+            handle = s_no_q.strip('/ ')
+    if not handle:
+        return None
+    handle = handle.split('/')[0]
+    # validate basic Instagram username rules (letters, numbers, dot, underscore; up to 30 chars)
+    if re.fullmatch(r'[A-Za-z0-9._]{1,30}', handle):
+        return f"https://www.instagram.com/{handle}"
+    return None
+
+
 def search_accounts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
@@ -107,7 +138,12 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
     where_clauses = []
     if query.search_term:
         query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        insta_account = string_to_instagram_account_url(query.search_term)
+        if insta_account:
+            query_args["account_search_term"] = f"url_{insta_account}"
+            where_clauses.append("JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) OR MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        else:
+            where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)

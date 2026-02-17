@@ -15,6 +15,7 @@ export interface IAccount extends IEntityBase {
     display_name?: string;
     bio?: string;
     data?: any;
+    identifiers?: string[]
 }
 
 export interface IPost extends IEntityBase {
