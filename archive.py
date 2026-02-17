@@ -3,6 +3,7 @@ import os
 import sys
 import traceback
 
+import ppdeep
 import pygetwindow as gw
 import time
 import json
@@ -96,6 +97,7 @@ class ArchiveSessionMetadata(BaseModel):
     my_ip: Optional[str] = None
     platform: Optional[str] = None
     har_hash: Optional[str] = None
+    har_fuzzy_hash: Optional[str] = None
     sanitized_har_hash: Optional[str] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = None
@@ -297,16 +299,33 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     # sanitize_har(har_path, sanitized_har_path)
 
     with open(har_path, 'rb') as file:
+        print("reading har file")
         har_content = file.read()
+        print("generating md5 exact hash")
         har_hash = md5(har_content).hexdigest()
+        print("generating fuzzy hash")
+        har_fuzzy_hash = ppdeep.hash(har_content)
         metadata.har_hash = har_hash
+        metadata.har_fuzzy_hash = har_fuzzy_hash
 
+    # store and timestamp regular hash
     har_hash_path = archive_dir / "har_hash.txt"
     with open(har_hash_path, 'w', encoding='utf-8') as f:
         f.write(metadata.har_hash)
 
     try:
         timestamp_file(har_hash_path)
+    except Exception as e:
+        traceback.print_exc()
+        print(f"❌ Error timestamping HAR hash file: {e}")
+
+    # store and timestamp fuzzy hash
+    har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
+    with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+        f.write(metadata.har_fuzzy_hash)
+
+    try:
+        timestamp_file(har_fuzzy_hash_path)
     except Exception as e:
         traceback.print_exc()
         print(f"❌ Error timestamping HAR hash file: {e}")

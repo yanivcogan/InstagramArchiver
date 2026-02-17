@@ -4,6 +4,7 @@ import base64
 import datetime
 import json
 import os
+import ppdeep
 from hashlib import md5
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,7 @@ class AssetSaveResult(BaseModel):
     success: bool = True
     location: Optional[Path] = None
     hashed_contents: Optional[str] = None
+    fuzzy_hashed_contents: Optional[str] = None
 
 
 class PhotoAcquisitionConfig(BaseModel):
@@ -256,7 +258,8 @@ def save_fetched_photo(photo: Photo, output_dir: Path) -> AssetSaveResult:
         return AssetSaveResult(
             success=True,
             location=out_path,
-            hashed_contents=md5(best_bytes).hexdigest()
+            hashed_contents=md5(best_bytes).hexdigest(),
+            fuzzy_hashed_contents=ppdeep.hash(best_bytes)
         )
     except Exception:
         return AssetSaveResult(success=False)
@@ -279,22 +282,23 @@ def download_full_asset(photo: Photo, output_dir: Path) -> AssetSaveResult:
         return AssetSaveResult(
             success=True,
             location=out_path,
-            hashed_contents=md5(data).hexdigest()
+            hashed_contents=md5(data).hexdigest(),
+            fuzzy_hashed_contents=ppdeep.hash(data)
         )
     except Exception:
         return AssetSaveResult(success=False)
 
 
-def timestamp_downloaded_hashes(downloaded_hashes: dict[str, str], output_dir: Path):
+def timestamp_downloaded_hashes(downloaded_hashes: dict[str, str], output_dir: Path, fuzzy: bool = False):
     if not downloaded_hashes or len(downloaded_hashes.items()) == 0:
         return
     try:
         now_timestamp = int(datetime.datetime.timestamp(datetime.datetime.now()))
-        hashes_path = output_dir / f"photo_hashes_{now_timestamp}.json"
+        hashes_path = output_dir / f"photo_{'fuzzy_hashes' if fuzzy else 'hashes'}_{now_timestamp}.json"
         hashes_str = json.dumps(downloaded_hashes, indent=2, sort_keys=True)
         hashes_path.write_text(hashes_str, encoding='utf-8')
         hash_of_hashes = md5(hashes_str.encode('utf-8')).hexdigest()
-        hash_file = output_dir / f"photo_hashes_hash_{now_timestamp}.txt"
+        hash_file = output_dir / f"photo_{'fuzzy_hashes' if fuzzy else 'hashes'}_hash_{now_timestamp}.txt"
         hash_file.write_text(hash_of_hashes, encoding='utf-8')
         timestamp_file(hash_file)
     except Exception:
@@ -349,6 +353,7 @@ def acquire_photos(
             photo.local_files = [existing[pid] for pid in possible_ids if pid in existing]
 
     downloaded_hashes: dict[str, str] = {}
+    downloaded_fuzzy_hashes: dict[str, str] = {}
 
     for photo in combined.values():
         if photo.local_files:
@@ -372,8 +377,11 @@ def acquire_photos(
             photo.local_files.append(result.location)
         if result.hashed_contents:
             downloaded_hashes[photo.asset_id] = result.hashed_contents
+        if result.fuzzy_hashed_contents:
+            downloaded_fuzzy_hashes[photo.asset_id] = result.fuzzy_hashed_contents
 
     timestamp_downloaded_hashes(downloaded_hashes, output_dir)
+    timestamp_downloaded_hashes(downloaded_fuzzy_hashes, output_dir, fuzzy=True)
 
     return [p for p in combined.values() if p.local_files]
 
