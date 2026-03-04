@@ -10,6 +10,8 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 from browsing_platform.server.services.archiving_session import ArchiveSession
 from browsing_platform.server.services.media import get_media_by_posts, get_media_thumbnail_path
 from extractors.entity_types import Account, Post, Media

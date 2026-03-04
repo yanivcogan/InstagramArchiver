@@ -14,6 +14,18 @@ from browsing_platform.server.services.token_manager import check_token, TokenPe
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
+
+def parse_token_from_header(auth_header: Optional[str]) -> Optional[str]:
+    """Safely parse token from Authorization header. Expected format: 'token:xxx'"""
+    if not auth_header:
+        return None
+    parts = auth_header.split(":", 1)
+    if len(parts) != 2 or parts[0] != "token":
+        return None
+    return parts[1] if parts[1] else None
+
 
 def parse_token_from_header(auth_header: Optional[str]) -> Optional[str]:
     """Safely parse token from Authorization header. Expected format: 'token:xxx'"""
@@ -111,11 +123,12 @@ async def log_server_call(request: Request):
     user_id = None
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
-    try:
-        token_permissions = check_token(token)
-        user_id = token_permissions.user_id
-    except Exception:
-        pass
+    if token:
+        try:
+            token_permissions = check_token(token)
+            user_id = token_permissions.user_id
+        except Exception:
+            pass
     body = await request.body()
     log_event(
         "server_call", user_id,

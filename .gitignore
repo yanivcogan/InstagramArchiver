@@ -1,12 +1,17 @@
 .venv/
 .idea/*
+
+# Python cache - ignore everywhere
+__pycache__/
+*.pyc
+*.pyo
+
 **/__pycache__/
 archives/*
+
 temp_video_segments/*
 temp/*
 profiles/*
-/extractors/__pycache__
-/summarizers/__pycache__
 build/*
 dist/*
 commit_id.txt
@@ -15,18 +20,21 @@ ffmpeg/*
 /tsa_certs
 open_ssl_location.txt
 /.env
-browsing_platform/client/.env
-
 /packaged_archives/
 /thumbnails
-logs*
-secrets
+browsing_platform/client/.env
+/packaged_archives/
+/thumbnails
 
+logs*
+
+secrets
 sshCurrentVm.sh
 all.zip
 output.log
+foo/*
 
-
+zarchives/*
 
 
 open_timestamps_location.txt

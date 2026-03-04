@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 import uvicorn
 import os
 import time
@@ -8,12 +8,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from starlette.middleware.base import BaseHTTPMiddleware
-from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share
-from browsing_platform.server.services.sharing_manager import get_link_permissions
-from browsing_platform.server.services.token_manager import check_token
-from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 
 load_dotenv()
 is_production = os.getenv("ENVIRONMENT") == "production"
@@ -47,13 +41,23 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+from starlette.middleware.base import BaseHTTPMiddleware
+from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
+    permissions, tags, annotate, share
+from browsing_platform.server.services.sharing_manager import get_link_permissions
+from browsing_platform.server.services.token_manager import check_token
+from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 app = FastAPI()
 
 # CORS configuration
 ALLOWED_ORIGINS = [
-    os.getenv("CLIENT_HOST"),
-    "http://localhost:4444",
+    "http://localhost:3000",      # Local React dev server
+    "http://localhost:4444",      # Local API
 ]
+if is_production:
+    ALLOWED_ORIGINS = [
+        "https://evidenceplatform.org",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
