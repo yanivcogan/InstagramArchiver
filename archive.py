@@ -445,9 +445,9 @@ def archive_instagram_content(profile: Profile, target_url: str):
 if __name__ == "__main__":
     commit_id = ensure_committed()
     ensure_ffmpeg_installed()
-    profile = select_profile()
+    selected_profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")
     url = url.split("?igsh=")[0].strip().split("&igsh=")[0].strip()
 
-    archive_instagram_content(profile, url)
+    archive_instagram_content(selected_profile, url)
     sys.exit(0)

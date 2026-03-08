@@ -159,4 +159,4 @@ async def serve_spa(request: Request, full_path: str):
 
 if __name__ == "__main__":
     reload = not is_production
-    uvicorn.run("browse:app", host="127.0.0.1", port=4444, reload=reload)
+    uvicorn.run("browsing_platform.server.server:app", host="127.0.0.1", port=4444, reload=reload)

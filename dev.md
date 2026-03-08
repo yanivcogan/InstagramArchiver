@@ -23,7 +23,7 @@ uv sync
 
 # dev flag bypasses token middleware in static file hosting (useful for dev)
 # port 4444
-BROWSING_PLATFORM_DEV=1 uv run python browse.py
+BROWSING_PLATFORM_DEV=1 uv run python browsing_platform/server/server.py
 
 
 

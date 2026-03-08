@@ -21,7 +21,7 @@ The `db_loaders/archives_db_loader.py` pipeline processes archives in 4 stages:
 The extraction logic lives in `extractors/` — HAR files contain raw Instagram API responses (GraphQL and API v1 formats), which are parsed by `structures_extraction*.py` files and converted to Pydantic models in `models.py`, then inserted into MySQL via `db_loaders/db_intake.py`.
 
 ### Browsing Platform
-**Backend** (`browse.py` + `browsing_platform/server/`): FastAPI app on port 4444. Uses a routes/services pattern — `routes/` handles HTTP and `services/` contains business logic. File access is secured with ChaCha20-Poly1305 encrypted tokens (`FILE_TOKEN_SECRET`). Authentication uses `BROWSING_PLATFORM_DEV=1` bypass for local dev.
+**Backend** (`browsing_platform/server/browse.py`): FastAPI app on port 4444. Uses a routes/services pattern — `routes/` handles HTTP and `services/` contains business logic. File access is secured with ChaCha20-Poly1305 encrypted tokens (`FILE_TOKEN_SECRET`). Authentication uses `BROWSING_PLATFORM_DEV=1` bypass for local dev.
 
 **Frontend** (`browsing_platform/client/`): React 18 + TypeScript + Material-UI app. The API endpoint (`REACT_APP_SERVER_ENDPOINT`) is baked into the build at compile time.
 
