@@ -16,10 +16,10 @@ InstagramArchiver.exe
 utils/ffmpeg/*
 /utils/free_tsa
 /.env
-/data_transfers/packaged_archives/
+/utils/data_transfers/packaged_archives/
 /thumbnails
 browsing_platform/client/.env
-/data_transfers/packaged_archives/
+/utils/data_transfers/packaged_archives/
 /thumbnails
 
 logs*
