@@ -12,6 +12,7 @@ from hashlib import md5
 from typing import Literal, Optional
 
 from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
+from root_anchor import ROOT_DIR
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
@@ -374,7 +375,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
 
 
 def archive_instagram_content(profile: Profile, target_url: str):
-    profiles_dir = Path("profiles")
+    profiles_dir = Path(ROOT_DIR) / "archiver" / "profiles"
     profile_name = profile.name
     profile_path = profiles_dir / profile_name
 
@@ -385,7 +386,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
     # Create archive directory with timestamp
     archiving_start_time = datetime.datetime.now()
     archiving_start_timestamp = archiving_start_time.isoformat()
-    archive_dir = Path("archives") / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
+    archive_dir = Path(ROOT_DIR) / "archives" / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
     my_public_ip = get_my_public_ip()
 

@@ -8,7 +8,7 @@ __pycache__/
 
 **/__pycache__/
 archives/*
-profiles/*
+archiver/profiles/*
 build/*
 dist/*
 utils/commit_tracker/commit_id.txt
