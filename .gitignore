@@ -8,9 +8,6 @@ __pycache__/
 
 **/__pycache__/
 archives/*
-
-temp_video_segments/*
-temp/*
 profiles/*
 build/*
 dist/*
@@ -18,7 +15,6 @@ utils/commit_tracker/commit_id.txt
 InstagramArchiver.exe
 utils/ffmpeg/*
 /tsa_certs
-utils/opentimestamps/open_ssl_location.txt
 /.env
 /data_transfers/packaged_archives/
 /thumbnails
@@ -36,6 +32,6 @@ foo/*
 
 zarchives/*
 
-
 utils/opentimestamps/open_timestamps_location.txt
-.claude/settings.local.json
+utils/opentimestamps/open_ssl_location.txt
+.claude/*
