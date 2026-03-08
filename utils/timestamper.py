@@ -17,7 +17,7 @@ class TsaCertsLocation(BaseModel):
     ca_cert: Path
 
 def get_tsa_certs() -> TsaCertsLocation:
-    tsa_certs_dir = Path(ROOT_DIR) / "tsa_certs"
+    tsa_certs_dir = Path(ROOT_DIR) / "utils" / "free_tsa"
     if not tsa_certs_dir.exists():
         tsa_certs_dir.mkdir()
         print(f"Created directory: {tsa_certs_dir}")

@@ -14,7 +14,7 @@ dist/*
 utils/commit_tracker/commit_id.txt
 InstagramArchiver.exe
 utils/ffmpeg/*
-/tsa_certs
+/utils/free_tsa
 /.env
 /data_transfers/packaged_archives/
 /thumbnails
