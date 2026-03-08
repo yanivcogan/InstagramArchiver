@@ -4,14 +4,19 @@ import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
+# SPECPATH is injected by PyInstaller: directory containing this spec file
+# archiver/executable/ -> archiver/ -> project root
+root_dir = os.path.abspath(os.path.join(SPECPATH, '..', '..'))
+archiver_dir = os.path.join(root_dir, 'archiver')
+
 # Get current commit ID
 try:
-    commit_id = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode('utf-8').strip()
+    commit_id = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root_dir).decode('utf-8').strip()
 except:
     commit_id = "unknown"
 
 # Write commit ID to a file that will be included in the bundle
-with open('utils/commit_tracker/commit_id.txt', 'w') as f:
+with open(os.path.join(root_dir, 'utils', 'commit_tracker', 'commit_id.txt'), 'w') as f:
     f.write(commit_id)
 
 # Install Playwright Firefox to a local directory
@@ -50,7 +55,7 @@ if os.path.exists(playwright_path):
 
 block_cipher = None
 
-datas = [('utils/commit_tracker/commit_id.txt', '.')]
+datas = [(os.path.join(root_dir, 'utils', 'commit_tracker', 'commit_id.txt'), '.')]
 datas.extend(browser_datas)
 
 # Include necessary data files from each package
@@ -58,14 +63,14 @@ binaries = []
 hiddenimports = ['cv2', 'pyautogui', 'numpy', 'playwright', 'threading']
 
 a = Analysis(
-    ['archive.py'],
-    pathex=[],
+    [os.path.join(archiver_dir, 'archive.py')],
+    pathex=[root_dir],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['hook-exception.py'],  # Add our exception hook
+    runtime_hooks=[os.path.join(SPECPATH, 'hook-exception.py')],  # Add our exception hook
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
