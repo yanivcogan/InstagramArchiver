@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 from archiver.profile_selection import select_profile
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 from archiver.profile_registration import Profile
-from summarizers.entities_summary_generator import generate_entities_summary
+from archiver.summarizers.entities_summary_generator import generate_entities_summary
 
 from utils.misc import get_my_public_ip, get_system_info
 
