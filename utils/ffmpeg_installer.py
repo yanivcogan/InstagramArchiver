@@ -24,7 +24,7 @@ def ensure_ffmpeg_installed():
     if ffmpeg_check == 0:
         print("ffmpeg is already installed and accessible.")
         return
-    ffmpeg_dir = os.path.join(os.getcwd(), "ffmpeg")
+    ffmpeg_dir = os.path.join(os.getcwd(), "utils", "ffmpeg")
     ffmpeg_exe = find_ffmpeg_executable_in_dir(Path(ffmpeg_dir))
     if ffmpeg_exe:
         ffmpeg_exe_containing_dir = ffmpeg_exe.parent
