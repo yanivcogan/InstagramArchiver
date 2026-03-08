@@ -2,44 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
-
-### Backend (Python/FastAPI)
-```bash
-# Install/update dependencies
-uv sync --upgrade
-
-# Start API server in dev mode (port 4444, auth bypassed)
-BROWSING_PLATFORM_DEV=1 uv run python browse.py
-
-# Create an admin user
-uv run browsing_platform/server/scripts/add_user.py
-
-# Run the database loader (all 4 stages)
-uv run db_loaders/archives_db_loader.py full
-
-# Run loader with options
-uv run db_loaders/archives_db_loader.py full --limit 100
-uv run db_loaders/archives_db_loader.py full --archives-dir /mnt/u/archives
-```
-
-### Frontend (React/TypeScript)
-```bash
-cd browsing_platform/client
-
-# Install/update dependencies
-pnpm update
-
-# Start dev server (port 3000, uses Create React App/webpack)
-pnpm start
-
-# Build for production (requires .env.production with REACT_APP_SERVER_ENDPOINT)
-pnpm build
-
-# Lint
-pnpm lint
-```
-
 ## Architecture
 
 This is a three-component system: a **data capture mechanism** a **data ingestion pipeline** and a **browsing platform**.
