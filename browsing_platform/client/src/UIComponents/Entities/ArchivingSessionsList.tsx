@@ -1,7 +1,7 @@
 import React from 'react';
 import {Box, CircularProgress, Stack, Typography,} from "@mui/material";
 import {IArchiveSession,} from "../../types/entities";
-import ArchivingSession from "src/UIComponents/Entities/ArchivingSession";
+import ArchivingSession from "./ArchivingSession";
 
 type IProps = {
     sessions: IArchiveSession[] | null;

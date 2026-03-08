@@ -3,8 +3,8 @@ import {Menu} from '@mui/material';
 import {SxProps, Theme} from "@mui/system";
 
 interface IProps {
-    trigger: (popupVisibilitySetter: (e: React.MouseEvent<HTMLElement>, visibility: boolean) => any) => ReactElement;
-    content: ReactElement[];
+    trigger: (popupVisibilitySetter: (e: React.MouseEvent<HTMLElement>, visibility: boolean) => any) => ReactElement<any>;
+    content: ReactElement<any>[];
     popoverSx?: SxProps<Theme> | undefined
 }
 

@@ -1,4 +1,3 @@
-import fetch, {Headers} from 'node-fetch';
 import config from './config';
 import PubSub from "pubsub-js";
 import events from "../lib/events";

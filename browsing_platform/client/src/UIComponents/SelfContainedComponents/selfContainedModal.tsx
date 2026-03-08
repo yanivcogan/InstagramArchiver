@@ -4,8 +4,8 @@ import {Close as CloseIcon} from '@mui/icons-material';
 import './selfContainedModal.scss';
 
 interface IProps {
-    trigger: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement;
-    content: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement;
+    trigger: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement<any>;
+    content: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement<any>;
     noXButton?: boolean
     wrapStyles?: CSSProperties
 }

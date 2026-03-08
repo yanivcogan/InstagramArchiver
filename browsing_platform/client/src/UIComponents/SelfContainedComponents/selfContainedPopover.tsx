@@ -2,8 +2,8 @@ import React, {Component, ReactElement} from 'react';
 import {Popover, PopoverProps} from '@mui/material';
 
 interface IProps {
-    trigger: (popupVisibilitySetter: (e: React.MouseEvent<HTMLElement>, visibility: boolean) => any) => ReactElement;
-    content: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement;
+    trigger: (popupVisibilitySetter: (e: React.MouseEvent<HTMLElement>, visibility: boolean) => any) => ReactElement<any>;
+    content: (popupVisibilitySetter: (visibility: boolean) => any) => ReactElement<any>;
     popoverProps?: Partial<PopoverProps>
 }
 
