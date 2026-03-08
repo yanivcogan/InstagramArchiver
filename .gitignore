@@ -38,3 +38,4 @@ zarchives/*
 
 
 open_timestamps_location.txt
+.claude/settings.local.json
