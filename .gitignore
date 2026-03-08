@@ -14,16 +14,16 @@ temp/*
 profiles/*
 build/*
 dist/*
-commit_id.txt
+utils/commit_tracker/commit_id.txt
 InstagramArchiver.exe
 utils/ffmpeg/*
 /tsa_certs
-open_ssl_location.txt
+utils/opentimestamps/open_ssl_location.txt
 /.env
-/packaged_archives/
+/data_transfers/packaged_archives/
 /thumbnails
 browsing_platform/client/.env
-/packaged_archives/
+/data_transfers/packaged_archives/
 /thumbnails
 
 logs*
@@ -37,5 +37,5 @@ foo/*
 zarchives/*
 
 
-open_timestamps_location.txt
+utils/opentimestamps/open_timestamps_location.txt
 .claude/settings.local.json

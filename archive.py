@@ -15,7 +15,7 @@ from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFi
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.git_helper import ensure_committed
+from utils.commit_tracker.git_helper import ensure_committed
 
 import cv2
 import pyautogui
@@ -30,7 +30,7 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from dotenv import load_dotenv
 
 from archiver.profile_selection import select_profile
-from utils.timestamper_opentimestamps import timestamp_file
+from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 from archiver.profile_registration import Profile
 from summarizers.entities_summary_generator import generate_entities_summary
 

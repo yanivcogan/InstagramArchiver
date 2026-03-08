@@ -54,8 +54,8 @@ except Exception:
     ROOT_DIR = Path.cwd()
 
 # Files used to persist user-provided locations
-OTS_LOCATION_FILE = Path(ROOT_DIR) / "open_timestamps_location.txt"
-OPENSSL_LOCATION_FILE = Path(ROOT_DIR) / "open_ssl_location.txt"
+OTS_LOCATION_FILE = Path(ROOT_DIR) / "utils" / "opentimestamps" / "open_timestamps_location.txt"
+OPENSSL_LOCATION_FILE = Path(ROOT_DIR) / "utils" / "opentimestamps" / "open_ssl_location.txt"
 
 
 def ensure_ots_on_path() -> None:

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 # Get current commit ID
@@ -10,7 +11,7 @@ except:
     commit_id = "unknown"
 
 # Write commit ID to a file that will be included in the bundle
-with open('commit_id.txt', 'w') as f:
+with open('utils/commit_tracker/commit_id.txt', 'w') as f:
     f.write(commit_id)
 
 # Install Playwright Firefox to a local directory
@@ -49,7 +50,7 @@ if os.path.exists(playwright_path):
 
 block_cipher = None
 
-datas = [('commit_id.txt', '.')]
+datas = [('utils/commit_tracker/commit_id.txt', '.')]
 datas.extend(browser_datas)
 
 # Include necessary data files from each package
