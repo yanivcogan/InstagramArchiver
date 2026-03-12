@@ -1,6 +1,7 @@
-alter table account
-    add identifiers json null;
+ALTER TABLE account
+    ADD COLUMN IF NOT EXISTS identifiers json null;
 
+START TRANSACTION;
 
 UPDATE account a
 LEFT JOIN (
@@ -23,3 +24,5 @@ LEFT JOIN (
   GROUP BY canonical_id
 ) s ON s.canonical_id = a.id
 SET a.identifiers = COALESCE(s.identifiers, '[]');
+
+COMMIT;
