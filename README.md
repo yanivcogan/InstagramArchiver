@@ -59,7 +59,7 @@ uv run db_loaders/archives_db_loader.py full --limit 100
 # took overnight to run on prod with 32GB RAM... maybe 14 hours.
 nohup uv run db_loaders/archives_db_loader.py full &
 
-
+# use tmux instead of nohup perhaps
 
 ```
 
@@ -98,6 +98,8 @@ In a separate terminal:
 cd browsing_platform/client
 pnpm update # TODO - there are dependency mismatches
 pnpm start
+
+# letmeinletmein is my dev password
 ```
 This starts the React development server on port **3000**.
 
