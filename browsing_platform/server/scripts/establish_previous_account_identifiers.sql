@@ -1,5 +1,4 @@
-ALTER TABLE account
-    ADD COLUMN IF NOT EXISTS identifiers json null;
+ALTER TABLE account ADD COLUMN identifiers json null;
 
 START TRANSACTION;
 
