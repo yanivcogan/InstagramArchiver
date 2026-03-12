@@ -23,6 +23,10 @@ def get_session_attachments(archive_location: Path) -> SessionAttachments:
     main_screen_recording = archive_location / "screen_recording.avi"
     if main_screen_recording.exists() and main_screen_recording.is_file():
         attachments.screen_recordings.append(main_screen_recording.relative_to(archive_location).as_posix())
+    else:
+        main_screen_recording = archive_location / "screen_recording.mp4"
+        if main_screen_recording.exists() and main_screen_recording.is_file():
+            attachments.screen_recordings.append(main_screen_recording.relative_to(archive_location).as_posix())
 
     # search for other screen recordings in screen_recordings/ subdir, keep the largest one
     screen_recordings_dir = archive_location / "screen_recordings"

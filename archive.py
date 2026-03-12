@@ -1,6 +1,9 @@
 # archive.py
 import os
 import sys
+import traceback
+
+import ppdeep
 import pygetwindow as gw
 import time
 import json
@@ -27,7 +30,7 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from dotenv import load_dotenv
 
 from archiver.profile_selection import select_profile
-from utils.timestamper import timestamp_file
+from utils.timestamper_opentimestamps import timestamp_file
 from archiver.profile_registration import Profile
 from summarizers.entities_summary_generator import generate_entities_summary
 
@@ -94,6 +97,7 @@ class ArchiveSessionMetadata(BaseModel):
     my_ip: Optional[str] = None
     platform: Optional[str] = None
     har_hash: Optional[str] = None
+    har_fuzzy_hash: Optional[str] = None
     sanitized_har_hash: Optional[str] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = None
@@ -103,30 +107,51 @@ class ArchiveSessionMetadata(BaseModel):
 
 def screen_record(output_path, stop_event):
     # Screen recording using OpenCV, only capturing the Playwright browser window
+    window_keywords = ("Nightly")
+    browser_window = None
     for attempt in range(5):
         time.sleep(5)
-        windows = [w for w in gw.getAllWindows() if "Nightly" in w.title]
+        windows = [w for w in gw.getAllWindows() if any(k in w.title for k in window_keywords)]
         if windows:
+            browser_window = windows[0]
             break
     else:
         print("Could not find the Firefox browser window for screen recording.")
         return
-    browser_window = windows[0]
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+
     fps = 20.0
-    width, height = browser_window.width, browser_window.height
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = None
+    last_size = None
 
     while not stop_event.is_set():
         try:
+            if browser_window.isMinimized:
+                time.sleep(1 / fps)
+                continue
+
+            width, height = browser_window.width, browser_window.height
+            if width <= 0 or height <= 0:
+                time.sleep(1 / fps)
+                continue
+
+            current_size = (width, height)
+            if out is None or current_size != last_size:
+                if out is not None:
+                    out.release()
+                out = cv2.VideoWriter(output_path, fourcc, fps, current_size)
+                last_size = current_size
+
             img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             out.write(frame)
-        except Exception as _:
-            pass
+        except Exception:
+            time.sleep(1 / fps)
+            continue
         time.sleep(1 / fps)  # Control FPS
 
-    out.release()
+    if out is not None:
+        out.release()
     print(f"Screen recording saved to {output_path}")
 
 
@@ -274,10 +299,16 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     # sanitize_har(har_path, sanitized_har_path)
 
     with open(har_path, 'rb') as file:
+        print("reading har file")
         har_content = file.read()
+        print("generating md5 exact hash")
         har_hash = md5(har_content).hexdigest()
+        print("generating fuzzy hash")
+        har_fuzzy_hash = ppdeep.hash(har_content)
         metadata.har_hash = har_hash
+        metadata.har_fuzzy_hash = har_fuzzy_hash
 
+    # store and timestamp regular hash
     har_hash_path = archive_dir / "har_hash.txt"
     with open(har_hash_path, 'w', encoding='utf-8') as f:
         f.write(metadata.har_hash)
@@ -285,6 +316,18 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     try:
         timestamp_file(har_hash_path)
     except Exception as e:
+        traceback.print_exc()
+        print(f"❌ Error timestamping HAR hash file: {e}")
+
+    # store and timestamp fuzzy hash
+    har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
+    with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+        f.write(metadata.har_fuzzy_hash)
+
+    try:
+        timestamp_file(har_fuzzy_hash_path)
+    except Exception as e:
+        traceback.print_exc()
         print(f"❌ Error timestamping HAR hash file: {e}")
 
     # with open(sanitized_har_path, 'rb') as file:
@@ -351,7 +394,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
     with sync_playwright() as p:
         # Start screen recording in a separate thread
-        video_path = archive_dir / "screen_recording.avi"
+        video_path = archive_dir / "screen_recording.mp4"
         stop_event = threading.Event()
         recording_thread = threading.Thread(
             target=screen_record,
