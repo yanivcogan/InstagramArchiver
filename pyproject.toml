@@ -95,6 +95,7 @@ dependencies = [
     "pytz>=2025.2",
     # pinned: 4.13.0.92 lacks Linux wheels, waiting for fix https://pypi.org/project/opencv-python-headless/#history
     "opencv-python-headless==4.13.0.90",
+    "ppdeep>=20260221",
 ]
 
 [tool.hatch.build.targets.wheel]
