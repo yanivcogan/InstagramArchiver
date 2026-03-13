@@ -1,4 +1,4 @@
-import React, {Component, CSSProperties, ReactElement} from 'react';
+import React, {CSSProperties, ReactElement, useState} from 'react';
 import {IconButton, Modal} from '@mui/material';
 import {Close as CloseIcon} from '@mui/icons-material';
 import './selfContainedModal.scss';
@@ -10,54 +10,26 @@ interface IProps {
     wrapStyles?: CSSProperties
 }
 
+export default function SelfContainedModal({trigger, content, noXButton, wrapStyles}: IProps) {
+    const [visible, setVisible] = useState(false);
 
-interface IState {
-    visible: boolean;
+    return (
+        <>
+            {trigger(setVisible)}
+            <Modal
+                open={visible}
+                onClose={() => setVisible(false)}
+                className={"modal-center"}
+            >
+                <div className="modal-content" style={wrapStyles}>
+                    {!noXButton && (
+                        <IconButton onClick={() => setVisible(false)}>
+                            <CloseIcon/>
+                        </IconButton>
+                    )}
+                    {content(setVisible)}
+                </div>
+            </Modal>
+        </>
+    );
 }
-
-export default class SelfContainedModal extends Component<IProps, IState> {
-    constructor(props: IProps) {
-        super(props);
-        this.state = {
-            visible: false
-        };
-    }
-
-    render() {
-        return (
-            <>
-                {this.props.trigger((visible: boolean) => {
-                    this.setState({visible})
-                })}
-                <Modal
-                    open={this.state.visible}
-                    onClose={() => {
-                        this.setState({visible: false})
-                    }}
-                    className={"modal-center"}
-                >
-                    <div className="modal-content" style={this.props.wrapStyles}>
-                        {
-                            this.props.noXButton ? null :
-                                <IconButton
-                                    onClick={() => {
-                                        this.setState({visible: false})
-                                    }}
-                                >
-                                    <CloseIcon/>
-                                </IconButton>
-                        }
-                        {
-                            this.props.content(
-                                (visibility: boolean) => {
-                                    this.setState({visible: visibility});
-                                }
-                            )
-                        }
-                    </div>
-                </Modal>
-            </>
-        );
-    }
-}
-

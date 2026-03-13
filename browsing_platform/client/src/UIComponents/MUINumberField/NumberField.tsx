@@ -1,4 +1,4 @@
-import React, {ChangeEvent, Component} from 'react';
+import React, {ChangeEvent, useEffect, useState} from 'react';
 import TextField, {TextFieldProps} from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import IconButton from '@mui/material/IconButton';
@@ -13,38 +13,24 @@ interface NumberFieldProps extends Omit<TextFieldProps, 'type' | 'onChange' | 'v
     step?: number;
 }
 
-interface NumberFieldState {
-    value: string;
-}
+export function NumberField({value: valueProp, onChange, min, max, step = 1, slotProps: propsSlotProps, ...rest}: NumberFieldProps) {
+    const [value, setValue] = useState(
+        valueProp !== undefined && valueProp !== null ? String(valueProp) : ''
+    );
 
-export class NumberField extends Component<NumberFieldProps, NumberFieldState> {
-    constructor(props: NumberFieldProps) {
-        super(props);
-        this.state = {
-            value: props.value !== undefined && props.value !== null ? String(props.value) : '',
-        };
-    }
-
-    componentDidUpdate(prevProps: NumberFieldProps) {
-        if (this.props.value !== prevProps.value && this.props.value !== Number(this.state.value)) {
-            this.setState({
-                value: this.props.value !== undefined && this.props.value !== null ? String(this.props.value) : '',
-            });
+    useEffect(() => {
+        if (valueProp !== undefined && valueProp !== null && valueProp !== Number(value)) {
+            setValue(String(valueProp));
         }
-    }
+    }, [valueProp]);
 
-    handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-        const {min, max, onChange} = this.props;
+    const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
         let val = event.target.value;
-
-        // Only allow valid number input (including empty string)
         if (/^-?\d*\.?\d*$/.test(val)) {
-            // Remove leading zeros
             if (val.length > 1 && val[0] === '0' && val[1] !== '.') {
                 val = val.replace(/^0+/, '');
             }
-            this.setState({value: val});
-
+            setValue(val);
             const num = val === '' || val === '-' || val === '.' ? null : Number(val);
             if (onChange) {
                 if (num !== null) {
@@ -59,66 +45,62 @@ export class NumberField extends Component<NumberFieldProps, NumberFieldState> {
         }
     };
 
-    handleStep = (direction: 1 | -1) => {
-        const {min, max, step = 1, onChange} = this.props;
-        let current = Number(this.state.value);
+    const handleStep = (direction: 1 | -1) => {
+        let current = Number(value);
         if (isNaN(current)) current = 0;
-        let next = current + direction * step;
-        next = Math.round((next + Number.EPSILON) * 100) / 100; // Round to avoid floating point issues
+        let next = current + direction * (step ?? 1);
+        next = Math.round((next + Number.EPSILON) * 100) / 100;
         if (min !== undefined && next < min) next = min;
         if (max !== undefined && next > max) next = max;
-        this.setState({value: String(next)});
+        setValue(String(next));
         if (onChange) {
             // @ts-ignore
             onChange({target: {value: String(next)}}, next);
         }
     };
 
-    render() {
-        const {min, max, step, value, onChange, slotProps: propsSlotProps, ...rest} = this.props;
-        return (
-            <TextField
-                {...rest}
-                type="text"
-                value={this.state.value}
-                onChange={this.handleInputChange}
-                slotProps={{
-                    ...propsSlotProps,
-                    htmlInput: {
-                        inputMode: 'decimal',
-                        pattern: '[0-9]*',
-                        min,
-                        max,
-                        step,
-                        ...(propsSlotProps?.htmlInput as object),
-                    },
-                    input: {
-                        ...(propsSlotProps?.input as object),
-                        endAdornment: (
+    return (
+        <TextField
+            {...rest}
+            type="text"
+            value={value}
+            onChange={handleInputChange}
+            slotProps={{
+                ...propsSlotProps,
+                htmlInput: {
+                    inputMode: 'decimal',
+                    pattern: '[0-9]*',
+                    min,
+                    max,
+                    step,
+                    ...(propsSlotProps?.htmlInput as object),
+                },
+                input: {
+                    ...(propsSlotProps?.input as object),
+                    endAdornment: (
                         <InputAdornment position="end">
                             <IconButton
                                 aria-label="decrement"
-                                onClick={() => this.handleStep(-1)}
+                                onClick={() => handleStep(-1)}
                                 size="small"
-                                disabled={min !== undefined && Number(this.state.value) <= min}
+                                disabled={min !== undefined && Number(value) <= min}
                             >
                                 <RemoveIcon fontSize="small"/>
                             </IconButton>
                             <IconButton
                                 aria-label="increment"
-                                onClick={() => this.handleStep(1)}
+                                onClick={() => handleStep(1)}
                                 size="small"
-                                disabled={max !== undefined && Number(this.state.value) >= max}
+                                disabled={max !== undefined && Number(value) >= max}
                             >
                                 <AddIcon fontSize="small"/>
                             </IconButton>
                         </InputAdornment>
                     ),
-                    },
-                }}
-            />
-        );
-    }
+                },
+            }}
+        />
+    );
 }
 
 export default NumberField;

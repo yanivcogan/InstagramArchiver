@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {IPostAndAssociatedEntities} from "../../types/entities";
 import {CircularProgress, Collapse, IconButton, Paper, Stack, Typography} from "@mui/material";
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
@@ -22,106 +22,82 @@ interface IProps {
     viewerConfig?: EntityViewerConfig
 }
 
-interface IState {
-    post: IPostAndAssociatedEntities
-    expandDetails: boolean
-    awaitingDetailsFetch: boolean
-    savingAnnotations: boolean
-}
+export default function Post({post: postProp, viewerConfig}: IProps) {
+    const [post, setPost] = useState(postProp);
+    const [expandDetails, setExpandDetails] = useState(false);
+    const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
 
-
-export default class Post extends React.Component <IProps, IState> {
-    constructor(props: IProps) {
-        super(props);
-        this.state = {
-            post: props.post,
-            expandDetails: false,
-            awaitingDetailsFetch: false,
-            savingAnnotations: false
-        };
-    }
-
-    private fetchPostDetails = async () => {
-        const post = this.state.post;
+    const fetchPostDetails = async () => {
         const itemId = post.id;
-        if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
+        if (awaitingDetailsFetch || itemId === undefined || itemId === null) {
             return;
         }
-        this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
-            post.data = await fetchPostData(itemId);
-            this.setState((curr => ({...curr, awaitingDetailsFetch: false, post})));
-        });
-    }
+        setAwaitingDetailsFetch(true);
+        const data = await fetchPostData(itemId);
+        setPost(curr => ({...curr, data}));
+        setAwaitingDetailsFetch(false);
+    };
 
-    render() {
-        const post = this.state.post;
-        const dateRaw = post.publication_date;
-        const date = dayjs.utc(dateRaw);
-        const dateInUTC = date.utc().format('YYYY-MM-DD HH:mm:ss');
-        const dateInGaza = date.tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss');
-        const shareToken = getShareTokenFromHref()
-        return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
-            <Stack gap={0.5}>
-                <Stack gap={1} direction={"row"} alignItems={"center"}>
-                    <Typography variant={"body1"}>{post.url}</Typography>
-                    {
-                        this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
-                            color={"primary"}
-                            href={"/post/" + post.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '')}
-                        >
-                            <LinkIcon/>
-                        </IconButton>
-                    }
-                </Stack>
-                <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
-                <Typography variant="caption">{dateInGaza} (in Gaza)</Typography>
-                {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
-                <span>
-                    <IconButton
-                        size="small"
-                        color={"primary"}
-                        onClick={() => this.setState((curr) => ({
-                            ...curr,
-                            expandDetails: !curr.expandDetails
-                        }), async () => {
-                            if (this.state.expandDetails && (post.data === undefined || post.data === null)) {
-                                await this.fetchPostDetails();
-                            }
-                        })}
-                    >
-                        <MoreHorizIcon/>
-                    </IconButton>
-                </span>
-                <Collapse in={this.state.expandDetails}>
-                    {
-                        this.state.awaitingDetailsFetch ?
-                            <CircularProgress size={20}/> :
-                            this.props.post.data ?
-                                <ReactJson
-                                    src={post.data}
-                                    enableClipboard={false}
-                                    style={{wordBreak: 'break-word'}}
-                                /> :
-                                null
-                    }
-                </Collapse>
-                <Stack direction={"row"} useFlexGap={true} gap={1} flexWrap={"wrap"}>
-                    {
-                        post.post_media.map((m, m_i) => {
-                            return <Media media={m} viewerConfig={this.props.viewerConfig} key={m_i}/>
-                        })
-                    }
-                </Stack>
+    const toggleDetails = async () => {
+        const next = !expandDetails;
+        setExpandDetails(next);
+        if (next && (post.data === undefined || post.data === null)) {
+            await fetchPostDetails();
+        }
+    };
+
+    const dateRaw = post.publication_date;
+    const date = dayjs.utc(dateRaw);
+    const dateInUTC = date.utc().format('YYYY-MM-DD HH:mm:ss');
+    const dateInGaza = date.tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss');
+    const shareToken = getShareTokenFromHref();
+
+    return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
+        <Stack gap={0.5}>
+            <Stack gap={1} direction={"row"} alignItems={"center"}>
+                <Typography variant={"body1"}>{post.url}</Typography>
                 {
-                    this.props.viewerConfig?.post?.annotator !== "hide" ?
-                        <EntityAnnotator
-                            entity={this.state.post}
-                            entityType={"post"}
-                            readonly={this.props.viewerConfig?.post?.annotator === "disable"}
-                        /> :
-                        null
+                    viewerConfig?.all?.hideInnerLinks ? null : <IconButton
+                        color={"primary"}
+                        href={"/post/" + post.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '')}
+                    >
+                        <LinkIcon/>
+                    </IconButton>
                 }
             </Stack>
-        </Paper>
-    }
+            <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
+            <Typography variant="caption">{dateInGaza} (in Gaza)</Typography>
+            {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
+            <span>
+                <IconButton size="small" color={"primary"} onClick={toggleDetails}>
+                    <MoreHorizIcon/>
+                </IconButton>
+            </span>
+            <Collapse in={expandDetails}>
+                {
+                    awaitingDetailsFetch ?
+                        <CircularProgress size={20}/> :
+                        post.data ?
+                            <ReactJson
+                                src={post.data}
+                                enableClipboard={false}
+                                style={{wordBreak: 'break-word'}}
+                            /> :
+                            null
+                }
+            </Collapse>
+            <Stack direction={"row"} useFlexGap={true} gap={1} flexWrap={"wrap"}>
+                {post.post_media.map((m, m_i) => <Media media={m} viewerConfig={viewerConfig} key={m_i}/>)}
+            </Stack>
+            {
+                viewerConfig?.post?.annotator !== "hide" ?
+                    <EntityAnnotator
+                        entity={post}
+                        entityType={"post"}
+                        readonly={viewerConfig?.post?.annotator === "disable"}
+                    /> :
+                    null
+            }
+        </Stack>
+    </Paper>
 }

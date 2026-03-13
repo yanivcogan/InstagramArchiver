@@ -1,4 +1,4 @@
-import React, {Component} from 'react';
+import React, {useState} from 'react';
 import {Chip, ChipTypeMap, Stack, StackTypeMap, Tooltip} from '@mui/material';
 import './selfContainedModal.scss';
 import {DefaultComponentProps} from "@mui/material/OverridableComponent";
@@ -11,91 +11,51 @@ interface IProps {
     chipProps?: DefaultComponentProps<ChipTypeMap>
 }
 
+export default function SelfContainedTruncatedChipList({chipContents, chipsVisibleWhenCollapsed, expandedByDefault, stackProps, chipProps}: IProps) {
+    const [expanded, setExpanded] = useState(!!expandedByDefault);
 
-interface IState {
-    expanded: boolean;
-}
+    const plusN = chipContents.length - chipsVisibleWhenCollapsed;
+    const plusLabel = chipContents.length > chipsVisibleWhenCollapsed ? `+${plusN}` : null;
 
-export default class SelfContainedTruncatedChipList extends Component<IProps, IState> {
-    constructor(props: IProps) {
-        super(props);
-        this.state = {
-            expanded: !!props.expandedByDefault
-        };
-    }
-
-    render() {
-        const expanded = this.state.expanded;
-        const plusN = this.props.chipContents.length - this.props.chipsVisibleWhenCollapsed;
-        const plusLabel = this.props.chipContents.length > this.props.chipsVisibleWhenCollapsed ? `+${plusN}` : null;
-        return (
-            <Stack
-                gap={1}
-                direction={"row"}
-                width={"90%"}
-                alignItems={"start"}
-                {...this.props.stackProps || {}}
-            >
-                {
-                    this.props.chipContents
-                        .filter((_, i) => (expanded || i < this.props.chipsVisibleWhenCollapsed))
-                        .map((s, i) => {
-                            return <Chip
-                                key={i}
-                                label={s}
-                                size={"small"}
-                                variant={"outlined"}
-                                onClick={expanded ? () => {
-                                    this.setState((curr) => ({...curr, expanded: false}))
-                                } : undefined}
-                                sx={{
-                                    maxWidth: `calc(100% - ${(plusLabel?.length || 0) * 1.25}em)`
-                                }}
-                                {...this.props.chipProps || {}}
-                            />
-                        })
-                }
-                {
-                    !expanded && plusLabel ?
-                        <Tooltip
-                            title={
-                                <Stack
-                                    gap={1}
-                                    direction={"column"}
-                                    width={"100%"}
-                                    alignItems={"start"}
-                                >
-                                    {
-                                        this.props.chipContents
-                                            .filter((_, i) => i >= this.props.chipsVisibleWhenCollapsed)
-                                            .map((s, i) => {
-                                                return <Chip
-                                                    key={i}
-                                                    label={s}
-                                                    size={"small"}
-                                                    variant={"outlined"}
-                                                    sx={{backgroundColor: "white"}}
-                                                />
-                                            })
-                                    }
-                                </Stack>
+    return (
+        <Stack gap={1} direction={"row"} width={"90%"} alignItems={"start"} {...stackProps || {}}>
+            {chipContents
+                .filter((_, i) => expanded || i < chipsVisibleWhenCollapsed)
+                .map((s, i) => (
+                    <Chip
+                        key={i}
+                        label={s}
+                        size={"small"}
+                        variant={"outlined"}
+                        onClick={expanded ? () => setExpanded(false) : undefined}
+                        sx={{maxWidth: `calc(100% - ${(plusLabel?.length || 0) * 1.25}em)`}}
+                        {...chipProps || {}}
+                    />
+                ))
+            }
+            {!expanded && plusLabel ? (
+                <Tooltip
+                    title={
+                        <Stack gap={1} direction={"column"} width={"100%"} alignItems={"start"}>
+                            {chipContents
+                                .filter((_, i) => i >= chipsVisibleWhenCollapsed)
+                                .map((s, i) => (
+                                    <Chip key={i} label={s} size={"small"} variant={"outlined"} sx={{backgroundColor: "white"}}/>
+                                ))
                             }
-                            arrow
-                        >
-                            <Chip
-                                label={plusLabel}
-                                size={"small"}
-                                variant={"outlined"}
-                                {...this.props.chipProps || {}}
-                                onClick={() => {
-                                    this.setState((curr) => ({...curr, expanded: true}))
-                                }}
-                            />
-                        </Tooltip> :
-                        null
-                }
-            </Stack>
-        );
-    }
+                        </Stack>
+                    }
+                    arrow
+                >
+                    <Chip
+                        label={plusLabel}
+                        size={"small"}
+                        variant={"outlined"}
+                        {...chipProps || {}}
+                        onClick={() => setExpanded(true)}
+                    />
+                </Tooltip>
+            ) : null}
+        </Stack>
+    );
 }
-

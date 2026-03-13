@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import {IAccountAndAssociatedEntities} from "../../types/entities";
 import {
     Button,
@@ -28,143 +28,118 @@ interface IProps {
     viewerConfig?: EntityViewerConfig
 }
 
-interface IState {
-    account: IAccountAndAssociatedEntities
-    expandDetails: boolean
-    postsToShow: number
-    awaitingDetailsFetch: boolean
-}
+export default function Account({account: accountProp, viewerConfig}: IProps) {
+    const [account, setAccount] = useState(accountProp);
+    const [expandDetails, setExpandDetails] = useState(false);
+    const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
+    const [postsToShow, setPostsToShow] = useState(
+        viewerConfig?.account?.postsPageSize || accountProp.account_posts.length || 5
+    );
 
-
-export default class Account extends React.Component <IProps, IState> {
-    constructor(props: IProps) {
-        super(props);
-        this.state = {
-            account: props.account,
-            expandDetails: false,
-            awaitingDetailsFetch: false,
-            postsToShow: props.viewerConfig?.account?.postsPageSize || props.account.account_posts.length || 5,
-        };
-    }
-
-    private fetchPostDetails = async () => {
-        const account = this.state.account;
+    const fetchPostDetails = async () => {
         const itemId = account.id;
-        if (this.state.awaitingDetailsFetch || itemId === undefined || itemId === null) {
+        if (awaitingDetailsFetch || itemId === undefined || itemId === null) {
             return;
         }
-        this.setState((curr => ({...curr, awaitingDetailsFetch: true})), async () => {
-            this.state.account.data = await fetchAccountData(itemId);
-            this.setState((curr => ({...curr, awaitingDetailsFetch: false, account})));
-        });
-    }
+        setAwaitingDetailsFetch(true);
+        const data = await fetchAccountData(itemId);
+        setAccount(curr => ({...curr, data}));
+        setAwaitingDetailsFetch(false);
+    };
 
-    render() {
-        const account = this.state.account;
-        const urls = (account.identifiers || []).filter(x => x.startsWith("url_")).map(x => x.split("url_")[1])
-        const shareToken = getShareTokenFromHref()
+    const toggleDetails = async () => {
+        const next = !expandDetails;
+        setExpandDetails(next);
+        if (next && (account.data === undefined || account.data === null)) {
+            await fetchPostDetails();
+        }
+    };
 
-        return <Paper sx={{padding: '1em'}}>
-            <Stack gap={0.5} sx={{height: "100%"}}>
-                <Stack gap={1} direction={"row"} alignItems={"center"}>
-                    <Typography variant={"body1"}>{account.url}</Typography>
-                    {
-                        urls.length > 1 ? <Tooltip
-                            title={
-                                <List>
-                                    {
-                                        urls.map((url, i) => <ListItem key={i}>{url}</ListItem>)
-                                    }
-                                </List>
-                            }
-                            arrow
-                        >
-                            <span>
-                    <IconButton
-                        size="small"
-                        color={"info"}
-                    >
-                        <HistoryIcon/>
-                    </IconButton>
-                        </span>
-                        </Tooltip> : null
-                    }
-                    {
-                        this.props.viewerConfig?.all?.hideInnerLinks ? null : <IconButton
-                            color={"primary"}
-                            href={"/account/" + account.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : "")}
-                        >
-                            <LinkIcon/>
-                        </IconButton>
-                    }
-                </Stack>
-                {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
-                <Typography variant="caption">{account.bio}</Typography>
-                <span>
-                    <IconButton
-                        size="small"
-                        color={"primary"}
-                        onClick={() => this.setState((curr) => ({
-                            ...curr,
-                            expandDetails: !curr.expandDetails
-                        }), async () => {
-                            if (this.state.expandDetails && (account.data === undefined || account.data === null)) {
-                                await this.fetchPostDetails();
-                            }
-                        })}>
-                        <MoreHorizIcon/>
-                    </IconButton>
-                </span>
-                <Collapse in={this.state.expandDetails}>
-                    {
-                        this.state.awaitingDetailsFetch ?
-                            <CircularProgress size={20}/> :
-                            this.props.account.data ?
-                                <ReactJson
-                                    src={account.data}
-                                    enableClipboard={false}
-                                    style={{wordBreak: 'break-word'}}
-                                /> :
-                                null
-                    }
-                </Collapse>
+    const urls = (account.identifiers || []).filter(x => x.startsWith("url_")).map(x => x.split("url_")[1]);
+    const shareToken = getShareTokenFromHref();
+
+    return <Paper sx={{padding: '1em'}}>
+        <Stack gap={0.5} sx={{height: "100%"}}>
+            <Stack gap={1} direction={"row"} alignItems={"center"}>
+                <Typography variant={"body1"}>{account.url}</Typography>
                 {
-                    this.props.viewerConfig?.account?.annotator !== "hide" && <Stack gap={1}>
-                        <EntityAnnotator
-                            entity={this.state.account}
-                            entityType={"account"}
-                            readonly={this.props.viewerConfig?.account?.annotator === "disable"}
-                        />
-                    </Stack>
+                    urls.length > 1 ? <Tooltip
+                        title={
+                            <List>
+                                {urls.map((url, i) => <ListItem key={i}>{url}</ListItem>)}
+                            </List>
+                        }
+                        arrow
+                    >
+                        <span>
+                            <IconButton size="small" color={"info"}>
+                                <HistoryIcon/>
+                            </IconButton>
+                        </span>
+                    </Tooltip> : null
                 }
-                <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
-                    {
-                        account.account_posts
-                            .sort((a, b) => (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime()))
-                            .slice(0, this.state.postsToShow)
-                            .map((p, p_i) => {
-                                return <React.Fragment key={p_i}>
-                                    <Post post={p} viewerConfig={this.props.viewerConfig}/>
-                                </React.Fragment>
-                            })
-                    }
-                    {
-                        this.props.viewerConfig?.account?.postsPageSize ?
-                            <Button
-                                variant="contained"
-                                disabled={account.account_posts.length <= this.state.postsToShow}
-                                onClick={() => this.setState((curr) => ({
-                                    ...curr,
-                                    postsToShow: (curr.postsToShow) + 5
-                                }))}
-                                onDoubleClick={() => this.setState({postsToShow: account.account_posts.length})}
-                            >
-                                Load More Posts
-                            </Button>
-                            : null
-                    }
-                </Stack>
+                {
+                    viewerConfig?.all?.hideInnerLinks ? null : <IconButton
+                        color={"primary"}
+                        href={"/account/" + account.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : "")}
+                    >
+                        <LinkIcon/>
+                    </IconButton>
+                }
             </Stack>
-        </Paper>
-    }
+            {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
+            <Typography variant="caption">{account.bio}</Typography>
+            <span>
+                <IconButton size="small" color={"primary"} onClick={toggleDetails}>
+                    <MoreHorizIcon/>
+                </IconButton>
+            </span>
+            <Collapse in={expandDetails}>
+                {
+                    awaitingDetailsFetch ?
+                        <CircularProgress size={20}/> :
+                        account.data ?
+                            <ReactJson
+                                src={account.data}
+                                enableClipboard={false}
+                                style={{wordBreak: 'break-word'}}
+                            /> :
+                            null
+                }
+            </Collapse>
+            {
+                viewerConfig?.account?.annotator !== "hide" && <Stack gap={1}>
+                    <EntityAnnotator
+                        entity={account}
+                        entityType={"account"}
+                        readonly={viewerConfig?.account?.annotator === "disable"}
+                    />
+                </Stack>
+            }
+            <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
+                {
+                    account.account_posts
+                        .sort((a, b) => (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime()))
+                        .slice(0, postsToShow)
+                        .map((p, p_i) => {
+                            return <React.Fragment key={p_i}>
+                                <Post post={p} viewerConfig={viewerConfig}/>
+                            </React.Fragment>
+                        })
+                }
+                {
+                    viewerConfig?.account?.postsPageSize ?
+                        <Button
+                            variant="contained"
+                            disabled={account.account_posts.length <= postsToShow}
+                            onClick={() => setPostsToShow(curr => curr + 5)}
+                            onDoubleClick={() => setPostsToShow(account.account_posts.length)}
+                        >
+                            Load More Posts
+                        </Button>
+                        : null
+                }
+            </Stack>
+        </Stack>
+    </Paper>
 }

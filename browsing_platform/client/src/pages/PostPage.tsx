@@ -1,5 +1,5 @@
-import React from 'react';
-import withRouter, {IRouterProps} from "../services/withRouter";
+import React, {useEffect, useState} from 'react';
+import {useParams} from "react-router";
 import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchArchivingSessionsPost, fetchPost} from "../services/DataFetcher";
@@ -11,92 +11,43 @@ import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
 import cookie from "js-cookie";
 import {getShareTokenFromHref} from "../services/linkSharing";
 
-type IProps = {} & IRouterProps;
+export default function PostPage() {
+    const {id: idParam} = useParams();
 
-interface IState {
-    id: number | null;
-    data: IExtractedEntitiesNested | null;
-    loadingData: boolean;
-    sessions: IArchiveSession[] | null;
-    loadingSessions: boolean;
-    disableAnnotator: boolean;
-    hideHeader: boolean;
-}
+    const id = idParam === undefined ? null : parseInt(idParam);
+    const shareMode = !!getShareTokenFromHref();
+    const hideHeader = shareMode;
+    const disableAnnotator = shareMode;
 
-class PostPage extends React.Component<IProps, IState> {
-    constructor(props: IProps) {
-        super(props);
-        const idArg = this.props.params.id;
-        const id = idArg === undefined ? null : parseInt(idArg);
-        const shareMode = !!getShareTokenFromHref();
-        this.state = {
-            id,
-            data: null,
-            loadingData: id !== null,
-            sessions: null,
-            loadingSessions: false,
-            hideHeader: shareMode,
-            disableAnnotator: shareMode,
-        }
-    }
+    const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
+    const [loadingData, setLoadingData] = useState(id !== null);
+    const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
+    const [loadingSessions, setLoadingSessions] = useState(false);
 
-    componentDidUpdate() {
-        const id_param = this.props.params.id;
-        const id = id_param === undefined ? null : parseInt(id_param);
-        if (id !== this.state.id) {
-            this.setState((curr) => ({...curr, id}), async () => {
-                await Promise.all([
-                    this.fetchData(),
-                    this.fetchSessions(),
-                ])
-            })
-        }
-    }
-
-    async componentDidMount() {
-        await Promise.all([
-            this.fetchData(),
-            this.fetchSessions(),
-        ])
-    }
-
-    fetchData = async () => {
-        const id = this.state.id;
-        if (id === null) {
-            return;
-        }
-        this.setState((curr) => ({...curr, loadingData: true}), async () => {
-            const data = await fetchPost(
-                id,
-                {
-                    flattened_entities_transform: {
-                        retain_only_media_with_local_files: true,
-                        local_files_root: null,
-                    },
-                    nested_entities_transform: {
-                        retain_only_posts_with_media: true,
-                        retain_only_accounts_with_posts: false,
-                    }
-                }
-            )
-            this.setState((curr) => ({...curr, data, loadingData: false}))
+    useEffect(() => {
+        if (id === null) return;
+        setLoadingData(true);
+        setLoadingSessions(true);
+        fetchPost(id, {
+            flattened_entities_transform: {
+                retain_only_media_with_local_files: true,
+                local_files_root: null,
+            },
+            nested_entities_transform: {
+                retain_only_posts_with_media: true,
+                retain_only_accounts_with_posts: false,
+            }
+        }).then(data => {
+            setData(data);
+            setLoadingData(false);
         });
-    }
-
-    fetchSessions = async () => {
-        const id = this.state.id;
-        if (id === null) {
-            return;
-        }
-        this.setState((curr) => ({...curr, loadingSessions: true}), async () => {
-            const sessions = await fetchArchivingSessionsPost(id, {});
-            this.setState((curr) => ({...curr, sessions, loadingSessions: false}))
+        fetchArchivingSessionsPost(id, {}).then(sessions => {
+            setSessions(sessions);
+            setLoadingSessions(false);
         });
-    }
+    }, [id]);
 
-    renderData() {
-        const data = this.state.data;
-        const loadingData = this.state.loadingData;
+    const renderData = () => {
         if (loadingData) {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
                 <CircularProgress/>
@@ -109,9 +60,7 @@ class PostPage extends React.Component<IProps, IState> {
             entities={data}
             viewerConfig={
                 new EntityViewerConfig({
-                    post: {
-                        annotator: this.state.disableAnnotator ? "disable" : "show",
-                    },
+                    post: {annotator: disableAnnotator ? "disable" : "show"},
                     media: {
                         style: {
                             maxWidth: '100%',
@@ -121,49 +70,28 @@ class PostPage extends React.Component<IProps, IState> {
                 })
             }
         />
-    }
+    };
 
-    render() {
-        const entityId = this.state.id;
-        const isLoggedIn = !!(cookie.get("token"));
-        return <div className={"page-wrap"}>
-            <TopNavBar hideMenuButton={this.state.hideHeader}>
-                <Stack
-                    direction={"row"}
-                    alignItems={"center"} justifyContent={"space-between"}
-                    gap={1}
-                    sx={{width: '100%'}}
-                >
-                    <Stack direction={"row"} alignItems={"center"} gap={1}>
-                        <Typography>
-                            Post Data
-                        </Typography>
-                        {
-                            this.state.data ?
-                                <Typography>
-                                    {this.state.data.accounts?.[0].account_posts?.[0]?.url}
-                                </Typography> :
-                                <CircularProgress color={"primary"} size={"16"}/>
-                        }
-                    </Stack>
+    const isLoggedIn = !!(cookie.get("token"));
+    return <div className={"page-wrap"}>
+        <TopNavBar hideMenuButton={hideHeader}>
+            <Stack direction={"row"} alignItems={"center"} justifyContent={"space-between"} gap={1} sx={{width: '100%'}}>
+                <Stack direction={"row"} alignItems={"center"} gap={1}>
+                    <Typography>Post Data</Typography>
                     {
-                        isLoggedIn && entityId ?
-                            <LinkSharing entityType={"post"} entityId={entityId}/> :
-                            null
+                        data ?
+                            <Typography>{data.accounts?.[0].account_posts?.[0]?.url}</Typography> :
+                            <CircularProgress color={"primary"} size={"16"}/>
                     }
                 </Stack>
-            </TopNavBar>
-            <div className={"page-content content-wrap"}>
-                <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
-                    {this.renderData()}
-                    <ArchivingSessionsList
-                        sessions={this.state.sessions}
-                        loadingSessions={this.state.loadingSessions}
-                    />
-                </Stack>
-            </div>
+                {isLoggedIn && id ? <LinkSharing entityType={"post"} entityId={id}/> : null}
+            </Stack>
+        </TopNavBar>
+        <div className={"page-content content-wrap"}>
+            <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
+                {renderData()}
+                <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>
+            </Stack>
         </div>
-    }
+    </div>
 }
-
-export default withRouter(PostPage);

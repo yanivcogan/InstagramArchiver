@@ -460,3 +460,103 @@ useEffect(() => {
 ```
 
 Use `PubSub.unsubscribe(token)` (not `clearAllSubscriptions`) so only this component's subscriptions are cleaned up.
+
+---
+
+## 6. Anti-Patterns to Fix During Conversion
+
+The class→functional migration is a good opportunity to fix anti-patterns that work by accident in class components but are clearly wrong in functional ones.
+
+### Direct state mutation
+
+Class components store all state in one object; devs sometimes mutate a sub-object before calling `setState`. This is always wrong — React requires state to be immutable — but class components sometimes render correctly anyway.
+
+```tsx
+// BEFORE — mutating state directly, then calling setState
+private fetchPostDetails = async () => {
+    const post = this.state.post;
+    post.data = await fetchPostData(itemId); // ← mutates the state object
+    this.setState({ post });
+};
+
+// AFTER — produce a new object
+const fetchDetails = async () => {
+    const data = await fetchPostData(itemId);
+    setPost(curr => ({ ...curr, data }));
+};
+```
+
+### Direct prop mutation
+
+Same problem, but worse — props should never be mutated:
+
+```tsx
+// BEFORE
+this.props.media.media_parts = await fetchMediaParts(itemId);
+this.setState(curr => ({ ...curr }));
+
+// AFTER — store in local state, not in the prop object
+const parts = await fetchMediaParts(itemId);
+setMedia(curr => ({ ...curr, media_parts: parts }));
+```
+
+### `setState(update, callback)` — the setState callback anti-pattern
+
+The second argument to `setState` is a callback that runs *after* the re-render. It is commonly misused as a way to "read fresh state" before doing async work. In functional components, just do the async work in the same function — no callback needed:
+
+```tsx
+// BEFORE — setState callback used to ensure state is committed before async fetch
+this.setState({ loading: true }, async () => {
+    const data = await fetchData(this.state.id); // reads state after commit
+    this.setState({ data, loading: false });
+});
+
+// AFTER — no callback needed; async work runs sequentially
+setLoading(true);
+const data = await fetchData(id); // just use the variable directly
+setData(data);
+setLoading(false);
+```
+
+---
+
+## 7. URL as Source of Truth (URL-driven State)
+
+When a page's state can be encoded in the URL (search queries, filters, pagination), treat the URL as the single source of truth rather than storing a parallel copy in component state.
+
+**Pattern:** derive state from `useSearchParams()` on every render; use `navigate` to update the URL when the user changes something.
+
+```tsx
+// Derive query directly from URL on every render — no useState needed
+const [searchParams] = useSearchParams();
+const query = extractQueryFromParams(searchParams); // pure function
+
+// useEffect fires when URL changes — handles both initial load and navigation
+useEffect(() => {
+    fetchData(query);
+}, [searchParams]);
+
+// User actions update the URL, which triggers the effect above
+const performSearch = (overrides?: Partial<ISearchQuery>) => {
+    const newParams = buildParams({ ...query, ...overrides });
+    navigate({ search: newParams }, { replace: true });
+};
+```
+
+Benefits:
+- Back/forward browser navigation works automatically
+- Shareable URLs for any search state
+- No stale-state bugs between `query` variable and `searchParams`
+
+**Use `useRef` for non-rendering state** (like in-flight request handles):
+
+```tsx
+const abortControllerRef = useRef<AbortController | null>(null);
+// ...inside effect:
+abortControllerRef.current?.abort();
+const controller = new AbortController();
+abortControllerRef.current = controller;
+fetchData({ signal: controller.signal }).then(...);
+```
+
+`useRef` is the right tool for values that need to persist across renders but don't trigger re-renders when they change.
