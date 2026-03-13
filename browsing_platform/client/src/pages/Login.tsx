@@ -57,7 +57,11 @@ export default function Login() {
         setAwaitingAuthentication(true);
         const res = await server.post("login/", {email, password});
         if (res.token) {
-            cookie.set('token', res.token, {expires: 30});
+            cookie.set('token', res.token, {
+                expires: 30,
+                sameSite: 'strict',
+                secure: window.location.protocol === 'https:',
+            });
             setAwaitingAuthentication(false);
             proceedToSite();
         } else {

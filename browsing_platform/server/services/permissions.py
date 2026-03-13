@@ -14,18 +14,6 @@ from browsing_platform.server.services.token_manager import check_token, TokenPe
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
-
-def parse_token_from_header(auth_header: Optional[str]) -> Optional[str]:
-    """Safely parse token from Authorization header. Expected format: 'token:xxx'"""
-    if not auth_header:
-        return None
-    parts = auth_header.split(":", 1)
-    if len(parts) != 2 or parts[0] != "token":
-        return None
-    return parts[1] if parts[1] else None
-
 
 def parse_token_from_header(auth_header: Optional[str]) -> Optional[str]:
     """Safely parse token from Authorization header. Expected format: 'token:xxx'"""
@@ -66,11 +54,11 @@ async def raise_auth_user_error(request: Request, token_permissions: Optional[To
 
 
 async def auth_user_access(request: Request):
+    """verify that user has a valid session"""
     # Bypass auth in dev mode (only when explicitly set to "1")
     if os.getenv("BROWSING_PLATFORM_DEV") == "1":
         logger.debug("Auth bypassed - dev mode enabled")
         return True
-    """verify that user has a valid session"""
     token_permissions = await get_auth_permissions(request)
     return await raise_auth_user_error(request, token_permissions)
 

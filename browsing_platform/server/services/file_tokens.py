@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 
 from cryptography.exceptions import InvalidTag
@@ -9,6 +10,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 FILE_TOKEN_SECRET_ENV = "FILE_TOKEN_SECRET"
 # number of bytes of nonce for ChaCha20-Poly1305
@@ -54,7 +57,7 @@ class FileTokenPayload(BaseModel):
 
 
 def generate_file_token(login_token: str, file_path: str) -> str:
-    print("Generating file token for path:", file_path)
+    logger.debug("Generating file token for path: %s", file_path)
     # Generate a url-safe per-file token that encrypts the login token.
     key = _derive_key_for_path(file_path)
     aead = ChaCha20Poly1305(key)
