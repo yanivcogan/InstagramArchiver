@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Evidence Platform" />
+    <!-- CSP meta tag — applies when served by the Vite dev server (which doesn't set HTTP headers).
+         In production, the FastAPI server sets a CSP HTTP header which takes precedence.
+         Note: frame-ancestors is intentionally omitted — it is not supported in meta tags
+         and is handled exclusively by the server-side header. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; form-action 'self';" />
     <link rel="manifest" href="/manifest.json" />
     <title>Evidence Platform</title>
   </head>

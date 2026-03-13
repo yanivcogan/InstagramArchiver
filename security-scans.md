@@ -14,6 +14,7 @@ Gitleaks is a standalone binary; download it from https://github.com/gitleaks/gi
 | `bandit` | Python SAST | `bandit -r browsing_platform/server/ --configfile pyproject.toml` |
 | `semgrep` | Python + TS SAST | `semgrep scan --config "p/python" --config "p/fastapi" --config "p/secrets" browsing_platform/server/` |
 | `gitleaks` | Secret scanning in git history | `./gitleaks.exe detect --source .` |
+| OWASP ZAP | DAST (dynamic scan of running app) | Import `http://localhost:4444/openapi.json`, active scan with auth header injected via Replacer |
 
 ## False Positives
 
@@ -72,6 +73,22 @@ logger.debug("Generating file token for path: %s", file_path)  # nosemgrep: ...
 ```
 
 **Why it's a false positive:** Semgrep detects the word "token" in a logger call and assumes a credential is being leaked. `file_path` is the HTTP request path (e.g. `/archives/session-123/video.mp4`), not a secret. The actual token (the encrypted blob) is never logged.
+
+---
+
+---
+
+### OWASP ZAP — `CSP: style-src unsafe-inline` (Medium)
+
+**Why it's accepted:** Material UI uses the emotion CSS-in-JS library which injects styles at runtime via `<style>` tags. Removing `'unsafe-inline'` from `style-src` breaks the entire UI. Eliminating this would require migrating to emotion's CSP nonce mode, which is a significant frontend refactor. Accepted as a known trade-off.
+
+### OWASP ZAP — `HTTP Only Site` (Medium)
+
+**Why it's a false positive:** ZAP scanned the local development server (HTTP only). In production the server runs behind an nginx reverse proxy that handles TLS termination; the HSTS header is already set in the CSP for production (`ENVIRONMENT=production`). Not applicable to the dev scan target.
+
+### OWASP ZAP — `Modern Web Application` / `User Agent Fuzzer` (Informational)
+
+No action required — informational only.
 
 ---
 

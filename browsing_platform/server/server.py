@@ -113,6 +113,7 @@ class StaticFilesAuthMiddleware(BaseHTTPMiddleware):
             "media-src 'self' blob:; "
             "connect-src 'self'; "
             "font-src 'self' data:; "
+            "form-action 'self'; "
             "frame-ancestors 'none';"
         )
         if is_production:
@@ -150,8 +151,15 @@ async def serve_spa(request: Request, full_path: str):
         logger.info(f"SPA catch-all: API route not found -> {full_path}")
         return Response('{"detail":"Not Found"}', status_code=404, media_type="application/json")
 
-    build_dir = "browsing_platform/client/build"
-    file_path = os.path.join(build_dir, full_path)
+    build_dir = os.path.abspath("browsing_platform/client/build")
+    file_path = os.path.abspath(os.path.join(build_dir, full_path))
+
+    # Prevent path traversal: reject any resolved path outside the build directory.
+    # os.path.join discards earlier components when given an absolute path (e.g.
+    # "c:/Windows/system.ini"), so we must check after resolving the full path.
+    if not file_path.startswith(build_dir + os.sep) and file_path != build_dir:
+        logger.warning(f"SPA catch-all: path traversal attempt blocked -> {full_path!r}")
+        return Response("Not Found", status_code=404)
 
     # Serve actual static files if they exist
     if full_path and os.path.isfile(file_path):
