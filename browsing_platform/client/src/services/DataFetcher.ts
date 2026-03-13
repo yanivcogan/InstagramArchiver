@@ -20,73 +20,61 @@ interface EntitiesTransformConfig {
     nested_entities_transform?: NestedEntitiesTransform | null;
 }
 
-const entitiesTransformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
+const transformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
     const params = new URLSearchParams();
-    const shareToken = getShareTokenFromHref()
-    if (shareToken){
+    const shareToken = getShareTokenFromHref();
+    if (shareToken) {
         params.append("st", shareToken);
     }
     if (config.flattened_entities_transform) {
-        if (config.flattened_entities_transform.local_files_root !== undefined) {
-            params.append("lfr", config.flattened_entities_transform.local_files_root || "");
+        const f = config.flattened_entities_transform;
+        if (f.local_files_root !== undefined) {
+            params.append("lfr", f.local_files_root || "");
         }
-        if (config.flattened_entities_transform.retain_only_media_with_local_files !== undefined) {
-            params.append("mwf", String(config.flattened_entities_transform.retain_only_media_with_local_files));
+        if (f.retain_only_media_with_local_files !== undefined) {
+            params.append("mwf", String(f.retain_only_media_with_local_files));
         }
-        if (config.flattened_entities_transform.strip_raw_data !== undefined) {
-            params.append("srd", config.flattened_entities_transform.strip_raw_data ? "1" : "0");
+        if (f.strip_raw_data !== undefined) {
+            params.append("srd", f.strip_raw_data ? "1" : "0");
         }
     }
     if (config.nested_entities_transform) {
-        if (config.nested_entities_transform.retain_only_posts_with_media !== undefined) {
-            params.append("pwm", String(config.nested_entities_transform.retain_only_posts_with_media));
+        const n = config.nested_entities_transform;
+        if (n.retain_only_posts_with_media !== undefined) {
+            params.append("pwm", String(n.retain_only_posts_with_media));
         }
-        if (config.nested_entities_transform.retain_only_accounts_with_posts !== undefined) {
-            params.append("awp", String(config.nested_entities_transform.retain_only_accounts_with_posts));
-        }
-    }
-    return params.toString();
-}
-
-const sessionsTransformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
-    const params = new URLSearchParams();
-    const shareToken = getShareTokenFromHref()
-    if (shareToken){
-        params.append("st", shareToken);
-    }
-    if (config.flattened_entities_transform) {
-        if (config.flattened_entities_transform.local_files_root !== undefined) {
-            params.append("lfr", config.flattened_entities_transform.local_files_root || "");
+        if (n.retain_only_accounts_with_posts !== undefined) {
+            params.append("awp", String(n.retain_only_accounts_with_posts));
         }
     }
     return params.toString();
 }
 
 export const fetchAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("account/" + accountId + "?" + entitiesTransformConfigToQueryParams(config));
+    return await server.get("account/" + accountId + "?" + transformConfigToQueryParams(config));
 }
 
 export const fetchPost = async (postId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("post/" + postId + "?" + entitiesTransformConfigToQueryParams(config));
+    return await server.get("post/" + postId + "?" + transformConfigToQueryParams(config));
 }
 
 export const fetchMedia = async (mediaId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("media/" + mediaId + "?" + entitiesTransformConfigToQueryParams(config));
+    return await server.get("media/" + mediaId + "?" + transformConfigToQueryParams(config));
 }
 
 export const fetchArchivingSession = async (archivingSessionId: number, config: EntitiesTransformConfig): Promise<IArchiveSessionWithEntities> => {
-    return await server.get("archiving_session/" + archivingSessionId + "?" + entitiesTransformConfigToQueryParams(config));
+    return await server.get("archiving_session/" + archivingSessionId + "?" + transformConfigToQueryParams(config));
 }
 
-export const fetchAccountData = async (accountId: number): Promise<any> => {
+export const fetchAccountData = async (accountId: number): Promise<Record<string, unknown>> => {
     return await server.get(`account/data/${accountId}/`);
 }
 
-export const fetchPostData = async (postId: number): Promise<any> => {
+export const fetchPostData = async (postId: number): Promise<Record<string, unknown>> => {
     return await server.get(`post/data/${postId}/`);
 }
 
-export const fetchMediaData = async (mediaId: number): Promise<any> => {
+export const fetchMediaData = async (mediaId: number): Promise<Record<string, unknown>> => {
     return await server.get(`media/data/${mediaId}/`);
 }
 
@@ -94,20 +82,20 @@ export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> =>
     return await server.get(`media/parts/${mediaId}/`);
 }
 
-export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<any> => {
+export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<Record<string, unknown>> => {
     return await server.get(`archiving_session/data/${archivingSessionId}/`);
 }
 
 export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
-    return await server.get(`archiving_session/account/${accountId}/?${sessionsTransformConfigToQueryParams(config)}`);
+    return await server.get(`archiving_session/account/${accountId}/?${transformConfigToQueryParams(config)}`);
 }
 
 export const fetchArchivingSessionsPost = async (postId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
-    return await server.get(`archiving_session/post/${postId}/?${sessionsTransformConfigToQueryParams(config)}`);
+    return await server.get(`archiving_session/post/${postId}/?${transformConfigToQueryParams(config)}`);
 }
 
 export const fetchArchivingSessionsMedia = async (mediaId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
-    return await server.get(`archiving_session/media/${mediaId}/?${sessionsTransformConfigToQueryParams(config)}`);
+    return await server.get(`archiving_session/media/${mediaId}/?${transformConfigToQueryParams(config)}`);
 }
 
 export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {
@@ -119,7 +107,6 @@ export const SEARCH_MODES: readonly { key: string, label: string }[] = [
     {key: 'posts', label: 'Posts'},
     {key: 'media', label: 'Media'},
     {key: 'archive_sessions', label: 'Archive Sessions'},
-    //{key: 'all', label: 'All'},
 ] as const;
 
 export type T_Search_Mode = typeof SEARCH_MODES[number]['key'];

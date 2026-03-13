@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {toast} from "material-react-toastify";
 import TextField from '@mui/material/TextField';
 import {CircularProgress, Fab, IconButton, Tooltip, Typography} from "@mui/material";
 import {ContentCopy, Share} from "@mui/icons-material";
@@ -55,7 +56,7 @@ export default function LinkSharing({entityType, entityId}: IProps) {
     const copyShareLinkToClipboard = () => {
         if (sharedLink) {
             navigator.clipboard.writeText(sharedLink);
-            window.alert("Link copied to clipboard!");
+            toast.success("Link copied to clipboard!");
         }
     };
 

@@ -159,6 +159,10 @@ export interface IArchiveSession {
     source_type: number;
 }
 
+/** Entities that support annotation (notes + tags). Extend this union when adding annotation support to a new entity type. */
+export type IAnnotatableEntity = IMedia | IPost | IAccount;
+export type AnnotatableEntityType = "media" | "post" | "account";
+
 export interface IArchiveSessionWithEntities {
     session: IArchiveSession;
     entities: IExtractedEntitiesNested;

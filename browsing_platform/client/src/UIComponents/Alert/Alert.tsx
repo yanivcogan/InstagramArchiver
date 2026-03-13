@@ -7,7 +7,6 @@ import events from "../../lib/events";
 
 interface IProps {
     queue: IPreparedPopupAlert[],
-    setQueue: (queue: IPreparedPopupAlert[]) => any
 }
 
 export default function Alert({queue}: IProps) {

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import 'material-react-toastify/dist/ReactToastify.css';
 import './lib/variables.scss'
 import './lib/global.scss'
@@ -24,8 +24,6 @@ import SearchPage from "./pages/SearchPage";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
-    const alertQueueRef = useRef<IPreparedPopupAlert[]>([]);
-    alertQueueRef.current = alertQueue;
 
     useEffect(() => {
         function hideError(e: ErrorEvent) {
@@ -66,10 +64,7 @@ export default function App() {
                     <Route path="/search" element={<SearchPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
-                <Alert
-                    setQueue={setAlertQueue}
-                    queue={alertQueue}
-                />
+                <Alert queue={alertQueue}/>
                 <ToastContainer
                     position="bottom-left"
                     bodyStyle={{color: '#000'}}

@@ -54,8 +54,8 @@ export function NumberField({value: valueProp, onChange, min, max, step = 1, slo
         if (max !== undefined && next > max) next = max;
         setValue(String(next));
         if (onChange) {
-            // @ts-ignore
-            onChange({target: {value: String(next)}}, next);
+            const syntheticEvent = {target: {value: String(next)}} as ChangeEvent<HTMLInputElement>;
+            onChange(syntheticEvent, next);
         }
     };
 

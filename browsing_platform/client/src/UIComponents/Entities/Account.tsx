@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {IAccountAndAssociatedEntities} from "../../types/entities";
 import {
     Button,
@@ -54,6 +54,11 @@ export default function Account({account: accountProp, viewerConfig}: IProps) {
             await fetchPostDetails();
         }
     };
+
+    const sortedPosts = useMemo(() =>
+        [...account.account_posts].sort((a, b) =>
+            (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
+        ), [account.account_posts]);
 
     const urls = (account.identifiers || []).filter(x => x.startsWith("url_")).map(x => x.split("url_")[1]);
     const shareToken = getShareTokenFromHref();
@@ -118,8 +123,7 @@ export default function Account({account: accountProp, viewerConfig}: IProps) {
             }
             <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
                 {
-                    account.account_posts
-                        .sort((a, b) => (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime()))
+                    sortedPosts
                         .slice(0, postsToShow)
                         .map((p, p_i) => {
                             return <React.Fragment key={p_i}>
@@ -131,9 +135,9 @@ export default function Account({account: accountProp, viewerConfig}: IProps) {
                     viewerConfig?.account?.postsPageSize ?
                         <Button
                             variant="contained"
-                            disabled={account.account_posts.length <= postsToShow}
+                            disabled={sortedPosts.length <= postsToShow}
                             onClick={() => setPostsToShow(curr => curr + 5)}
-                            onDoubleClick={() => setPostsToShow(account.account_posts.length)}
+                            onDoubleClick={() => setPostsToShow(sortedPosts.length)}
                         >
                             Load More Posts
                         </Button>

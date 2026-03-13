@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useMemo} from 'react';
 import {IAccountAndAssociatedEntities, IExtractedEntitiesNested, IPostAndAssociatedEntities} from "../../types/entities";
 import {Stack} from "@mui/material";
 import Post from "./Post";
@@ -12,16 +12,18 @@ interface IProps {
 }
 
 export default function EntitiesViewer({entities, viewerConfig}: IProps) {
+    const sortedPosts = useMemo(() =>
+        [...entities.posts].sort((a, b) =>
+            (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
+        ), [entities.posts]);
+
     return <Stack gap={1}>
         {entities.accounts.map((account: IAccountAndAssociatedEntities, index: number) =>
             <Account account={account} key={index} viewerConfig={viewerConfig}/>
         )}
-        {entities.posts
-            .sort((a, b) => (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime()))
-            .map((post: IPostAndAssociatedEntities, index: number) =>
-                <Post post={post} key={index} viewerConfig={viewerConfig}/>
-            )
-        }
+        {sortedPosts.map((post: IPostAndAssociatedEntities, index: number) =>
+            <Post post={post} key={index} viewerConfig={viewerConfig}/>
+        )}
         {entities.media.map((media, index: number) =>
             <Media media={media} key={index} viewerConfig={viewerConfig}/>
         )}

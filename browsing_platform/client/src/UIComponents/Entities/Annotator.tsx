@@ -1,16 +1,16 @@
 import React, {useState} from 'react';
-import {IAccount, IMedia, IMediaPart, IPost} from "../../types/entities";
+import {AnnotatableEntityType, IAnnotatableEntity, IMediaPart} from "../../types/entities";
 import {Button, CircularProgress, Grow, Stack, Typography} from "@mui/material";
 import {ITagWithType} from "../../types/tags";
 import TextField from "@mui/material/TextField";
 import TagSelector from "../Tags/TagSelector";
 import SaveIcon from "@mui/icons-material/Save";
-import {saveAccountAnnotations, saveMediaAnnotations, savePostAnnotations} from "../../services/DataSaver";
+import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
 import {toast} from "material-react-toastify";
 
 interface IProps {
-    entity: IMedia | IPost | IAccount | IMediaPart
-    entityType: "media" | "post" | "account" | "media_part"
+    entity: IAnnotatableEntity | IMediaPart
+    entityType: AnnotatableEntityType | "media_part"
     readonly: boolean,
     onSave?: () => void
 }
@@ -31,18 +31,8 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     const saveAnnotations = async () => {
         setAwaitingSave(true);
         const updatedEntity = {...entity, notes: annotations.notes, tags: annotations.tags};
-        switch (entityType) {
-            case "media":
-                await saveMediaAnnotations(updatedEntity as IMedia);
-                break;
-            case "post":
-                await savePostAnnotations(updatedEntity as IPost);
-                break;
-            case "account":
-                await saveAccountAnnotations(updatedEntity as IAccount);
-                break;
-            case "media_part":
-                break;
+        if (entityType !== "media_part") {
+            await saveAnnotationsToServer(updatedEntity as IAnnotatableEntity, entityType);
         }
         if (onSave) {
             onSave();
