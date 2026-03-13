@@ -1,4 +1,4 @@
-const shuffler = require('shuffle-seed');
+import shuffler from 'shuffle-seed';
 
 const indexByField = function(array:any[], indexBy:string){
     const dict:{[key:string]: any} = {};

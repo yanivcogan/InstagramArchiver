@@ -75,24 +75,26 @@ export class NumberField extends Component<NumberFieldProps, NumberFieldState> {
     };
 
     render() {
-        const {min, max, step, value, onChange, InputProps, ...rest} = this.props;
+        const {min, max, step, value, onChange, slotProps: propsSlotProps, ...rest} = this.props;
         return (
             <TextField
                 {...rest}
                 type="text"
                 value={this.state.value}
                 onChange={this.handleInputChange}
-                inputProps={{
-                    inputMode: 'decimal',
-                    pattern: '[0-9]*',
-                    min,
-                    max,
-                    step,
-                    ...rest.inputProps,
-                }}
-                InputProps={{
-                    ...InputProps,
-                    endAdornment: (
+                slotProps={{
+                    ...propsSlotProps,
+                    htmlInput: {
+                        inputMode: 'decimal',
+                        pattern: '[0-9]*',
+                        min,
+                        max,
+                        step,
+                        ...(propsSlotProps?.htmlInput as object),
+                    },
+                    input: {
+                        ...(propsSlotProps?.input as object),
+                        endAdornment: (
                         <InputAdornment position="end">
                             <IconButton
                                 aria-label="decrement"
@@ -112,6 +114,7 @@ export class NumberField extends Component<NumberFieldProps, NumberFieldState> {
                             </IconButton>
                         </InputAdornment>
                     ),
+                    },
                 }}
             />
         );

@@ -63,17 +63,60 @@ No future flags need to be enabled when upgrading from v6 — enabling them in v
 
 **All MUI packages must be on the same major version.** Before upgrading, align `@mui/material`, `@mui/icons-material`, `@mui/lab`, `@mui/base`, `@mui/system`, `@mui/x-data-grid`, `@mui/x-date-pickers` etc. to v6 simultaneously.
 
+### Pre-upgrade audit
+
+Before touching versions, run this audit to avoid surprises:
+
+**1. Check for version mismatches across all `@mui/*` packages already installed:**
+```bash
+npm list | grep @mui
+```
+It is common for packages like `@mui/system` to drift ahead to v7 while `@mui/material` is still on v5. Inconsistent versions compile but produce subtle runtime bugs.
+
+**2. Find all third-party packages that peer-depend on `@mui/material`:**
+```bash
+cat node_modules/@your-package/package.json | grep '"@mui'
+```
+Or scan all installed packages at once:
+```bash
+grep -r '"@mui/material"' node_modules/*/package.json --include="package.json" -l
+```
+Any package that lists `@mui/material` as a peer dep is a potential blocker. Check whether it supports v6 before committing to the upgrade. Common culprits: query builder UIs, date picker wrappers, data grid wrappers, form libraries.
+
+**3. Identify and remove unused `@mui/*` packages before upgrading:**
+`@mui/lab` and `@mui/base` accumulate as CRA boilerplate and are often unused. Check:
+```bash
+grep -r '@mui/lab\|@mui/base' src/ --include="*.tsx" --include="*.ts" -l
+```
+Remove any that have no hits. Same for `@mui/x-date-pickers` and `@mui/x-data-grid` — confirm actual usage before keeping them.
+
+> **Gotcha:** A package may not be imported by *your* code but still be required at runtime as a transitive dependency of another package. For example, `@react-awesome-query-builder/mui` internally imports `@mui/x-date-pickers` even if your source never does. If you remove such a package and Rollup/Vite fails at build time with an unresolved import in `node_modules/`, add it back.
+
+**4. Decide on the target version before installing:**
+- MUI v7 is available, but third-party MUI wrapper libraries (query builders, etc.) often lag by one major version and may only support up to v6. If you use such a library, target v6 and defer v7 until the library catches up.
+- `@mui/x-*` packages (x-data-grid, x-date-pickers) have their own release cycle — v7 of the X packages is compatible with MUI **v6** core.
+
 ### Install
 
 ```bash
-yarn add @mui/material@^6 @mui/icons-material@^6 @mui/system@^6 @emotion/react@^11 @emotion/styled@^11
+npm install @mui/material@^6 @mui/icons-material@^6 @mui/system@^6 @emotion/react@^11 @emotion/styled@^11 --legacy-peer-deps
 # If used:
-yarn add @mui/lab@^6 @mui/x-data-grid@^7 @mui/x-date-pickers@^7
+npm install @mui/x-data-grid@^7 @mui/x-date-pickers@^7 --legacy-peer-deps
 ```
 
-Note: `@mui/x-*` packages have their own independent versioning — v7 of the X packages is compatible with MUI v6.
+> **Why `--legacy-peer-deps`?** With React 19 already in the project, many packages haven't formally declared React 19 peer dep support yet even though they work fine at runtime. `npm install` fails hard on these. Use `--legacy-peer-deps` consistently throughout the upgrade. This was likely how the project was originally installed anyway.
+
+> **Stale lock files:** If `npm install` fails with peer dep errors you don't expect, try deleting `node_modules/` and `package-lock.json` and reinstalling from scratch. Lock files can encode old resolution decisions that become invalid after version changes.
 
 ### Run codemods
+
+Run the all-in-one codemod first — it covers Grid2 props, ListItem, styled, sx-prop, and more in a single pass:
+
+```bash
+npx @mui/codemod@latest v6.0.0/all ./src
+```
+
+Or run individual transforms selectively:
 
 ```bash
 # Grid2 prop changes (xs/sm/md props → size, xsOffset → offset)
@@ -88,7 +131,42 @@ npx @mui/codemod@latest v6.0.0/sx-prop ./src
 npx @mui/codemod@latest v6.0.0/theme-v6 ./src/theme.ts   # your theme file
 ```
 
+The codemod does **not** handle `inputProps`/`InputProps` → `slotProps` — those require manual fixes (see below).
+
 ### Key breaking changes to fix manually
+
+**`inputProps` / `InputProps` → `slotProps`** — the most common manual migration. Applies to `TextField`, `OutlinedInput`, `Input`, and any component that accepts these props. Grep for `inputProps=` and `InputProps=` to find all occurrences.
+
+```diff
+- <TextField
+-   inputProps={{ readOnly: true, min: 0 }}
+-   InputProps={{ endAdornment: <InputAdornment>...</InputAdornment> }}
+- />
++ <TextField
++   slotProps={{
++     htmlInput: { readOnly: true, min: 0 },
++     input: { endAdornment: <InputAdornment>...</InputAdornment> },
++   }}
++ />
+```
+
+Mapping:
+- `inputProps` (lowercase — HTML `<input>` attributes) → `slotProps.htmlInput`
+- `InputProps` (uppercase — the Input wrapper component) → `slotProps.input`
+
+If a component accepts `InputProps` as a **prop** (e.g. a custom `NumberField` that wraps `TextField`), update the destructuring and type accordingly:
+```diff
+- const { InputProps, ...rest } = this.props;
++ const { slotProps: propsSlotProps, ...rest } = this.props;
+```
+Then merge `propsSlotProps` into the `slotProps` you pass to `TextField`:
+```tsx
+slotProps={{
+    ...propsSlotProps,
+    htmlInput: { ...options, ...(propsSlotProps?.htmlInput as object) },
+    input: { ...inputOptions, ...(propsSlotProps?.input as object) },
+}}
+```
 
 **Grid2 stabilized** — the import changed:
 ```diff
@@ -132,6 +210,30 @@ npx @mui/codemod@latest v6.0.0/theme-v6 ./src/theme.ts   # your theme file
 ```diff
 - fireEvent.click(button);
 + await act(async () => fireEvent.click(button));
+```
+
+### Unrelated issues often surfaced during this upgrade
+
+The MUI upgrade tends to trigger `npm install` failures caused by other stale dependencies that were previously hidden behind a lock file. Treat these as separate clean-up tasks:
+
+**Unused packages that commonly conflict with React 19:**
+- `@testing-library/react@13` — requires React 18; remove if there are no tests, or upgrade to v16+
+- `react-leaflet@4` — requires React 18; upgrade to v5+ or remove if unused
+- `react-date-picker@9` — requires React 16–18; upgrade or remove
+
+**`require()` in a TypeScript/Vite project** — Vite uses ESM; `require` is not available. Convert to `import`:
+```diff
+- const shuffler = require('shuffle-seed');
++ import shuffler from 'shuffle-seed';
+```
+If the imported package has no type declarations, install `@types/<package>` or add a `declare module` shim.
+
+**`replaceAll` TypeScript error** — if you see `Property 'replaceAll' does not exist on type 'string'`, your `tsconfig.json` targets ES2020 or earlier. Bump to ES2021:
+```diff
+- "target": "ES2020",
+- "lib": ["dom", "dom.iterable", "ES2020"],
++ "target": "ES2021",
++ "lib": ["dom", "dom.iterable", "ES2021"],
 ```
 
 ---

@@ -100,17 +100,19 @@ export default class LinkSharing extends React.Component <IProps, IState> {
                             value={this.state.sharedLink || ''}
                             size="small"
                             variant="outlined"
-                            inputProps={{readOnly: true}}
-                            InputProps={{
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <Tooltip title="Copy">
-                                            <IconButton size="small" onClick={this.copyShareLinkToClipboard}>
-                                                <ContentCopy fontSize="small"/>
-                                            </IconButton>
-                                        </Tooltip>
-                                    </InputAdornment>
-                                )
+                            slotProps={{
+                                htmlInput: {readOnly: true},
+                                input: {
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <Tooltip title="Copy">
+                                                <IconButton size="small" onClick={this.copyShareLinkToClipboard}>
+                                                    <ContentCopy fontSize="small"/>
+                                                </IconButton>
+                                            </Tooltip>
+                                        </InputAdornment>
+                                    )
+                                }
                             }}
                             sx={{
                                 padding: 0,
