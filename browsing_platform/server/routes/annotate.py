@@ -1,12 +1,12 @@
-from http.client import HTTPException
 from typing import Any, Literal, TypeAlias
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.account import get_account_by_id, annotate_account
 from browsing_platform.server.services.annotation import Annotation
-from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id
+from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, get_enriched_post_by_id, \
+    get_enriched_media_by_id
 from browsing_platform.server.services.media import get_media_by_id, annotate_media
 from browsing_platform.server.services.media_part import get_media_part_by_id, annotate_media_part
 from browsing_platform.server.services.permissions import auth_user_access
@@ -52,8 +52,19 @@ async def annotate_entity(entity: EntityType, item_id:int, annotation: Annotatio
 
 
 @router.get("/{entity:str}/{item_id:int}", dependencies=[Depends(auth_user_access)])
-async def get_account(entity: EntityType, item_id: int, req: Request) -> ExtractedEntitiesNested:
-    account = get_enriched_account_by_id(item_id, extract_entities_transform_config(req))
-    if not account:
-        raise HTTPException(status_code=404, detail="Account Not Found")
-    return account
+async def get_annotatable_entity(entity: EntityType, item_id: int, req: Request) -> ExtractedEntitiesNested:
+    transform = extract_entities_transform_config(req)
+    if entity == "account":
+        result = get_enriched_account_by_id(item_id, transform)
+        label = "Account"
+    elif entity == "post":
+        result = get_enriched_post_by_id(item_id, transform)
+        label = "Post"
+    elif entity == "media" or entity == "media_part":
+        result = get_enriched_media_by_id(item_id, transform)
+        label = "Media"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid Entity Type")
+    if not result:
+        raise HTTPException(status_code=404, detail=f"{label} Not Found")
+    return result
