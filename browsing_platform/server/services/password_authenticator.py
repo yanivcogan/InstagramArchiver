@@ -89,7 +89,7 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
         log_event(
             "login_attempt", None,
             "{'success': true}",
-            "{'email': " + email + "}"
+            f"{{'email': {email!r}}}"
         )
         return {"token": token, "permissions": user["admin"]}
     else:
