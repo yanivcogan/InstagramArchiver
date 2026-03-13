@@ -6,7 +6,7 @@ import './lib/layout.scss'
 import './lib/buttons.scss'
 import './lib/classes.scss'
 
-import {BrowserRouter as Router, Route, Routes} from "react-router-dom";
+import {BrowserRouter as Router, Route, Routes} from "react-router";
 import PubSub from 'pubsub-js';
 import events from './lib/events';
 import NoMatch from "./pages/404";

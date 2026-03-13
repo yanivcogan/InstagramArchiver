@@ -7,7 +7,7 @@ import {
     useNavigate,
     useParams,
     useSearchParams,
-} from "react-router-dom";
+} from "react-router";
 import React from "react";
 
 export interface IRouterProps {
