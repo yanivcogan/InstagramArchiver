@@ -1,0 +1,7 @@
+# Gitleaks false positive suppressions.
+# Each line is a fingerprint from `gitleaks detect --verbose` output.
+# See security-scans.md for the reasoning behind each suppression.
+
+# .env.sample line 39: example placeholder value (a1b2c3d4...), not a real secret.
+# The file is intentionally committed as documentation of required env vars.
+9650f344cf1415dca70f3d76bf74789988162db8:.env.sample:generic-api-key:39

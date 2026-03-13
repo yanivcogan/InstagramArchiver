@@ -115,7 +115,7 @@ async def log_server_call(request: Request):
         try:
             token_permissions = check_token(token)
             user_id = token_permissions.user_id
-        except Exception:
+        except Exception:  # nosec B110 - optional enrichment for logging; failure is non-fatal
             pass
     body = await request.body()
     log_event(

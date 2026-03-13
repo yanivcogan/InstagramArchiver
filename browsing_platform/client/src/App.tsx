@@ -3,8 +3,6 @@ import 'material-react-toastify/dist/ReactToastify.css';
 import './lib/variables.scss'
 import './lib/global.scss'
 import './lib/layout.scss'
-import './lib/buttons.scss'
-import './lib/classes.scss'
 
 import {BrowserRouter as Router, Route, Routes} from "react-router";
 import PubSub from 'pubsub-js';
@@ -15,7 +13,6 @@ import Login from "./pages/Login";
 import {KeyStatesProvider} from './services/keys/keyStates';
 import {ToastContainer} from "material-react-toastify";
 import {incorporateArrayInQueue, IPopupAlert, IPreparedPopupAlert} from "./services/alerts/alerts";
-import Alert from "./UIComponents/Alert/Alert";
 import AccountPage from "./pages/AccountPage";
 import PostPage from "./pages/PostPage";
 import MediaPage from "./pages/MediaPage";
@@ -64,7 +61,6 @@ export default function App() {
                     <Route path="/search" element={<SearchPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
-                <Alert queue={alertQueue}/>
                 <ToastContainer
                     position="bottom-left"
                     bodyStyle={{color: '#000'}}

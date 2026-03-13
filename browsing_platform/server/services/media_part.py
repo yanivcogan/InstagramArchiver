@@ -89,7 +89,7 @@ def get_media_part_by_media(media: list[Media]) -> list[MediaPart]:
     query_args = {f"media_id_{i}": f"{media_item.id}" for i, media_item in enumerate(media)}
     query_in_clause = ', '.join([f"%(media_id_{i})s" for i in range(len(media))])
     media_parts = db.execute_query(
-        f"""SELECT * FROM media_part WHERE media_id IN ({query_in_clause})""",
+        f"""SELECT * FROM media_part WHERE media_id IN ({query_in_clause})""",  # nosec B608 - query_in_clause contains only %(key)s placeholders, not user input
         query_args,
         return_type="rows"
     )

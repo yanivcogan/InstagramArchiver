@@ -1,7 +1,5 @@
 import React from "react";
 import "./variables.scss";
-import "./global.scss";
-import "./classes.scss";
 import "./layout.scss";
 import "./buttons.scss";
 import favicon from "../static/favicon.ico"
