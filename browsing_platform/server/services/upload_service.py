@@ -219,6 +219,14 @@ def commit_archive(archive_name: str, uploader_info: dict):
     completed_at = datetime.now(timezone.utc)
     timestamp_label = completed_at.strftime("%Y%m%d_%H%M%S")
 
+    def ts(dt: datetime) -> dict:
+        """Return a timestamp block with ISO-8601 (UTC, Z suffix) and Unix epoch."""
+        return {
+            "iso": dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+            "unix_epoch": dt.timestamp(),
+            "timezone": "UTC",
+        }
+
     tus_state = src / _TUS_STATE_DIR
     if tus_state.exists():
         shutil.rmtree(tus_state)
@@ -228,7 +236,7 @@ def commit_archive(archive_name: str, uploader_info: dict):
     # --- Checksum record ---
     checksum_doc = {
         "archive": archive_name,
-        "generated_at": completed_at.isoformat(),
+        "generated_at": ts(completed_at),
         "checksum_algorithm": "SHA-256",
         "files": file_records,
     }
@@ -239,7 +247,7 @@ def commit_archive(archive_name: str, uploader_info: dict):
     # --- Upload metadata record ---
     metadata_doc = {
         "archive": archive_name,
-        "upload_completed_at": completed_at.isoformat(),
+        "upload_completed_at": ts(completed_at),
         "uploader": uploader_info,
         "server": {
             "hostname": socket.getfqdn(),
