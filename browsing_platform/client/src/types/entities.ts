@@ -148,15 +148,16 @@ export interface IArchiveSession {
     archived_url?: string;
     archive_location?: string;
     summary_html?: string;
-    parsed_content?: number;
+    parse_algorithm_version?: number;
     structures?: Record<string, any>;
     metadata?: Record<string, any>;
     attachments?: ISessionAttachments;
-    extracted_entities?: number;
+    extract_algorithm_version?: number;
     archiving_timestamp?: string;
     notes?: string;
     extraction_error?: string;
-    source_type: number;
+    source_type: 'AA_xlsx' | 'local_har' | 'local_wacz';
+    incorporation_status?: 'pending' | 'parse_failed' | 'parsed' | 'extract_failed' | 'done';
 }
 
 /** Entities that support annotation (notes + tags). Extend this union when adding annotation support to a new entity type. */

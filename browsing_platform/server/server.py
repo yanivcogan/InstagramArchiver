@@ -8,6 +8,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from starlette.middleware.base import BaseHTTPMiddleware
+from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
+    permissions, tags, annotate, share, upload, incorporate
+from browsing_platform.server.services.sharing_manager import get_link_permissions
+from browsing_platform.server.services.token_manager import check_token
+from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
+import asyncio
+from contextlib import asynccontextmanager
 
 load_dotenv()
 is_production = os.getenv("ENVIRONMENT") == "production"
@@ -41,21 +49,13 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-from starlette.middleware.base import BaseHTTPMiddleware
-from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share, upload, incorporate
-from browsing_platform.server.services.sharing_manager import get_link_permissions
-from browsing_platform.server.services.token_manager import check_token
-from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
-import asyncio
-from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Capture the running event loop for the incorporation manager's thread bridge
-    from browsing_platform.server.services.incorporation_service import manager, cleanup_stale_jobs
-    manager.set_event_loop(asyncio.get_event_loop())
+async def lifespan(_: FastAPI):
+    from browsing_platform.server.services import ws_manager
+    from browsing_platform.server.services.incorporation_service import cleanup_stale_jobs
+    ws_manager.set_event_loop(asyncio.get_event_loop())
     cleanup_stale_jobs()
     yield
 

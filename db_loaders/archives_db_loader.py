@@ -128,6 +128,7 @@ import json
 import logging
 import sys
 import traceback
+from typing import Callable, Optional
 
 from dateutil import parser
 from pytz import timezone as pytz_timezone
@@ -145,51 +146,76 @@ from utils import db
 logger = logging.getLogger(__name__)
 
 
-def register_archives(limit: int | None = None):
+_REGISTER_FETCH_BATCH = 5_000   # rows per page when loading existing registrations
+_REGISTER_INSERT_BATCH = 500    # archives per transaction when inserting new ones
+
+
+def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[[], bool]] = None, emit: Optional[Callable[[str], None]] = None):
     """
-     Part A of full - scans directory. puts in an archive_session record for each unregistered archive
+    Part A of full - scans directory, puts in an archive_session record for each
+    unregistered archive.
+
+    Optimised: fetches all already-registered external_ids in paginated batches,
+    builds a set, then bulk-inserts only the new ones (also in batches).
+    This avoids the previous N+1 per-archive lookup pattern.
     """
     import time
     start_time = time.time()
-    # Get all subdirectories in the archives root folder eg archives/eran_20250530_160037
+
+    # --- Step 1: collect archive directories from disk ---
     archive_dirs = [d for d in ROOT_ARCHIVES.iterdir() if d.is_dir()]
     logger.info(f"Part A - Found {len(archive_dirs)} archive directories in {ROOT_ARCHIVES}")
 
-    registered_count = 0
-    for archive_dir in archive_dirs:
-        # Extract directory name to use as archive identifier eg eran_20250530_160037
-        archive_name = archive_dir.name
-        # Prefix with "har-" to indicate this is a HAR-based archive (source_type=1)
-        archiving_session = f"har-{archive_name}"
-
-        # Check if this archive has already been registered
-        existing_entry = db.execute_query(
-            "SELECT * FROM archive_session WHERE external_id = %(external_id)s",
-            {"external_id": archiving_session},
-            return_type="single_row"
+    # --- Step 2: fetch all already-registered external_ids in paginated batches ---
+    registered: set[str] = set()
+    offset = 0
+    while True:
+        rows = db.execute_query(
+            "SELECT external_id FROM archive_session WHERE source_type = 'local_har' "
+            "LIMIT %(limit)s OFFSET %(offset)s",
+            {"limit": _REGISTER_FETCH_BATCH, "offset": offset},
+            return_type="rows",
         )
-
-        if existing_entry:
-            logger.debug(f"Archive '{archiving_session}' already exists in database, skipping")
-            continue
-
-        # Insert new archive_session record
-        # source_type=1 indicates a HAR archive (as opposed to other archive formats)
-        db.execute_query(
-            """INSERT INTO archive_session
-                   (external_id, archive_location, source_type)
-               VALUES (%(external_id)s, %(archive_location)s, 1)""",
-            {
-                "external_id": archiving_session,
-                "archive_location": f'{LOCAL_ARCHIVES_DIR_ALIAS}/{archive_name}'
-            },
-            return_type="id"
-        )
-        logger.info(f"Registered new archive: {archive_name}")
-        registered_count += 1
-        if limit is not None and registered_count >= limit:
-            logger.info(f"Part A - Reached limit of {limit} archives")
+        if not rows:
             break
+        for row in rows:
+            registered.add(row["external_id"])
+        if len(rows) < _REGISTER_FETCH_BATCH:
+            break
+        offset += _REGISTER_FETCH_BATCH
+
+    logger.info(f"Part A - {len(registered)} archives already registered in DB")
+
+    # --- Step 3: determine which directories are new ---
+    to_register = [d for d in archive_dirs if f"har-{d.name}" not in registered]
+    if limit is not None:
+        to_register = to_register[:limit]
+    logger.info(f"Part A - {len(to_register)} new archives to register")
+
+    # --- Step 4: insert new archives in batches inside a single transaction ---
+    registered_count = 0
+    for batch_start in range(0, len(to_register), _REGISTER_INSERT_BATCH):
+        batch = to_register[batch_start: batch_start + _REGISTER_INSERT_BATCH]
+        with db.transaction_batch():
+            for archive_dir in batch:
+                if cancel_check and cancel_check():
+                    raise InterruptedError("Cancelled by user")
+                archive_name = archive_dir.name
+                archiving_session = f"har-{archive_name}"
+                db.execute_query(
+                    """INSERT INTO archive_session
+                           (external_id, archive_location, source_type)
+                       VALUES (%(external_id)s, %(archive_location)s, 'local_har')""",
+                    {
+                        "external_id": archiving_session,
+                        "archive_location": f"{LOCAL_ARCHIVES_DIR_ALIAS}/{archive_name}",
+                    },
+                    return_type="id",
+                )
+                logger.info(f"Registered new archive: {archive_name}")
+                if emit:
+                    emit(f"Part A — registered {archive_name}")
+                registered_count += 1
 
     elapsed = time.time() - start_time
     logger.info(f"Part A register_archives complete in {elapsed:.1f}s (registered {registered_count} new archives)")
@@ -206,9 +232,9 @@ def strip_media_contents(data: ExtractedHarData) -> None:
         p.fetched_assets = None
 
 
-def parse_archives(limit: int | None = None):
+def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[[], bool]] = None, emit: Optional[Callable[[str], None]] = None):
     """
-     Part B of full - queries archive_session where parsed_content is null.
+     Part B of full - queries archive_session where incorporation_status = 'pending'.
      looks for metadata.json.
      looks for archive.har and does parsing.
      updates archive_session - structures (lots of json), metadata
@@ -219,38 +245,34 @@ def parse_archives(limit: int | None = None):
     parsed_count = 0
     error_count = 0
 
-    while True:
-        # Find the next unparsed archive session (source_type=1 means HAR archive)
-        # Only process archives that haven't been parsed and don't have errors
-        entry = db.execute_query(
-            f'''
-            SELECT *
-            FROM archive_session
-            WHERE
-                parsed_content IS NULL AND
-                extraction_error IS NULL AND
-                source_type = 1
-            LIMIT 1
-            ''',
-            {},
-            return_type="single_row"
-        )
-        try:
-            if entry is None:
-                # No more unparsed archives remain
-                elapsed = time.time() - start_time
-                logger.info(f"Part B complete: {parsed_count} archives parsed, {error_count} errors in {elapsed:.1f}s")
-                return
+    # Fetch the full list of unprocessed archives upfront (one query, small columns only).
+    # This avoids running a repeated filter scan for every single archive.
+    queue = db.execute_query(
+        "SELECT id, external_id, archive_location FROM archive_session "
+        "WHERE incorporation_status = 'pending' AND source_type = 'local_har'",
+        {},
+        return_type="rows",
+    ) or []
+    if limit is not None:
+        queue = queue[:limit]
+    logger.info(f"Part B - {len(queue)} archives to parse")
 
+    for entry in queue:
+        if cancel_check and cancel_check():
+            raise InterruptedError("Cancelled by user")
+        try:
             # Extract the archive directory name from the stored location
             # e.g., "local_archive_har/eran_20250530_160037" -> "eran_20250530_160037"
             archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
             entry_id = entry['external_id'] or entry['id']
             logger.info(f"Parsing archive: {entry_id}")
+            if emit:
+                emit(f"Part B — parsing {entry_id}")
 
             archive_dir = ROOT_ARCHIVES / archive_name
 
             # --- Step 1: Read metadata.json ---
+            logger.debug(f"Extracting metadata...")
             # Contains target_url, notes, archiving_start_timestamp
             metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
@@ -278,9 +300,10 @@ def parse_archives(limit: int | None = None):
                 logger.debug(f"Loaded metadata for {entry_id}: url={archived_url}")
             except Exception:
                 raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
-            logger.debug(f"Finished Step 1 - Metadata for {entry_id}: {metadata}")
+            logger.debug(f"Metadata for {entry_id} extracted: {metadata}")
 
             # --- Step 2: Get session attachments (screenshots, etc.) ---
+            logger.debug(f"Collecting session attachments...")
             try:
                 session_attachments = get_session_attachments(archive_dir).model_dump()
                 logger.debug(f"Found {len(session_attachments)} attachments for {entry_id}")
@@ -291,7 +314,7 @@ def parse_archives(limit: int | None = None):
 
             # --- Step 3: Parse the HAR file ---
             # Extract social media structures (posts, accounts, media references)
-            logger.debug(f"Starting Step 3 - Parsing HAR for {entry_id}")
+            logger.debug(f"Parsing HAR for {entry_id}")
             har_path = archive_dir / "archive.har"
             if not har_path.exists():
                 raise Exception(f"HAR file {har_path} does not exist")
@@ -323,11 +346,13 @@ def parse_archives(limit: int | None = None):
 
             # --- Step 4: Save parsed content to database ---
             try:
+                logger.debug(f"Storing extracted structures...")
                 db.execute_query(
                     '''
                     UPDATE archive_session
                     SET
-                        parsed_content = %(parsing_code_version)s,
+                        parse_algorithm_version = %(parsing_code_version)s,
+                        incorporation_status = 'parsed',
                         structures = %(structures)s,
                         metadata = %(metadata)s,
                         extraction_error = NULL,
@@ -347,12 +372,10 @@ def parse_archives(limit: int | None = None):
                     },
                     'none'
                 )
-                logger.info(f"End of Part B - Step 4 - Successfully parsed archive: {entry_id}")
+                logger.info(f"Successfully parsed archive: {entry_id}")
+                if emit:
+                    emit(f"Part B — parsed {entry_id}")
                 parsed_count += 1
-                if limit is not None and parsed_count >= limit:
-                    elapsed = time.time() - start_time
-                    logger.info(f"Part B - Reached limit of {limit} archives. {parsed_count} parsed, {error_count} errors in {elapsed:.1f}s")
-                    return
             except Exception as e:
                 traceback.print_exc()
                 raise Exception(f"Error saving parsed content to database for archive {entry_id}: {e}")
@@ -360,19 +383,24 @@ def parse_archives(limit: int | None = None):
         except Exception as e:
             # Record the error in the database so this archive is skipped on future runs
             db.execute_query(
-                'UPDATE archive_session SET extraction_error = %(extraction_error)s WHERE id = %(id)s',
-                {"extraction_error": str(e), "id": entry['id']},
+                'UPDATE archive_session SET incorporation_status = %(s)s, extraction_error = %(extraction_error)s WHERE id = %(id)s',
+                {"s": "parse_failed", "extraction_error": str(e), "id": entry['id']},
                 return_type="none"
             )
             logger.error(f"Error processing archive {entry['external_id'] or entry['id']}: {e}")
+            if emit:
+                emit(f"Part B — error parsing {entry['external_id'] or entry['id']}: {e}")
             error_count += 1
             traceback.print_exc()
+
+    elapsed = time.time() - start_time
+    logger.info(f"Part B complete: {parsed_count} archives parsed, {error_count} errors in {elapsed:.1f}s")
 
 
 ENTITY_EXTRACTION_ALGORITHM_VERSION = 1
 
 
-def extract_entities(limit: int | None = None):
+def extract_entities(limit: Optional[int] = None, cancel_check: Optional[Callable[[], bool]] = None, emit: Optional[Callable[[str], None]] = None):
     """
     Part C of full - does db inserts for main entities... extraction error if a problem in archive_session
     """
@@ -389,40 +417,37 @@ def extract_entities(limit: int | None = None):
     total_c4_time = 0.0  # update archive_session
     total_entities = {"accounts": 0, "posts": 0, "media": 0}
 
-    while True:
-        # Find the next archive session that has been parsed but not yet had entities extracted
-        # Requires: parsed_content set (Part B done), no errors, HAR source type
+    # Fetch the IDs of all archives ready for entity extraction upfront (one query).
+    # structures JSON can be large, so we fetch only lightweight columns here and
+    # do a PK lookup per archive when we actually need the full row.
+    queue = db.execute_query(
+        "SELECT id, external_id, archive_location FROM archive_session "
+        "WHERE incorporation_status = 'parsed' AND source_type = 'local_har'",
+        {},
+        return_type="rows",
+    ) or []
+    if limit is not None:
+        queue = queue[:limit]
+    logger.info(f"Part C - {len(queue)} archives to extract")
+
+    for stub in queue:
+        if cancel_check and cancel_check():
+            raise InterruptedError("Cancelled by user")
+        # PK lookup — fast, and loads the large structures JSON only when needed
         entry = db.execute_query(
-            '''SELECT *
-               FROM archive_session
-               WHERE extracted_entities IS NULL AND source_type = 1 AND extraction_error IS NULL AND parsed_content IS NOT NULL
-               LIMIT 1''',
-            {},
-            return_type="single_row"
+            "SELECT * FROM archive_session WHERE id = %(id)s",
+            {"id": stub["id"]},
+            return_type="single_row",
         )
         if entry is None:
-            # No more archives to process
-            elapsed = time.time() - start_time
-            logger.info(f"Part C complete: {extracted_count} archives processed, {error_count} errors in {elapsed:.1f}s")
-            logger.info(
-                f"Part C timing breakdown: "
-                f"C1 deserialize={total_c1_time:.1f}s, "
-                f"C2 har_to_entities={total_c2_time:.1f}s, "
-                f"C3 db_insert={total_c3_time:.1f}s, "
-                f"C4 update={total_c4_time:.1f}s"
-            )
-            logger.info(
-                f"Part C totals: "
-                f"{total_entities['accounts']} accounts, "
-                f"{total_entities['posts']} posts, "
-                f"{total_entities['media']} media"
-            )
-            return
+            continue
 
         entry_id = entry['external_id'] or entry['id']
         entry_start = time.time()
         try:
             logger.info(f"Extracting entities for: {entry_id}")
+            if emit:
+                emit(f"Part C — extracting {entry_id}")
 
             # Resolve the archive directory path from the stored location
             archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
@@ -465,7 +490,7 @@ def extract_entities(limit: int | None = None):
             # Step C4: Mark this archive session as successfully processed
             step_start = time.time()
             db.execute_query(
-                "UPDATE archive_session SET extraction_error = NULL, extracted_entities = %(v)s WHERE external_id = %(id)s",
+                "UPDATE archive_session SET incorporation_status = 'done', extract_algorithm_version = %(v)s WHERE external_id = %(id)s",
                 {"id": entry_id, "v": ENTITY_EXTRACTION_ALGORITHM_VERSION},
                 return_type="none"
             )
@@ -475,28 +500,50 @@ def extract_entities(limit: int | None = None):
 
             entry_elapsed = time.time() - entry_start
             logger.info(f"Successfully extracted entities for: {entry_id} in {entry_elapsed:.1f}s")
+            if emit:
+                emit(f"Part C — extracted {entry_id}")
             extracted_count += 1
-
-            if limit is not None and extracted_count >= limit:
-                elapsed = time.time() - start_time
-                logger.info(f"Part C - Reached limit of {limit} archives. {extracted_count} processed, {error_count} errors in {elapsed:.1f}s")
-                return
 
         except Exception as e:
             # Record error in DB so this archive is skipped on future runs
             logger.error(f"Error extracting entities for {entry_id}: {e}")
+            if emit:
+                emit(f"Part C — error extracting {entry_id}: {e}")
             db.execute_query(
-                "UPDATE archive_session SET extracted_entities = 2, extraction_error = %(extraction_error)s, extracted_entities = %(v)s WHERE external_id = %(id)s",
-                {"id": entry_id, "extraction_error": str(e), "v": ENTITY_EXTRACTION_ALGORITHM_VERSION},
+                "UPDATE archive_session SET incorporation_status = 'extract_failed', extraction_error = %(extraction_error)s WHERE external_id = %(id)s",
+                {"id": entry_id, "extraction_error": str(e)},
                 return_type="none"
             )
             traceback.print_exc()
             error_count += 1
 
+    elapsed = time.time() - start_time
+    logger.info(f"Part C complete: {extracted_count} archives processed, {error_count} errors in {elapsed:.1f}s")
+    logger.info(
+        f"Part C timing breakdown: "
+        f"C1 deserialize={total_c1_time:.1f}s, "
+        f"C2 har_to_entities={total_c2_time:.1f}s, "
+        f"C3 db_insert={total_c3_time:.1f}s, "
+        f"C4 update={total_c4_time:.1f}s"
+    )
+    logger.info(
+        f"Part C totals: "
+        f"{total_entities['accounts']} accounts, "
+        f"{total_entities['posts']} posts, "
+        f"{total_entities['media']} media"
+    )
+
 
 def clear_extraction_errors():
     db.execute_query(
-        "UPDATE archive_session SET extraction_error = NULL WHERE source_type = 1",
+        "UPDATE archive_session SET incorporation_status = 'pending', extraction_error = NULL "
+        "WHERE incorporation_status = 'parse_failed' AND source_type = 'local_har'",
+        {},
+        return_type="none"
+    )
+    db.execute_query(
+        "UPDATE archive_session SET incorporation_status = 'parsed', extraction_error = NULL "
+        "WHERE incorporation_status = 'extract_failed' AND source_type = 'local_har'",
         {},
         return_type="none"
     )
@@ -507,7 +554,7 @@ def add_missing_attachments():
         entry = db.execute_query(
             '''SELECT *
                FROM archive_session 
-               WHERE attachments IS NULL AND source_type = 1 AND extraction_error IS NULL
+               WHERE attachments IS NULL AND source_type = 'local_har' AND incorporation_status NOT IN ('parse_failed', 'extract_failed')
                LIMIT 1''',
             {},
             return_type="single_row"
@@ -541,7 +588,7 @@ def add_missing_metadata():
         entry = db.execute_query(
             '''SELECT *
                FROM archive_session 
-               WHERE archiving_timestamp IS NULL AND source_type = 1 AND extraction_error IS NULL
+               WHERE archiving_timestamp IS NULL AND source_type = 'local_har' AND incorporation_status NOT IN ('parse_failed', 'extract_failed')
                LIMIT 1''',
             {},
             return_type="single_row"

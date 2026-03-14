@@ -26,7 +26,8 @@ interface Job {
     started_at: string;
     completed_at: string | null;
     status: 'running' | 'completed' | 'failed';
-    triggered_by: number | null;
+    triggered_by_user_id: number | null;
+    triggered_by_ip: string | null;
     error_message: string | null;
 }
 
@@ -169,14 +170,15 @@ export default function IncorporatePage() {
     // -----------------------------------------------------------------------
 
     return (
-        <>
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
             <TopNavBar>
                 <Typography variant="h6" sx={{ color: 'white' }}>
                     Incorporate Archives
                 </Typography>
             </TopNavBar>
 
-            <Box sx={{ p: 3, maxWidth: 1100, mx: 'auto' }}>
+            <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
+            <Box sx={{ maxWidth: 1100, mx: 'auto' }}>
                 {/* Run button */}
                 <Stack direction="row" alignItems="center" gap={2} mb={3}>
                     <Button
@@ -217,7 +219,7 @@ export default function IncorporatePage() {
                             bgcolor: '#1a1b1e',
                             p: 2,
                             mb: 3,
-                            maxHeight: 450,
+                            height: 350,
                             overflowY: 'auto',
                             fontFamily: 'monospace',
                             fontSize: '0.8rem',
@@ -238,7 +240,7 @@ export default function IncorporatePage() {
                 <Typography variant="h6" gutterBottom>
                     History
                 </Typography>
-                <TableContainer component={Paper}>
+                <TableContainer component={Paper} sx={{ maxHeight: 400, overflowY: 'auto' }}>
                     <Table size="small">
                         <TableHead>
                             <TableRow>
@@ -246,14 +248,15 @@ export default function IncorporatePage() {
                                 <TableCell>Started</TableCell>
                                 <TableCell>Completed</TableCell>
                                 <TableCell>Status</TableCell>
-                                <TableCell>Triggered by</TableCell>
+                                <TableCell>User</TableCell>
+                                <TableCell>IP</TableCell>
                                 <TableCell>Error</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {history.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} align="center">No jobs yet</TableCell>
+                                    <TableCell colSpan={7} align="center">No jobs yet</TableCell>
                                 </TableRow>
                             ) : (
                                 history.map(job => (
@@ -268,7 +271,8 @@ export default function IncorporatePage() {
                                                 size="small"
                                             />
                                         </TableCell>
-                                        <TableCell>{job.triggered_by ?? '—'}</TableCell>
+                                        <TableCell>{job.triggered_by_user_id ?? '—'}</TableCell>
+                                        <TableCell>{job.triggered_by_ip ?? '—'}</TableCell>
                                         <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {job.error_message ?? '—'}
                                         </TableCell>
@@ -279,6 +283,7 @@ export default function IncorporatePage() {
                     </Table>
                 </TableContainer>
             </Box>
-        </>
+            </Box>
+        </Box>
     );
 }

@@ -5,9 +5,9 @@ import os
 import threading
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
-from browsing_platform.server.services.incorporation_service import manager, _run_incorporation
+from browsing_platform.server.services.incorporation_service import manager, _run_incorporation, incorporation_ws
 from browsing_platform.server.services.permissions import auth_admin_access
 from browsing_platform.server.services.token_manager import check_token
 from utils import db
@@ -23,12 +23,18 @@ router = APIRouter(prefix="/incorporate", tags=["incorporate"])
 
 @router.post("/start")
 def start(
+    request: Request,
     background_tasks: BackgroundTasks,
     permissions=Depends(auth_admin_access),
 ):
     user_id = getattr(permissions, "user_id", None)
+    client_ip = (
+        request.headers.get("X-Real-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else None)
+    )
     try:
-        job_id = manager.try_start(triggered_by=user_id)
+        job_id = manager.try_start(triggered_by_user_id=user_id, triggered_by_ip=client_ip)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -100,15 +106,13 @@ async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default
             return
 
     await websocket.accept()
-    q = manager.subscribe()
+    q = incorporation_ws.subscribe()
     try:
         while True:
-            # Wait for a message from the manager
             try:
                 msg = await asyncio.wait_for(q.get(), timeout=30)
                 await websocket.send_text(json.dumps(msg))
             except asyncio.TimeoutError:
-                # Send a heartbeat to keep the connection alive
                 try:
                     await websocket.send_text(json.dumps({"type": "ping"}))
                 except Exception:
@@ -118,4 +122,4 @@ async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default
     except Exception as e:
         logger.debug(f"WebSocket error: {e}")
     finally:
-        manager.unsubscribe(q)
+        incorporation_ws.unsubscribe(q)

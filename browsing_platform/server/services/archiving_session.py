@@ -1,9 +1,8 @@
 import json
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
-
 from pydantic import BaseModel, field_validator
 
 from browsing_platform.server.services.file_tokens import generate_file_token
@@ -22,15 +21,16 @@ class ArchiveSession(BaseModel):
     archived_url: Optional[str] = None
     archive_location: Optional[str] = None
     summary_html: Optional[str] = None
-    parsed_content: Optional[int] = None
+    parse_algorithm_version: Optional[int] = None
     structures: Optional[dict] = None
     metadata: Optional[dict] = None
     attachments: Optional[dict[str, list[str]]] = None
-    extracted_entities: Optional[int] = None
+    extract_algorithm_version: Optional[int] = None
     archiving_timestamp: Optional[datetime] = None
     notes: Optional[str] = None
     extraction_error: Optional[str] = None
-    source_type: int = 0
+    source_type: Literal['AA_xlsx', 'local_har', 'local_wacz'] = 'local_har'
+    incorporation_status: Optional[Literal['pending', 'parse_failed', 'parsed', 'extract_failed', 'done']] = None
 
     @field_validator('metadata', 'structures', 'attachments', mode='before')
     def parse_data(cls, v, _):

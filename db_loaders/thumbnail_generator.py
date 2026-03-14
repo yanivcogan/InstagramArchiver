@@ -56,6 +56,7 @@ import logging
 import os
 from hashlib import md5
 from pathlib import Path
+from typing import Callable, Optional
 
 import cv2
 from PIL import Image
@@ -158,9 +159,11 @@ def _read_video_frame(path: str) -> Image.Image:
         cap.release()
 
 
-async def generate_missing_thumbnails(thumbnail_size=(128, 128), limit: int | None = None):
+async def generate_missing_thumbnails(thumbnail_size=(128, 128), limit: int | None = None, cancel_check=None, emit: Optional[Callable[[str], None]] = None):
     generated_count = 0
     while True:
+        if cancel_check and cancel_check():
+            raise InterruptedError("Cancelled by user")
         media = db.execute_query(
             """SELECT *
                FROM media
@@ -192,6 +195,8 @@ async def generate_missing_thumbnails(thumbnail_size=(128, 128), limit: int | No
             img.save(thumbnail_path, "JPEG")
         except Exception as e:
             logger.error(f"Error generating thumbnail for media ID {media.id} (type={media.media_type}, path={local_path}): {e}")
+            if emit:
+                emit(f"Part D — error generating thumbnail for media {media.id}: {e}")
             db.execute_query(f'''
                         UPDATE media
                         SET thumbnail_path = %(thumbnail_path)s
@@ -211,6 +216,8 @@ async def generate_missing_thumbnails(thumbnail_size=(128, 128), limit: int | No
             "thumbnail_path": relative_thumbnail_path,
             "id": media.id
         }, "none")
+        if emit:
+            emit(f"Part D — generated thumbnail for media {media.id}")
         generated_count += 1
         if limit is not None and generated_count >= limit:
             logger.info(f"Part D - Reached limit of {limit} thumbnails")
