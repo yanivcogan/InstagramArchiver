@@ -40,7 +40,7 @@ interface FileState {
     relativePath: string;
     file: File;
     uploadedBytes: number;
-    status: 'pending' | 'uploading' | 'done' | 'error';
+    status: 'pending' | 'hashing' | 'uploading' | 'done' | 'error';
     error?: string;
 }
 
@@ -84,6 +84,15 @@ async function collectFiles(entry: FileSystemEntry, prefix: string): Promise<{ r
     const children = await readAllDirEntries((entry as FileSystemDirectoryEntry).createReader());
     const results = await Promise.all(children.map(c => collectFiles(c, currentPath)));
     return results.flat();
+}
+
+/** Compute SHA-256 of a file using the browser's native Web Crypto API. */
+async function computeSha256(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
 }
 
 function formatBytes(bytes: number): string {
@@ -283,14 +292,21 @@ export default function UploadPage() {
         ));
 
         const uploadFile = (archiveName: string, fileEntry: FileState): Promise<void> =>
-            pool.run(() => new Promise<void>((resolve, reject) => {
-                if (cancelledRef.current) { reject(new Error('cancelled')); return; }
+            pool.run(async () => {
+                if (cancelledRef.current) throw new Error('cancelled');
 
+                // Hash the file before uploading so the server can verify integrity
+                setFileStatus(archiveName, fileEntry.relativePath, { status: 'hashing' });
+                const fileHash = await computeSha256(fileEntry.file);
+
+                if (cancelledRef.current) throw new Error('cancelled');
+
+                return new Promise<void>((resolve, reject) => {
                 const upload = new TusUpload(fileEntry.file, {
                     endpoint: `${config.serverPath}api/upload/tus/`,
                     chunkSize: 5 * 1024 * 1024,
                     retryDelays: [0, 1000, 3000, 5000, 10000],
-                    metadata: { archiveName, relativePath: fileEntry.relativePath },
+                    metadata: { archiveName, relativePath: fileEntry.relativePath, fileHash },
                     headers: authHeaders(),
                     onProgress: (uploaded) => {
                         setFileStatus(archiveName, fileEntry.relativePath, {
@@ -313,7 +329,8 @@ export default function UploadPage() {
 
                 activeUploadsRef.current.set(`${archiveName}:${fileEntry.relativePath}`, upload);
                 upload.start();
-            }));
+                }); // end new Promise
+            }); // end pool.run async
 
         const processArchive = async (archive: ArchiveState) => {
             if (cancelledRef.current) return;
@@ -588,9 +605,9 @@ export default function UploadPage() {
                                                 <Stack key={f.relativePath} direction="row" alignItems="center" gap={1}>
                                                     {f.status === 'done' && <CheckCircleIcon fontSize="small" color="success" />}
                                                     {f.status === 'error' && <ErrorIcon fontSize="small" color="error" />}
-                                                    {(f.status === 'uploading' || f.status === 'pending') && (
+                                                    {(f.status === 'uploading' || f.status === 'hashing' || f.status === 'pending') && (
                                                         <Box sx={{ width: 20, display: 'flex', justifyContent: 'center' }}>
-                                                            {f.status === 'uploading'
+                                                            {(f.status === 'uploading' || f.status === 'hashing')
                                                                 ? <CircularProgress size={14} />
                                                                 : <Box sx={{ width: 14, height: 14 }} />}
                                                         </Box>
@@ -599,7 +616,9 @@ export default function UploadPage() {
                                                         {f.relativePath}
                                                     </Typography>
                                                     <Typography variant="caption" color="text.secondary">
-                                                        {formatBytes(f.uploadedBytes)} / {formatBytes(f.file.size)}
+                                                        {f.status === 'hashing'
+                                                            ? 'Hashing…'
+                                                            : `${formatBytes(f.uploadedBytes)} / ${formatBytes(f.file.size)}`}
                                                     </Typography>
                                                 </Stack>
                                             ))}

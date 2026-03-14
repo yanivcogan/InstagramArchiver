@@ -86,13 +86,14 @@ def tus_create(
     metadata = _decode_tus_metadata(upload_metadata or "")
     archive_name = metadata.get("archiveName", "")
     relative_path = metadata.get("relativePath", "")
+    file_hash = metadata.get("fileHash") or None  # hex SHA-256 declared by client
 
     if not upload_service.validate_archive_name(archive_name):
         raise HTTPException(status_code=400, detail="Invalid archive name")
     if not upload_service.validate_file_path(relative_path):
         raise HTTPException(status_code=400, detail="Invalid file path")
 
-    file_id = upload_service.create_upload(archive_name, relative_path, upload_length)
+    file_id = upload_service.create_upload(archive_name, relative_path, upload_length, file_hash)
     # Build absolute URL for Location header
     base = str(request.base_url).rstrip("/")
     location = f"{base}/api/upload/tus/{file_id}"
@@ -164,11 +165,27 @@ def verify(archive_name: str, _=Depends(auth_admin_access)):
 
 
 @router.post("/commit/{archive_name}")
-def commit(archive_name: str, _=Depends(auth_admin_access)):
+def commit(archive_name: str, request: Request, permissions=Depends(auth_admin_access)):
     if not upload_service.validate_archive_name(archive_name):
         raise HTTPException(status_code=400, detail="Invalid archive name")
+
+    # Best-effort uploader identity — captured for chain-of-custody record
+    client_ip = (
+        request.headers.get("X-Real-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or (request.client.host if request.client else None)
+    )
+    user_id = getattr(permissions, "user_id", None)  # None in dev-bypass mode
+
+    uploader_info = {
+        "user_id": user_id,
+        "ip_address": client_ip,
+        "user_agent": request.headers.get("User-Agent"),
+        "x_forwarded_for": request.headers.get("X-Forwarded-For"),
+    }
+
     try:
-        upload_service.commit_archive(archive_name)
+        upload_service.commit_archive(archive_name, uploader_info)
     except Exception as e:
         logger.error(f"Failed to commit archive '{archive_name}': {e}")
         raise HTTPException(status_code=500, detail="Failed to commit archive")

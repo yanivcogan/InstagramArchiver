@@ -4,7 +4,9 @@ import logging
 import os
 import re
 import shutil
+import socket
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -49,8 +51,12 @@ def check_conflicts(archive_names: list[str]) -> dict[str, bool]:
     return {name: (Path("archives") / name).exists() for name in archive_names}
 
 
-def create_upload(archive_name: str, relative_path: str, upload_length: int) -> str:
-    """Create a new TUS upload session. Returns the file_id."""
+def create_upload(archive_name: str, relative_path: str, upload_length: int, file_hash: Optional[str]) -> str:
+    """Create a new TUS upload session. Returns the file_id.
+
+    file_hash: hex-encoded SHA-256 of the complete file, computed by the client
+               before upload. Stored in state and verified after all chunks land.
+    """
     staging = get_staging_dir()
     file_id = uuid.uuid4().hex
 
@@ -67,6 +73,7 @@ def create_upload(archive_name: str, relative_path: str, upload_length: int) -> 
         "archive_name": archive_name,
         "relative_path": relative_path,
         "upload_length": upload_length,
+        "file_hash": file_hash,  # SHA-256 declared by client; None if not provided
         "offset": 0,
     }
     (state_dir / f"{file_id}.json").write_text(json.dumps(state), encoding="utf-8")
@@ -125,65 +132,131 @@ def delete_upload(file_id: str):
 
 
 def verify_archive(archive_name: str) -> dict:
-    """Parse checksum file(s) and verify every referenced file."""
-    staging = get_staging_dir()
-    archive_dir = staging / archive_name
+    """Verify every uploaded file in the archive against its client-declared SHA-256.
 
-    checksum_files = list(archive_dir.glob("*.sha256"))
-    if not checksum_files:
-        return {"status": "no_checksum_file", "results": []}
+    The hash is read from each TUS state JSON (stored at upload-creation time).
+    Files uploaded without a declared hash are treated as passing (no-op check).
+    """
+    staging = get_staging_dir()
+    state_dir = staging / archive_name / _TUS_STATE_DIR
+
+    if not state_dir.exists():
+        return {"status": "no_uploads", "results": []}
 
     results = []
     all_pass = True
 
-    for checksum_file in checksum_files:
-        for line in checksum_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            parts = line.split(' ', 1)
-            if len(parts) != 2:
-                continue
-            expected_hash = parts[0].lower()
-            rel_path = parts[1].lstrip('*').strip()
+    for state_file in state_dir.glob("*.json"):
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        rel_path = state["relative_path"]
+        expected_hash = state.get("file_hash")
 
-            try:
-                file_path = _safe_staging_file_path(archive_name, rel_path)
-            except ValueError:
-                results.append({"path": rel_path, "status": "invalid_path"})
-                all_pass = False
-                continue
+        # Skip integrity check for files uploaded without a declared hash
+        if not expected_hash:
+            results.append({"path": rel_path, "status": "no_hash"})
+            continue
 
-            if not file_path.exists():
-                results.append({"path": rel_path, "status": "missing"})
-                all_pass = False
-                continue
+        try:
+            file_path = _safe_staging_file_path(archive_name, rel_path)
+        except ValueError:
+            results.append({"path": rel_path, "status": "invalid_path"})
+            all_pass = False
+            continue
 
-            sha256 = hashlib.sha256()
-            with open(file_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    sha256.update(chunk)
+        if not file_path.exists():
+            results.append({"path": rel_path, "status": "missing"})
+            all_pass = False
+            continue
 
-            ok = sha256.hexdigest() == expected_hash
-            results.append({"path": rel_path, "status": "pass" if ok else "fail"})
-            if not ok:
-                all_pass = False
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha256.update(chunk)
+
+        actual = sha256.hexdigest()
+        ok = actual == expected_hash.lower()
+        results.append({"path": rel_path, "status": "pass" if ok else "fail"})
+        if not ok:
+            all_pass = False
+            logger.warning(
+                f"Hash mismatch for {archive_name}/{rel_path}: "
+                f"expected={expected_hash} actual={actual}"
+            )
+
+    if not results:
+        return {"status": "no_uploads", "results": []}
 
     return {"status": "pass" if all_pass else "fail", "results": results}
 
 
-def commit_archive(archive_name: str):
-    """Move a verified archive from staging to the archives directory."""
+def _collect_tus_records(archive_name: str) -> list[dict]:
+    """Read all TUS state JSONs and return per-file records (path, hash, size)."""
+    state_dir = get_staging_dir() / archive_name / _TUS_STATE_DIR
+    records = []
+    if state_dir.exists():
+        for state_file in state_dir.glob("*.json"):
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+                records.append({
+                    "relative_path": state["relative_path"],
+                    "sha256": state.get("file_hash"),
+                    "size_bytes": state.get("upload_length"),
+                })
+            except Exception:
+                pass
+    return sorted(records, key=lambda r: r["relative_path"])
+
+
+def commit_archive(archive_name: str, uploader_info: dict):
+    """Move a verified archive from staging to the archives directory,
+    then write chain-of-custody checksum and metadata files."""
     staging = get_staging_dir()
     src = staging / archive_name
     dst = Path("archives") / archive_name
+
+    # Collect records from TUS state files BEFORE they are deleted
+    file_records = _collect_tus_records(archive_name)
+    completed_at = datetime.now(timezone.utc)
+    timestamp_label = completed_at.strftime("%Y%m%d_%H%M%S")
 
     tus_state = src / _TUS_STATE_DIR
     if tus_state.exists():
         shutil.rmtree(tus_state)
 
     os.rename(src, dst)
-    logger.info(f"Committed archive '{archive_name}' to archives/")
+
+    # --- Checksum record ---
+    checksum_doc = {
+        "archive": archive_name,
+        "generated_at": completed_at.isoformat(),
+        "checksum_algorithm": "SHA-256",
+        "files": file_records,
+    }
+    (dst / f"browsing_platform_upload_checksum_{timestamp_label}.json").write_text(
+        json.dumps(checksum_doc, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    # --- Upload metadata record ---
+    metadata_doc = {
+        "archive": archive_name,
+        "upload_completed_at": completed_at.isoformat(),
+        "uploader": uploader_info,
+        "server": {
+            "hostname": socket.getfqdn(),
+            "software": "browsing_platform",
+        },
+        "upload_stats": {
+            "file_count": len(file_records),
+            "total_bytes": sum(r["size_bytes"] or 0 for r in file_records),
+            "checksum_algorithm": "SHA-256",
+            "checksum_file": f"browsing_platform_upload_checksum_{timestamp_label}.json",
+        },
+    }
+    (dst / f"browsing_platform_upload_metadata_{timestamp_label}.json").write_text(
+        json.dumps(metadata_doc, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    logger.info(f"Committed archive '{archive_name}' to archives/ with chain-of-custody records")
 
 
 def cleanup_staging_archive(archive_name: str):
