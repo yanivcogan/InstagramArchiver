@@ -52,6 +52,7 @@ class IncorporationManager:
         self._subscribers_lock = threading.Lock()
         self._log_buffer: list[dict] = []
         self._handler: Optional[_BroadcastHandler] = None
+        self._cancel_event = threading.Event()
 
     # ------------------------------------------------------------------
     # Called once at server startup to capture the running event loop
@@ -80,7 +81,15 @@ class IncorporationManager:
             self._current_job_id = job_id
             self._running = True
             self._log_buffer = []
+            self._cancel_event.clear()
         return job_id
+
+    def request_cancel(self):
+        """Signal the running job to stop after the current stage completes."""
+        self._cancel_event.set()
+
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_event.is_set()
 
     def finish(self, job_id: int, status: str, error_message: Optional[str] = None):
         db.execute_query(
@@ -177,14 +186,21 @@ def _run_incorporation(job_id: int):
         )
         from db_loaders.thumbnail_generator import generate_missing_thumbnails
 
+        def check_cancel():
+            if manager.is_cancel_requested():
+                raise InterruptedError("Cancelled by user")
+
         manager._broadcast({"type": "status", "text": "Part A — registering archives"})
         register_archives()
+        check_cancel()
 
         manager._broadcast({"type": "status", "text": "Part B — parsing HAR files"})
         parse_archives()
+        check_cancel()
 
         manager._broadcast({"type": "status", "text": "Part C — extracting entities"})
         extract_entities()
+        check_cancel()
 
         manager._broadcast({"type": "status", "text": "Part D — generating thumbnails"})
         _asyncio.run(generate_missing_thumbnails())

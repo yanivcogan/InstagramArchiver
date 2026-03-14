@@ -15,6 +15,7 @@ import {
     Typography,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import server from '../services/server';
 import config from '../services/config';
@@ -58,6 +59,7 @@ const WS_URL = (() => {
 export default function IncorporatePage() {
     const [running, setRunning] = useState(false);
     const [starting, setStarting] = useState(false);
+    const [stopping, setStopping] = useState(false);
     const [history, setHistory] = useState<Job[]>([]);
     const [logs, setLogs] = useState<LogLine[]>([]);
     const [wsConnected, setWsConnected] = useState(false);
@@ -104,6 +106,7 @@ export default function IncorporatePage() {
                 if (msg.type === 'done') {
                     setRunning(false);
                     setStarting(false);
+                    setStopping(false);
                     fetchHistory();
                 }
                 if (msg.type === 'status' || msg.type === 'log' || msg.type === 'done') {
@@ -139,6 +142,11 @@ export default function IncorporatePage() {
         } else {
             setStarting(false);
         }
+    };
+
+    const handleStop = async () => {
+        setStopping(true);
+        await server.post('incorporate/stop', {});
     };
 
     // -----------------------------------------------------------------------
@@ -181,6 +189,18 @@ export default function IncorporatePage() {
                     >
                         {running ? 'Running…' : starting ? 'Starting…' : 'Run Incorporation'}
                     </Button>
+                    {running && (
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            size="large"
+                            startIcon={stopping ? <CircularProgress size={18} color="inherit" /> : <StopIcon />}
+                            onClick={handleStop}
+                            disabled={stopping}
+                        >
+                            {stopping ? 'Stopping…' : 'Stop'}
+                        </Button>
+                    )}
                     <Chip
                         label={wsConnected ? 'Live' : 'Disconnected'}
                         color={wsConnected ? 'success' : 'default'}

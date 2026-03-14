@@ -18,7 +18,7 @@ _TUS_STATE_DIR = ".tus_state"
 
 def get_staging_dir() -> Path:
     custom = os.getenv("UPLOAD_STAGING_DIR")
-    return Path(custom) if custom else Path("archives") / ".upload_staging"
+    return Path(custom) if custom else Path(".upload_staging")
 
 
 def validate_archive_name(name: str) -> bool:

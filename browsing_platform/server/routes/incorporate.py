@@ -43,6 +43,18 @@ def _run_in_thread(job_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Stop
+# ---------------------------------------------------------------------------
+
+@router.post("/stop")
+def stop(_=Depends(auth_admin_access)):
+    if not manager.is_running():
+        raise HTTPException(status_code=409, detail="No incorporation job is currently running")
+    manager.request_cancel()
+    return {"status": "cancel_requested"}
+
+
+# ---------------------------------------------------------------------------
 # Status
 # ---------------------------------------------------------------------------
 
