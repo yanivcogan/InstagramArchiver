@@ -6,6 +6,7 @@ create table account
     update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform varchar(100)                        null,
     url            varchar(200)                        not null,
+    identifiers    json                                null,
     display_name   varchar(100)                        null,
     bio            varchar(200)                        null,
     data           json                                null,
@@ -162,26 +163,6 @@ create index archive_session_external_id_index
 create fulltext index idx_search_fulltext
     on archive_session (archived_url, archived_url_parts, notes);
 
-
-create table entity_share_link
-(
-    id                 int auto_increment
-        primary key,
-    create_date        timestamp default CURRENT_TIMESTAMP                                  null,
-    update_date        timestamp default CURRENT_TIMESTAMP                                  null on update CURRENT_TIMESTAMP,
-    created_by_user_id int                                                                  not null,
-    valid              tinyint   default 1                                                  not null,
-    entity             enum ('archiving_session', 'account', 'post', 'media', 'media_part') not null,
-    entity_id          int                                                                  null,
-    link_suffix        varchar(100)                                                         not null,
-    constraint entity_share_link_pk
-        unique (link_suffix),
-    constraint entity_share_link_user_id_fk
-        foreign key (created_by_user_id) references archived_content_browser.user (id)
-)
-    engine = InnoDB;
-
-
 create table error_log
 (
     id         int auto_increment
@@ -194,6 +175,19 @@ create table error_log
 )
     engine = InnoDB
     charset = utf8mb3;
+
+create table incorporation_job
+(
+    id                   int auto_increment
+        primary key,
+    started_at           datetime                                                  not null,
+    completed_at         datetime                                                  null,
+    status               enum ('running', 'completed', 'failed') default 'running' not null,
+    triggered_by_user_id int                                                       null,
+    triggered_by_ip      varchar(255)                                              null,
+    log                  mediumtext                                                null,
+    error                text                                                      null
+);
 
 create table post
 (
@@ -213,7 +207,7 @@ create table post
 )
     engine = InnoDB;
 
-create table archived_content_browser.media
+create table media
 (
     id             int auto_increment
         primary key,
@@ -229,31 +223,30 @@ create table archived_content_browser.media
     annotation     text                                null,
     thumbnail_path varchar(200)                        null,
     constraint media_post_id_fk
-        foreign key (post_id) references archived_content_browser.post (id)
+        foreign key (post_id) references post (id)
 )
     engine = InnoDB;
 
 create index media_id_on_platform_index
-    on archived_content_browser.media (id_on_platform);
+    on media (id_on_platform);
 
 create index media_local_url_index
-    on archived_content_browser.media (local_url);
+    on media (local_url);
 
 create index media_media_type_index
-    on archived_content_browser.media (media_type);
+    on media (media_type);
 
 create index media_post_id_index
-    on archived_content_browser.media (post_id);
+    on media (post_id);
 
 create index media_thumbnail_path_index
-    on archived_content_browser.media (thumbnail_path);
+    on media (thumbnail_path);
 
 create index media_url_index
-    on archived_content_browser.media (url);
+    on media (url);
 
 create fulltext index search_idx_fulltext
-    on archived_content_browser.media (notes, annotation);
-
+    on media (notes, annotation);
 
 create table media_archive
 (
@@ -594,6 +587,24 @@ create table user
     admin            tinyint   default 0                 not null,
     constraint email
         unique (email)
+)
+    engine = InnoDB;
+
+create table entity_share_link
+(
+    id                 int auto_increment
+        primary key,
+    create_date        timestamp default CURRENT_TIMESTAMP                                  null,
+    update_date        timestamp default CURRENT_TIMESTAMP                                  null on update CURRENT_TIMESTAMP,
+    created_by_user_id int                                                                  not null,
+    valid              tinyint   default 1                                                  not null,
+    entity             enum ('archiving_session', 'account', 'post', 'media', 'media_part') not null,
+    entity_id          int                                                                  null,
+    link_suffix        varchar(100)                                                         not null,
+    constraint entity_share_link_pk
+        unique (link_suffix),
+    constraint entity_share_link_user_id_fk
+        foreign key (created_by_user_id) references user (id)
 )
     engine = InnoDB;
 

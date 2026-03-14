@@ -43,11 +43,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from starlette.middleware.base import BaseHTTPMiddleware
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share, upload
+    permissions, tags, annotate, share, upload, incorporate
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
-app = FastAPI()
+import asyncio
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Capture the running event loop for the incorporation manager's thread bridge
+    from browsing_platform.server.services.incorporation_service import manager, cleanup_stale_jobs
+    manager.set_event_loop(asyncio.get_event_loop())
+    cleanup_stale_jobs()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 # CORS configuration
 ALLOWED_ORIGINS = [
@@ -143,6 +156,7 @@ for r in [
     permissions.router,
     share.router,
     upload.router,
+    incorporate.router,
 ]:
     app.include_router(r, prefix="/api")
 

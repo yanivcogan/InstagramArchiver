@@ -18,6 +18,7 @@ import LocalFloristIcon from '@mui/icons-material/LocalFlorist';
 import MenuIcon from '@mui/icons-material/Menu';
 import SearchIcon from "@mui/icons-material/Search";
 import UploadIcon from "@mui/icons-material/Upload";
+import StorageIcon from "@mui/icons-material/Storage";
 import LogoutIcon from '@mui/icons-material/Logout';
 
 interface IProps {
@@ -78,6 +79,10 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                     <ListItemButton onClick={() => goToPage("upload")}>
                         <ListItemIcon><UploadIcon/></ListItemIcon>
                         <ListItemText primary="Upload Archives"/>
+                    </ListItemButton>
+                    <ListItemButton onClick={() => goToPage("incorporate")}>
+                        <ListItemIcon><StorageIcon/></ListItemIcon>
+                        <ListItemText primary="Incorporate"/>
                     </ListItemButton>
                     <ListItemButton onClick={logout}>
                         <ListItemIcon><LogoutIcon/></ListItemIcon>
