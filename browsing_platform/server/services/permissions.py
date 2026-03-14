@@ -97,6 +97,19 @@ async def auth_entity_view_access(request: Request, entity: T_Entities, entity_i
         return await raise_auth_user_error(request, token_permissions)
 
 
+async def auth_admin_access(request: Request):
+    """Verify that the user has a valid admin session."""
+    if os.getenv("BROWSING_PLATFORM_DEV") == "1":
+        logger.debug("Admin auth bypassed - dev mode enabled")
+        return True
+    token_permissions = await get_auth_permissions(request)
+    await raise_auth_user_error(request, token_permissions)
+    if not token_permissions.admin:
+        logger.warning(f"Forbidden - non-admin access attempt: {request.scope['route'].path}")
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return token_permissions
+
+
 def get_user_id(request: Request):
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)

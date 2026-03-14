@@ -27,7 +27,8 @@
     "react-router": "^7.0.0",
     "react-transition-group": "^4.4.5",
     "rison": "^0.1.1",
-    "sass": "^1.97.3"
+    "sass": "^1.97.3",
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.57.0",

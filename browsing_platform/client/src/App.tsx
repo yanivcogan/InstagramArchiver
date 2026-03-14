@@ -18,6 +18,7 @@ import PostPage from "./pages/PostPage";
 import MediaPage from "./pages/MediaPage";
 import SessionPage from "./pages/SessionPage";
 import SearchPage from "./pages/SearchPage";
+import UploadPage from "./pages/Upload";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
@@ -59,6 +60,7 @@ export default function App() {
                     <Route path="/media/:id" element={<MediaPage/>}/>
                     <Route path="/archive/:id" element={<SessionPage/>}/>
                     <Route path="/search" element={<SearchPage/>}/>
+                    <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
                 <ToastContainer

@@ -43,7 +43,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 from starlette.middleware.base import BaseHTTPMiddleware
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share
+    permissions, tags, annotate, share, upload
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
@@ -65,6 +65,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # TUS protocol requires these response headers to be readable cross-origin
+    expose_headers=["Location", "Upload-Offset", "Upload-Length", "Tus-Resumable", "Tus-Version", "Tus-Extension"],
 )
 
 # Serve the 'archives' directory statically
@@ -140,6 +142,7 @@ for r in [
     login.router,
     permissions.router,
     share.router,
+    upload.router,
 ]:
     app.include_router(r, prefix="/api")
 
