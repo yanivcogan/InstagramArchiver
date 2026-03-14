@@ -5,9 +5,7 @@ body {
 input, textarea, select, button {
   font-family: Cabin, Cairo, Rubik, sans-serif !important;
 }
-::selection {
-  color: white;
-}
+
 button{
   -moz-appearance: none;
   -webkit-appearance: none;

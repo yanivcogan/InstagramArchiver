@@ -101,14 +101,10 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                                         size="small"
                                         color={"primary"}
                                         onClick={async (e) => {
-                                            const next = !expandDetails;
-                                            setExpandDetails(next);
-                                            if (next) {
-                                                if (media.data === undefined || media.data === null) {
-                                                    await fetchDetails();
-                                                }
-                                                popupVisibilitySetter(e, true);
+                                            if (media.data === undefined || media.data === null) {
+                                                await fetchDetails();
                                             }
+                                            popupVisibilitySetter(e, true);
                                         }}
                                     >
                                         <MoreHorizIcon/>
@@ -135,7 +131,11 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                                     transformOrigin: {
                                         vertical: 'top',
                                         horizontal: 'left',
-                                    }
+                                    },
+                                    sx: {
+                                        maxWidth: "90vw",
+                                        maxHeight: "60vh"
+                                    },
                                 }}
                             />
                         </span>
