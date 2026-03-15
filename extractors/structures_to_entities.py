@@ -261,6 +261,7 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
     extracted_tagged_accounts: list[TaggedAccount] = []
     for edge in structure.edges:
         highlight = edge.node
+        highlight_id  = highlight.id.split(":")[-1]
         for item in highlight.items:
             account = Account(
                 id_on_platform=highlight.user.id,
@@ -272,7 +273,7 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
             extracted_accounts.append(account)
             post = Post(
                 id_on_platform=item.pk or item.id,
-                url=None,  # ReelsMediaConnection items are stored highlights; URL requires collection ID
+                url=f"https://www.instagram.com/s/{highlight_id}/?story_media_id={item.pk or item.id}",
                 account_id_on_platform=account.id_on_platform,
                 account_url=account.url,
                 publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
@@ -814,6 +815,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
     extracted_media: list[Media] = []
     extracted_tagged_accounts: list[TaggedAccount] = []
     highlight = structure.edges[0].node if structure.edges else None
+    highlight_id = highlight.id.split(":")[-1]
     if not highlight:
         return ExtractedEntitiesFlattened(
             accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[],
@@ -830,7 +832,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
     for reel in highlight.items:
         post = Post(
             id_on_platform=reel.pk or reel.id,
-            url=None,  # Highlight stories require the collection ID; cannot construct a direct URL
+            url=f"https://www.instagram.com/s/{highlight_id}/?story_media_id={reel.pk or reel.id}",
             account_id_on_platform=highlight.user.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(reel.taken_at, timezone.utc),
