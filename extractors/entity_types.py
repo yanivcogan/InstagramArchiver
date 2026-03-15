@@ -81,7 +81,20 @@ class Post(EntityBase):
     @field_validator('url', 'account_url', mode='before')
     def normalize_url(cls, v, _):
         if isinstance(v, str):
-            v = v.strip().split('?')[0].rstrip('/')
+            v = v.strip()
+            if '?story_media_id=' in v:
+                from urllib.parse import urlsplit, urlunsplit, parse_qs
+                parts = urlsplit(v)
+                qs = parse_qs(parts.query)
+                story_vals = qs.get('story_media_id')
+                story_val = story_vals[0] if story_vals else None
+                cleaned_path = parts.path.rstrip('/')
+                cleaned = urlunsplit((parts.scheme, parts.netloc, cleaned_path, '', ''))
+                if story_val:
+                    cleaned = f"{cleaned}?story_media_id={story_val}"
+                v = cleaned
+            else:
+                v = v.split('?')[0].rstrip('/')
         return v
 
     @model_validator(mode='after')
