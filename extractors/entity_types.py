@@ -2,7 +2,9 @@ import json
 from datetime import datetime
 from typing import Optional, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from browsing_platform.server.services.tag import ITagWithType
 
@@ -60,7 +62,7 @@ class Account(EntityBase):
 
 class Post(EntityBase):
     id_on_platform: Optional[str] = None
-    url: str = Field(..., max_length=250)
+    url: Optional[str] = Field(None, max_length=250)
     account_id: Optional[int] = None
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url: Optional[str] = Field(None, max_length=200)
@@ -81,6 +83,16 @@ class Post(EntityBase):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
+
+    @model_validator(mode='after')
+    def derive_id_on_platform_from_url(self):
+        if self.id_on_platform is None and self.url:
+            # Stories URL (trailing slash already stripped by normalize_url):
+            # https://www.instagram.com/stories/{username}/{pk}
+            m = re.search(r'/stories/[^/]+/(\d+)', self.url)
+            if m:
+                self.id_on_platform = m.group(1)
+        return self
 
     @field_validator('data', mode='before')
     def parse_data(cls, v, _):

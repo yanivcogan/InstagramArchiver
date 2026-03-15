@@ -358,7 +358,7 @@ class MediaItemApiV1(BaseModel):
     photo_of_you: Optional[bool] = None
     can_see_insights_as_brand: Optional[bool] = None
     media_type: int
-    code: str
+    code: Optional[str] = None
     caption: Optional[CommentCaptionApiV1] = None
     sharing_friction_info: Optional[SharingFrictionInfoApiV1] = None
     timeline_pinned_user_ids: Optional[Union[List[str], List[int]]] = None

@@ -39,6 +39,16 @@ def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archi
     with db.transaction_batch():
         for entity_config in entity_types:
             entities: list = getattr(structures, entity_config.key, [])
+
+            # Posts without an id_on_platform cannot be identified or deduplicated;
+            # skip them rather than storing an unidentifiable record.
+            if entity_config.key == "posts":
+                valid_entities = [e for e in entities if e.id_on_platform is not None]
+                skipped = len(entities) - len(valid_entities)
+                if skipped:
+                    logger.warning(f"Skipping {skipped} post(s) with no id_on_platform")
+                entities = valid_entities
+
             entity_count = len(entities)
             new_count = 0
             updated_count = 0

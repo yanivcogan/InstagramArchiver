@@ -19,8 +19,8 @@ export interface IAccount extends IEntityBase {
 }
 
 export interface IPost extends IEntityBase {
-    id_on_platform?: string;
-    url: string;
+    id_on_platform: string;
+    url?: string;
     account_id?: number;
     account_id_on_platform?: string;
     account_url?: string;

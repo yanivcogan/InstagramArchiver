@@ -3,23 +3,26 @@
 Database migration runner.
 
 Usage:
-    uv run db_loaders/migrate.py                    # apply all pending migrations
-    uv run db_loaders/migrate.py --mark-applied 1   # bootstrap: record V001 as applied
-                                                    # without executing it (for existing
-                                                    # installations where the schema is
-                                                    # already up to date)
+    uv run db_loaders/migrate.py
 
-Migration files live in migrations/ at the project root and follow the naming
-convention:
+Pending migrations are listed and you are prompted to choose a starting
+version.  Migrations before the chosen version are recorded as applied
+(skipped) so they are never re-run.  This is the bootstrap path for
+existing installations whose schema is already partially or fully up to
+date.
 
-    V{NNN}__{description}.sql   — SQL migration (may contain multiple statements
-                                  separated by semicolons)
-    V{NNN}__{description}.py    — Python migration; must expose run(cnx) where cnx
-                                  is a mysql.connector connection. The runner commits
-                                  after run() returns; raise an exception to abort.
+Migration files live in migrations/ at the project root and follow the
+naming convention:
 
-Each applied migration is recorded in the schema_migration table with its version
-number. Migrations are never re-applied.
+    V{NNN}__{description}.sql   — SQL migration; may contain multiple
+                                  statements separated by semicolons
+    V{NNN}__{description}.py    — Python migration; must expose run(cnx)
+                                  where cnx is a mysql.connector connection.
+                                  The runner commits after run() returns;
+                                  raise an exception to abort.
+
+Each applied migration is recorded in the schema_migration table with its
+version number.  Migrations are never re-applied.
 """
 
 import importlib.util
@@ -96,10 +99,10 @@ def _apply_sql(cnx, path: Path):
     sql = path.read_text(encoding="utf-8")
     cur = cnx.cursor()
     try:
-        # multi=True handles semicolon-separated statements in a single file
-        for result in cur.execute(sql, multi=True):
-            if result.with_rows:
-                result.fetchall()  # consume to avoid "commands out of sync"
+        for stmt in sql.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                cur.execute(stmt)
         cnx.commit()
     finally:
         cur.close()
@@ -142,7 +145,38 @@ def run_pending_migrations():
             print("Database is up to date — no pending migrations.")
             return
 
+        print("Pending migrations:")
+        for v, d, _ in pending:
+            print(f"  V{v:03d}  {d}")
+        print()
+
+        valid_versions = [v for v, _, _ in pending]
+        answer = input(
+            f"Start from which version? "
+            f"[{valid_versions[0]}–{valid_versions[-1]}, default={valid_versions[0]}]: "
+        ).strip()
+
+        if answer == "":
+            start_version = valid_versions[0]
+        else:
+            try:
+                start_version = int(answer)
+            except ValueError:
+                print("Invalid input — expected a version number.")
+                sys.exit(1)
+            if start_version not in valid_versions:
+                print(f"V{start_version:03d} is not in the pending list.")
+                sys.exit(1)
+
+        skipped = 0
+        applied_count = 0
         for version, description, path in pending:
+            if version < start_version:
+                _record_version(cnx, version, description)
+                print(f"  Skipped  V{version:03d}: {description}")
+                skipped += 1
+                continue
+
             print(f"  Applying V{version:03d}: {description} ...", end=" ", flush=True)
             try:
                 if path.suffix == ".sql":
@@ -151,36 +185,18 @@ def run_pending_migrations():
                     _apply_python(cnx, path)
                 _record_version(cnx, version, description)
                 print("done.")
+                applied_count += 1
             except Exception as e:
                 print(f"FAILED.\n  Error: {e}")
                 print("  Stopping. Fix the migration and re-run.")
                 sys.exit(1)
 
-        print(f"\n{len(pending)} migration(s) applied.")
-    finally:
-        cnx.close()
-
-
-def mark_applied(version: int):
-    """Record a migration version as applied without executing it."""
-    cnx = db_utils.cnx_pool.get_connection()
-    try:
-        _ensure_migration_table(cnx)
-        applied = _get_applied_versions(cnx)
-        if version in applied:
-            print(f"V{version:03d} is already recorded as applied.")
-            return
-
-        # Find the description from the file, if present
-        description = f"manually marked applied"
-        for path in MIGRATIONS_DIR.iterdir():
-            parsed = _parse_filename(path)
-            if parsed and parsed[0] == version:
-                description = parsed[1]
-                break
-
-        _record_version(cnx, version, description)
-        print(f"V{version:03d} recorded as applied.")
+        parts = []
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        if applied_count:
+            parts.append(f"{applied_count} applied")
+        print(f"\n{', '.join(parts)}.")
     finally:
         cnx.close()
 
@@ -190,17 +206,7 @@ def mark_applied(version: int):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    if len(args) == 2 and args[0] == "--mark-applied":
-        try:
-            mark_applied(int(args[1]))
-        except ValueError:
-            print("Usage: migrate.py --mark-applied <version_number>")
-            sys.exit(1)
-    elif not args:
-        run_pending_migrations()
-    else:
-        print("Usage:")
-        print("  uv run db_loaders/migrate.py")
-        print("  uv run db_loaders/migrate.py --mark-applied <version_number>")
+    if sys.argv[1:]:
+        print("Usage: uv run db_loaders/migrate.py")
         sys.exit(1)
+    run_pending_migrations()

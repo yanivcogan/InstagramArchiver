@@ -203,7 +203,7 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
             SearchResult(
                 page="post",
                 id=p.id,
-                title=p.url,
+                title=p.url if p.url else f"item {p.id_on_platform}",
                 details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or ""),
                 thumbnails=post_thumbnails[p.id] if p.id in post_thumbnails else None
             )

@@ -271,8 +271,8 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
             )
             extracted_accounts.append(account)
             post = Post(
-                id_on_platform=item.id,
-                url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+                id_on_platform=item.pk or item.id,
+                url=None,  # ReelsMediaConnection items are stored highlights; URL requires collection ID
                 account_id_on_platform=account.id_on_platform,
                 account_url=account.url,
                 publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
@@ -352,8 +352,8 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
         )
         extracted_accounts.append(account)
         post = Post(
-            id_on_platform=item.id,
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            id_on_platform=item.pk or item.id,
+            url="https://www.instagram.com/p/" + (item.code or media_id_to_shortcode(int(item.pk))),
             account_id_on_platform=item.user.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
@@ -555,8 +555,8 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
         )
         extracted_accounts.append(account)
         post = Post(
-            id_on_platform=item.id,
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            id_on_platform=item.pk or item.id,
+            url="https://www.instagram.com/p/" + (item.code or media_id_to_shortcode(int(item.pk))),
             account_id_on_platform=account.id_on_platform,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
@@ -572,7 +572,7 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
             post_url=post.url,
             local_url=None,
             media_type="video" if item.video_versions else "image",
-            data=item.model_dump(exclude={'carousel_media'})
+            data=item.model_dump()
         ))
         if item.usertags:
             for tag in item.usertags.in_field:
@@ -724,8 +724,8 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
         )
         extracted_accounts.append(account)
         post = Post(
-            id_on_platform=item.id,
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            id_on_platform=item.pk or item.id,
+            url="https://www.instagram.com/p/" + (item.code or media_id_to_shortcode(int(item.pk))),
             account_id_on_platform=item.owner.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
@@ -829,8 +829,8 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
     extracted_accounts.append(account)
     for reel in highlight.items:
         post = Post(
-            id_on_platform=reel.id,
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(reel.pk)),
+            id_on_platform=reel.pk or reel.id,
+            url=None,  # Highlight stories require the collection ID; cannot construct a direct URL
             account_id_on_platform=highlight.user.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(reel.taken_at, timezone.utc),
@@ -929,8 +929,8 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
     extracted_accounts.append(account)
     for item in reels_media.items:
         post = Post(
-            id_on_platform=item.id,
-            url="https://www.instagram.com/p/" + media_id_to_shortcode(int(item.pk)),
+            id_on_platform=item.pk or item.id,
+            url=f"https://www.instagram.com/stories/{reels_media.user.username}/{item.pk}/",
             account_id_on_platform=reels_media.user.id,
             account_url=account.url,
             publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
@@ -1013,8 +1013,10 @@ def page_comments_to_entities(comments_structure: CommentsConnection,
     extracted_comments: list[Comment] = []
     extracted_accounts: list[Account] = []
     try:
-        post_pk: Optional[str] = post_structure.items[0].pk
-        post_url = f"https://www.instagram.com/p/{media_id_to_shortcode(int(post_pk))}/" if post_pk else None
+        post_item = post_structure.items[0] if post_structure.items else None
+        post_pk: Optional[str] = post_item.pk if post_item else None
+        post_code: Optional[str] = post_item.code if post_item else None
+        post_url = f"https://www.instagram.com/p/{post_code or media_id_to_shortcode(int(post_pk))}/" if post_pk else None
         for e in comments_structure.edges:
             c = e.node
             account = Account(

@@ -55,26 +55,29 @@ create index account_relation_follower_account_id_index
 
 create table archive_session
 (
-    id                  int auto_increment
+    id                       int auto_increment
         primary key,
-    create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    external_id         varchar(60)                         null,
-    archived_url        varchar(200)                        null,
-    archive_location    varchar(200)                        null,
-    summary_html        longtext                            null,
-    parsed_content      int                                 null comment 'used to track which version of the parsing code was used to populate this row, to allow reprocessing outdated rows',
-    structures          json                                null,
-    metadata            json                                null,
-    extracted_entities  int                                 null,
-    archiving_timestamp datetime                            null,
-    notes               text                                null,
-    extraction_error    varchar(500)                        null,
-    source_type         int       default 0                 not null comment '0=AA_xlsx; 1=local_hars; 2=local_wacz;',
-    attachments         json                                null,
-    archived_url_parts  text                                null
+    create_date              timestamp default CURRENT_TIMESTAMP                                    not null,
+    update_date              timestamp default CURRENT_TIMESTAMP                                    not null on update CURRENT_TIMESTAMP invisible,
+    external_id              varchar(60)                                                            null,
+    archived_url             varchar(200)                                                           null,
+    archive_location         varchar(200)                                                           null,
+    summary_html             longtext                                                               null,
+    parse_algorithm_version  int                                                                    null,
+    structures               json                                                                   null,
+    metadata                 json                                                                   null,
+    extract_algorithm_version int                                                                   null,
+    archiving_timestamp      datetime                                                               null,
+    notes                    text                                                                   null,
+    source_type              enum ('AA_xlsx', 'local_har', 'local_wacz')                           not null,
+    attachments              json                                                                   null,
+    archived_url_parts       text                                                                   null,
+    incorporation_status     enum ('pending', 'parse_failed', 'parsed', 'extract_failed', 'done') not null default 'pending'
 )
     engine = InnoDB;
+
+create index idx_incorporation_queue
+    on archive_session (source_type, incorporation_status);
 
 create table account_archive
 (
@@ -196,7 +199,7 @@ create table post
     create_date      timestamp default CURRENT_TIMESTAMP not null,
     update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform   varchar(100)                        null,
-    url              varchar(250)                        not null,
+    url              varchar(250)                        null,
     account_id       int                                 null,
     publication_date datetime                            null,
     caption          text                                null,
@@ -331,7 +334,7 @@ create table post_archive
     canonical_id           int                                 null,
     archive_session_id     int                                 null,
     id_on_platform         varchar(100)                        null,
-    url                    varchar(250)                        not null,
+    url                    varchar(250)                        null,
     account_url            varchar(200)                        null,
     account_id_on_platform varchar(100)                        null,
     publication_date       datetime                            null,
