@@ -608,6 +608,9 @@ create table entity_share_link
 )
     engine = InnoDB;
 
+create index entity_share_link_entity_entity_id_index
+    on entity_share_link (entity, entity_id);
+
 create table token
 (
     id          int auto_increment
