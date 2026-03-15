@@ -141,7 +141,7 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
 
     post_map: dict[str, PostAndAssociatedEntities] = {}
     for post in entities.posts:
-        post_map[post.url] = PostAndAssociatedEntities(
+        post_map[post.id_on_platform] = PostAndAssociatedEntities(
             **post.model_dump(),
             post_media=[],
             post_comments=[],
@@ -151,16 +151,16 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
         )
         account_url = post.account_url
         if account_url in account_map:
-            post_map[post.url].post_author = account_map[account_url]
-            account_map[account_url].account_posts.append(post_map[post.url])
+            post_map[post.id_on_platform].post_author = account_map[account_url]
+            account_map[account_url].account_posts.append(post_map[post.id_on_platform])
         else:
-            orphaned_posts.append(post_map[post.url])
+            orphaned_posts.append(post_map[post.id_on_platform])
 
     for media in entities.media:
-        if media.post_url in post_map:
-            post_map[media.post_url].post_media.append(MediaAndAssociatedEntities(
+        if media.post_id_on_platform in post_map:
+            post_map[media.post_id_on_platform].post_media.append(MediaAndAssociatedEntities(
                 **media.model_dump(),
-                media_parent_post=post_map[media.post_url]
+                media_parent_post=post_map[media.post_id_on_platform]
             ))
         else:
             orphaned_media.append(MediaAndAssociatedEntities(
