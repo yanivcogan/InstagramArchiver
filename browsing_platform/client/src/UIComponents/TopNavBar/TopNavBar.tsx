@@ -72,15 +72,15 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                 </AppBar>
                 <List sx={{paddingTop: 0, paddingBottom: 0, height: "100%", width: 250, overflow: "auto"}}>
                     <Divider/>
-                    <ListItemButton onClick={() => goToPage("search")}>
+                    <ListItemButton onClick={() => goToPage("search")} href={"/search"}>
                         <ListItemIcon><SearchIcon/></ListItemIcon>
                         <ListItemText primary="Search"/>
                     </ListItemButton>
-                    <ListItemButton onClick={() => goToPage("upload")}>
+                    <ListItemButton onClick={() => goToPage("upload")} href={"/upload"}>
                         <ListItemIcon><UploadIcon/></ListItemIcon>
                         <ListItemText primary="Upload Archives"/>
                     </ListItemButton>
-                    <ListItemButton onClick={() => goToPage("incorporate")}>
+                    <ListItemButton onClick={() => goToPage("incorporate")} href={"/incorporate"}>
                         <ListItemIcon><StorageIcon/></ListItemIcon>
                         <ListItemText primary="Incorporate"/>
                     </ListItemButton>
