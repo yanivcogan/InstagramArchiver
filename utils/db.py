@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import threading
 from contextlib import contextmanager
 from typing import Literal
 
@@ -14,6 +16,8 @@ DB_NAME = os.getenv("DB_NAME")
 DB_PORT = os.getenv("DB_PORT")
 DB_HOST = os.getenv("DB_HOST")
 
+logger = logging.getLogger(__name__)
+
 cnx_pool = mysql.connector.pooling.MySQLConnectionPool(
     pool_name="connections", pool_size=20,
     pool_reset_session=True,
@@ -24,8 +28,14 @@ cnx_pool = mysql.connector.pooling.MySQLConnectionPool(
     password=PASSWORD
 )
 
-# Thread-local storage for transaction batching
-_batch_connection = None
+
+class DbError(Exception):
+    """Raised when a database query fails."""
+    pass
+
+
+# Thread-local storage for transaction batching — each thread gets its own connection.
+_local = threading.local()
 
 
 @contextmanager
@@ -42,17 +52,17 @@ def transaction_batch():
         # Commits here when exiting the context
 
     This can provide 5-10x speedup for bulk insert operations.
+    Nested calls reuse the same connection (inner batch is a no-op boundary).
+    Thread-safe: each thread maintains its own connection via threading.local().
     """
-    global _batch_connection
-
-    if _batch_connection is not None:
-        # Already in a batch, just yield (nested batches use same connection)
+    if getattr(_local, "connection", None) is not None:
+        # Already in a batch on this thread — nested call, just yield through.
         yield
         return
 
     cnx = cnx_pool.get_connection()
     cnx.autocommit = False
-    _batch_connection = cnx
+    _local.connection = cnx
     try:
         yield
         cnx.commit()
@@ -60,18 +70,15 @@ def transaction_batch():
         cnx.rollback()
         raise
     finally:
-        _batch_connection = None
+        _local.connection = None
         cnx.close()
 
 
 def execute_query(query, args, return_type: Literal["single_row", "rows", "id", "none", "debug"] = "rows"):
-    global _batch_connection
+    if getattr(_local, "connection", None) is not None:
+        # Reuse the open transaction connection on this thread.
+        return _execute_query_on_connection(_local.connection, query, args, return_type, commit=False)
 
-    # If we're in a batch, reuse the connection and don't commit
-    if _batch_connection is not None:
-        return _execute_query_on_connection(_batch_connection, query, args, return_type, commit=False)
-
-    # Otherwise, use a new connection and commit immediately (original behavior)
     cnx = cnx_pool.get_connection()
     try:
         return _execute_query_on_connection(cnx, query, args, return_type, commit=True)
@@ -99,12 +106,8 @@ def _execute_query_on_connection(cnx, query, args, return_type, commit=True):
             return True
         return None
     except mysql.connector.Error as err:
-        print(err)
-        print("query: ")
-        print(query)
-        print(json.dumps(args))
-        # log_event("sql_error", None, str(err), json.dumps({"query": query, "args": args}))
-        return False
+        logger.error("DB query failed: %s\nQuery: %s\nArgs: %s", err, query, json.dumps(args, default=str))
+        raise DbError(str(err)) from err
     finally:
         cursor.close()
         if commit:

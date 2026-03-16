@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 import uvicorn
 import os
 import time
@@ -14,6 +14,7 @@ from browsing_platform.server.routes import account, post, media, media_part, ar
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
+from utils.db import DbError
 import asyncio
 from contextlib import asynccontextmanager
 
@@ -61,6 +62,13 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.exception_handler(DbError)
+async def db_error_handler(request: Request, exc: DbError):
+    logger.error("Unhandled database error during %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # CORS configuration
 ALLOWED_ORIGINS = [
