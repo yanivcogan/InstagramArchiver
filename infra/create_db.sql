@@ -13,9 +13,10 @@ create table account
     id             int auto_increment
         primary key,
     create_date    timestamp default CURRENT_TIMESTAMP not null,
-    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform varchar(100)                        null,
     url            varchar(200)                        not null,
+    identifiers    json                                null,
     display_name   varchar(100)                        null,
     bio            varchar(200)                        null,
     data           json                                null,
@@ -44,7 +45,7 @@ create table account_relation
     id                  int auto_increment
         primary key,
     create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     followed_account_id int                                 not null,
     follower_account_id int                                 not null,
     relation_type       varchar(30)                         null,
@@ -64,24 +65,25 @@ create index account_relation_follower_account_id_index
 
 create table archive_session
 (
-    id                  int auto_increment
+    id                        int auto_increment
         primary key,
-    create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
-    external_id         varchar(60)                         null,
-    archived_url        varchar(200)                        null,
-    archive_location    varchar(200)                        null,
-    summary_html        longtext                            null,
-    parsed_content      int                                 null comment 'used to track which version of the parsing code was used to populate this row, to allow reprocessing outdated rows',
-    structures          json                                null,
-    metadata            json                                null,
-    extracted_entities  int                                 null,
-    archiving_timestamp datetime                            null,
-    notes               text                                null,
-    extraction_error    varchar(500)                        null,
-    source_type         int       default 0                 not null comment '0=AA_xlsx; 1=local_hars; 2=local_wacz;',
-    attachments         json                                null,
-    archived_url_parts  text                                null
+    create_date               timestamp                                                            default CURRENT_TIMESTAMP not null,
+    update_date               timestamp                                                            default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    external_id               varchar(60)                                                                                    null,
+    archived_url              varchar(200)                                                                                   null,
+    archive_location          varchar(200)                                                                                   null,
+    summary_html              longtext                                                                                       null,
+    parse_algorithm_version   int                                                                                            null comment 'used to track which version of the parsing code was used to populate this row, to allow reprocessing outdated rows',
+    structures                json                                                                                           null,
+    metadata                  json                                                                                           null,
+    extract_algorithm_version int                                                                                            null,
+    archiving_timestamp       datetime                                                                                       null,
+    notes                     text                                                                                           null,
+    extraction_error          varchar(500)                                                                                   null,
+    source_type               enum ('AA_xlsx', 'local_har', 'local_wacz')                                                    not null,
+    incorporation_status      enum ('pending', 'parse_failed', 'parsed', 'extract_failed', 'done') default 'pending'         not null,
+    attachments               json                                                                                           null,
+    archived_url_parts        text                                                                                           null
 )
     engine = InnoDB;
 
@@ -90,7 +92,7 @@ create table account_archive
     id                 int auto_increment
         primary key,
     create_date        timestamp default CURRENT_TIMESTAMP not null,
-    update_date        timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date        timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     canonical_id       int                                 null,
     archive_session_id int                                 null,
     id_on_platform     varchar(100)                        null,
@@ -122,7 +124,7 @@ create table account_relation_archive
     id                              int auto_increment
         primary key,
     create_date                     timestamp default CURRENT_TIMESTAMP not null,
-    update_date                     timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date                     timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     canonical_id                    int                                 null,
     archive_session_id              int                                 null,
     id_on_platform                  varchar(100)                        null,
@@ -169,6 +171,9 @@ create index archive_session_archiving_timestamp_index
 create index archive_session_external_id_index
     on archive_session (external_id);
 
+create index idx_incorporation_queue
+    on archive_session (source_type, incorporation_status);
+
 create fulltext index idx_search_fulltext
     on archive_session (archived_url, archived_url_parts, notes);
 
@@ -185,12 +190,25 @@ create table error_log
     engine = InnoDB
     charset = utf8mb3;
 
+create table incorporation_job
+(
+    id                   int auto_increment
+        primary key,
+    started_at           datetime                                                  not null,
+    completed_at         datetime                                                  null,
+    status               enum ('running', 'completed', 'failed') default 'running' not null,
+    triggered_by_user_id int                                                       null,
+    triggered_by_ip      varchar(255)                                              null,
+    log                  mediumtext                                                null,
+    error                text                                                      null
+);
+
 create table post
 (
     id               int auto_increment
         primary key,
     create_date      timestamp default CURRENT_TIMESTAMP not null,
-    update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform   varchar(100)                        null,
     url              varchar(250)                        not null,
     account_id       int                                 null,
@@ -208,7 +226,7 @@ create table media
     id             int auto_increment
         primary key,
     create_date    timestamp default CURRENT_TIMESTAMP not null,
-    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform varchar(100)                        null,
     url            varchar(250)                        not null,
     post_id        int                                 null,
@@ -226,8 +244,17 @@ create table media
 create index media_id_on_platform_index
     on media (id_on_platform);
 
+create index media_local_url_index
+    on media (local_url);
+
+create index media_media_type_index
+    on media (media_type);
+
 create index media_post_id_index
     on media (post_id);
+
+create index media_thumbnail_path_index
+    on media (thumbnail_path);
 
 create index media_url_index
     on media (url);
@@ -240,7 +267,7 @@ create table media_archive
     id                  int auto_increment
         primary key,
     create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     canonical_id        int                                 null,
     archive_session_id  int                                 null,
     id_on_platform      varchar(100)                        null,
@@ -280,7 +307,7 @@ create table media_part
     id                    int auto_increment
         primary key,
     create_date           timestamp default CURRENT_TIMESTAMP not null,
-    update_date           timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date           timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     media_id              int                                 not null,
     crop_area             varchar(100)                        null,
     notes                 text                                null,
@@ -314,7 +341,7 @@ create table post_archive
     id                     int auto_increment
         primary key,
     create_date            timestamp default CURRENT_TIMESTAMP not null,
-    update_date            timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date            timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     canonical_id           int                                 null,
     archive_session_id     int                                 null,
     id_on_platform         varchar(100)                        null,
@@ -354,7 +381,7 @@ create table post_engagement
     id             int auto_increment
         primary key,
     create_date    timestamp default CURRENT_TIMESTAMP not null,
-    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform varchar(100)                        null,
     url            varchar(250)                        not null,
     post_id        int                                 null,
@@ -384,7 +411,7 @@ create table post_engagement_archive
     id                  int auto_increment
         primary key,
     create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     canonical_id        int                                 null,
     archive_session_id  int                                 null,
     id_on_platform      varchar(100)                        null,
@@ -424,7 +451,7 @@ create table tag_type
     id          int auto_increment
         primary key,
     create_date timestamp default CURRENT_TIMESTAMP not null,
-    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     name        varchar(200)                        not null,
     description text                                null,
     notes       text                                null
@@ -436,7 +463,7 @@ create table tag
     id          int auto_increment
         primary key,
     create_date timestamp default CURRENT_TIMESTAMP not null,
-    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     name        varchar(200)                        not null,
     description text                                null,
     tag_type_id int                                 null,
@@ -452,7 +479,7 @@ create table account_tag
     id          int auto_increment
         primary key,
     create_date timestamp default CURRENT_TIMESTAMP not null,
-    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     account_id  int                                 not null,
     tag_id      int                                 not null,
     notes       text                                null,
@@ -470,7 +497,7 @@ create table media_part_tag
     id            int auto_increment
         primary key,
     create_date   timestamp default CURRENT_TIMESTAMP not null,
-    update_date   timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date   timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     media_part_id int                                 not null,
     tag_id        int                                 not null,
     notes         text                                null,
@@ -488,7 +515,7 @@ create table media_tag
     id          int auto_increment
         primary key,
     create_date timestamp default CURRENT_TIMESTAMP not null,
-    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     media_id    int                                 not null,
     tag_id      int                                 not null,
     notes       text                                null,
@@ -506,7 +533,7 @@ create table post_engagement_tag
     id                 int auto_increment
         primary key,
     create_date        timestamp default CURRENT_TIMESTAMP not null,
-    update_date        timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date        timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     post_engagement_id int                                 not null,
     tag_id             int                                 not null,
     notes              text                                null,
@@ -524,7 +551,7 @@ create table post_tag
     id          int auto_increment
         primary key,
     create_date timestamp default CURRENT_TIMESTAMP not null,
-    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     post_id     int                                 not null,
     tag_id      int                                 not null,
     notes       text                                null,
@@ -542,7 +569,7 @@ create table tag_hierarchy
     id                  int auto_increment
         primary key,
     create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     super_tag_id        int                                 not null,
     sub_tag_id          int                                 not null,
     temporal_constraint varchar(100)                        null,
@@ -561,7 +588,7 @@ create table user
     id               int auto_increment
         primary key,
     create_date      datetime  default CURRENT_TIMESTAMP not null,
-    update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     email            varchar(200) charset utf8mb3        not null,
     locked           tinyint   default 0                 not null,
     password_hash    varchar(255) charset utf8mb3        null,
@@ -576,6 +603,27 @@ create table user
         unique (email)
 )
     engine = InnoDB;
+
+create table entity_share_link
+(
+    id                 int auto_increment
+        primary key,
+    create_date        timestamp default CURRENT_TIMESTAMP                                  null,
+    update_date        timestamp default CURRENT_TIMESTAMP                                  null on update CURRENT_TIMESTAMP,
+    created_by_user_id int                                                                  not null,
+    valid              tinyint   default 1                                                  not null,
+    entity             enum ('archiving_session', 'account', 'post', 'media', 'media_part') not null,
+    entity_id          int                                                                  null,
+    link_suffix        varchar(100)                                                         not null,
+    constraint entity_share_link_pk
+        unique (link_suffix),
+    constraint entity_share_link_user_id_fk
+        foreign key (created_by_user_id) references user (id)
+)
+    engine = InnoDB;
+
+create index entity_share_link_entity_entity_id_index
+    on entity_share_link (entity, entity_id);
 
 create table token
 (
