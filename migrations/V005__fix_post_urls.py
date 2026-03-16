@@ -29,7 +29,7 @@ def _parse_data(raw) -> Optional[dict]:
         return None
 
 
-def _new_url(data: dict) -> tuple[Optional[str], bool]:
+def _new_url(data: dict, existing_url: Optional[str]) -> tuple[Optional[str], bool]:
     """
     Return (new_url, should_update).
 
@@ -45,7 +45,8 @@ def _new_url(data: dict) -> tuple[Optional[str], bool]:
     if product_type == "story":
         # Cannot distinguish live stories from stored highlights in historical data;
         # highlights require a collection ID we don't have, so set all to NULL.
-        return None, True
+        if existing_url and "/p/" in existing_url:
+            return None, True
 
     return None, False  # no improvement possible; leave unchanged
 
@@ -73,7 +74,7 @@ def _process_table(cnx, table: str, select_sql: str):
             if not data:
                 print(f"    [{table}] #{row['id']}: no parseable data, skipping")
                 continue
-            new, should_update = _new_url(data)
+            new, should_update = _new_url(data, row["url"])
             if should_update and new != row["url"]:
                 write_cur.execute(
                     f"UPDATE {table} SET url = %s WHERE id = %s",
