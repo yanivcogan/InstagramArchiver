@@ -155,17 +155,20 @@ class Media(EntityBase):
 
 
 class Comment(EntityBase):
-    id_on_platform: Optional[str] = None,
-    url: str = Field(..., max_length=250)
-    post_id_on_platform: str = Field(..., max_length=250)
+    id_on_platform: Optional[str] = None
+    url: Optional[str] = Field(None, max_length=250)
+    post_id_on_platform: Optional[str] = Field(None, max_length=250)
     post_url: Optional[str] = Field(None, max_length=250)
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url: Optional[str] = Field(None, max_length=200)
+    parent_comment_id_on_platform: Optional[str] = None
+    post_id: Optional[int] = None
+    account_id: Optional[int] = None
     text: Optional[str] = None
     publication_date: Optional[datetime] = None
     data: Optional[Any] = None
 
-    @field_validator('id_on_platform', 'post_id_on_platform', 'account_id_on_platform', mode='before')
+    @field_validator('id_on_platform', 'post_id_on_platform', 'account_id_on_platform', 'parent_comment_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
@@ -190,14 +193,16 @@ class Comment(EntityBase):
 
 
 class Like(EntityBase):
-    id_on_platform: Optional[str] = None,
-    post_id_on_platform: Optional[str] = None,
+    id_on_platform: Optional[str] = None
+    post_id_on_platform: Optional[str] = None
     post_url: Optional[str] = Field(None, max_length=250)
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url: Optional[str] = Field(None, max_length=200)
+    post_id: Optional[int] = None
+    account_id: Optional[int] = None
     data: Optional[Any] = None
 
-    @field_validator('id_on_platform', 'post_id_on_platform', 'account_id_on_platform', mode='before')
+    @field_validator('post_id_on_platform', 'account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
@@ -220,24 +225,39 @@ class Like(EntityBase):
                 v = None
         return v
 
+    @model_validator(mode='after')
+    def synthesize_id_on_platform(self):
+        if self.id_on_platform is None:
+            if self.post_id_on_platform and self.account_id_on_platform:
+                self.id_on_platform = f"{self.post_id_on_platform}_{self.account_id_on_platform}"
+        return self
 
-class Follower(EntityBase):
-    follower_account_id: str
-    following_account_id: str
+
+t_relation_type = Literal['follower', 'suggested']
+
+class AccountRelation(EntityBase):
+    id_on_platform: Optional[str] = None
+    follower_account_id: Optional[int] = None
+    follower_account_id_on_platform: Optional[str] = Field(None, max_length=100)
+    follower_account_url: Optional[str] = Field(None, max_length=200)
+    followed_account_id: Optional[int] = None
+    followed_account_id_on_platform: Optional[str] = Field(None, max_length=100)
+    followed_account_url: Optional[str] = Field(None, max_length=200)
+    relation_type: Optional[t_relation_type] = None
     data: Optional[Any] = None
 
-
-class SuggestedAccount(EntityBase):
-    context_account_id: str
-    suggested_account_id: str
-    data: Optional[Any] = None
-
-    @field_validator('suggested_account_id', 'context_account_id', mode='before')
+    @field_validator('follower_account_id_on_platform', 'followed_account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
         if isinstance(v, int):
             v = str(v)
+        return v
+
+    @field_validator('follower_account_url', 'followed_account_url', mode='before')
+    def normalize_url(cls, v, _):
+        if isinstance(v, str):
+            v = v.strip().split('?')[0].rstrip('/')
         return v
 
     @field_validator('data', mode='before')
@@ -249,18 +269,33 @@ class SuggestedAccount(EntityBase):
                 v = None
         return v
 
+    @model_validator(mode='after')
+    def synthesize_id_on_platform(self):
+        if self.id_on_platform is None:
+            a_id = self.follower_account_id_on_platform or ''
+            b_id = self.followed_account_id_on_platform or ''
+            rel = self.relation_type or ''
+            if self.follower_account_id_on_platform and self.followed_account_id_on_platform:
+                self.id_on_platform = f"{a_id}_{b_id}_{rel}"
+        return self
+
 
 class TaggedAccount(EntityBase):
-    tagged_account_id: Optional[str] = Field(None, max_length=200)
+    id_on_platform: Optional[str] = None
+    tagged_account_id: Optional[int] = None
+    tagged_account_id_on_platform: Optional[str] = Field(None, max_length=200)
     tagged_account_url: Optional[str] = Field(None, max_length=250)
-    context_account_id: Optional[str] = Field(None, max_length=200)
+    post_id: Optional[int] = None
+    media_id: Optional[int] = None
     context_post_url: Optional[str] = Field(None, max_length=250)
     context_media_url: Optional[str] = Field(None, max_length=250)
     context_post_id_on_platform: Optional[str] = Field(None, max_length=250)
     context_media_id_on_platform: Optional[str] = Field(None, max_length=250)
+    tag_x_position: Optional[float] = None
+    tag_y_position: Optional[float] = None
     data: Optional[Any] = None
 
-    @field_validator('tagged_account_id', 'context_account_id', 'context_post_id_on_platform', 'context_media_id_on_platform', mode='before')
+    @field_validator('tagged_account_id_on_platform', 'context_post_id_on_platform', 'context_media_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split("_")[0]
@@ -283,6 +318,16 @@ class TaggedAccount(EntityBase):
                 v = None
         return v
 
+    @model_validator(mode='after')
+    def synthesize_id_on_platform(self):
+        if self.id_on_platform is None:
+            tagged_id = self.tagged_account_id_on_platform or ''
+            post_id = self.context_post_id_on_platform or ''
+            media_id = self.context_media_id_on_platform or ''
+            if self.tagged_account_id_on_platform and (self.context_post_id_on_platform or self.context_media_id_on_platform):
+                self.id_on_platform = f"{tagged_id}_{post_id}_{media_id}"
+        return self
+
 
 class ExtractedEntitiesFlattened(BaseModel):
     accounts: list[Account] = Field(default_factory=list)
@@ -290,8 +335,7 @@ class ExtractedEntitiesFlattened(BaseModel):
     media: list[Media] = Field(default_factory=list)
     comments: list[Comment] = Field(default_factory=list)
     likes: list[Like] = Field(default_factory=list)
-    followers: list[Follower] = Field(default_factory=list)
-    suggested_accounts: list[SuggestedAccount] = Field(default_factory=list)
+    account_relations: list[AccountRelation] = Field(default_factory=list)
     tagged_accounts: list[TaggedAccount] = Field(default_factory=list)
 
 class MediaAndAssociatedEntities(Media):
@@ -306,8 +350,7 @@ class PostAndAssociatedEntities(Post):
 
 class AccountAndAssociatedEntities(Account):
     account_posts: list['PostAndAssociatedEntities'] = Field(default_factory=list)
-    account_followers: list[Follower] = Field(default_factory=list)
-    account_suggested_accounts: list[SuggestedAccount] = Field(default_factory=list)
+    account_relations: list[AccountRelation] = Field(default_factory=list)
 
 class ExtractedEntitiesNested(BaseModel):
     accounts: list[AccountAndAssociatedEntities] = Field(default_factory=list)

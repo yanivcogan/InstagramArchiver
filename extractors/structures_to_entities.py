@@ -8,8 +8,8 @@ import pyperclip
 from pydantic import BaseModel
 
 from extractors.entity_types import Post, Account, Media, \
-    ExtractedEntitiesFlattened, Comment, Like, Follower, \
-    SuggestedAccount, TaggedAccount, ExtractedEntitiesNested, AccountAndAssociatedEntities, PostAndAssociatedEntities, \
+    ExtractedEntitiesFlattened, Comment, Like, AccountRelation, \
+    TaggedAccount, ExtractedEntitiesNested, AccountAndAssociatedEntities, PostAndAssociatedEntities, \
     MediaAndAssociatedEntities
 from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig, Photo
 from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig, Video
@@ -85,7 +85,7 @@ def har_data_to_entities(
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
 
     entities = ExtractedEntitiesFlattened(
-        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+        accounts=[], posts=[], media=[], comments=[], likes=[], account_relations=[], tagged_accounts=[]
     )
     for structure in structures:
         try:
@@ -134,8 +134,7 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
         account_map[account.url] = AccountAndAssociatedEntities(
             **account.model_dump(),
             account_posts=[],
-            account_followers=[],
-            account_suggested_accounts=[]
+            account_relations=[]
         )
         nested_accounts.append(account_map[account.url])
 
@@ -209,14 +208,13 @@ def extend_flattened_entities(
     entities_1.media.extend(entities_2.media)
     entities_1.comments.extend(entities_2.comments)
     entities_1.likes.extend(entities_2.likes)
-    entities_1.followers.extend(entities_2.followers)
-    entities_1.suggested_accounts.extend(entities_2.suggested_accounts)
+    entities_1.account_relations.extend(entities_2.account_relations)
     entities_1.tagged_accounts.extend(entities_2.tagged_accounts)
 
 
 def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntitiesFlattened:
     entities = ExtractedEntitiesFlattened(
-        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+        accounts=[], posts=[], media=[], comments=[], likes=[], account_relations=[], tagged_accounts=[]
     )
     if structure.reels_media:
         try:
@@ -248,7 +246,7 @@ def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntitiesFlattene
             pass
     if structure.friends_list:
         try:
-            extend_flattened_entities(entities, graphql_friends_to_entities(structure.friends_list, structure.context))
+            extend_flattened_entities(entities, graphql_suggested_accounts_to_entities(structure.friends_list, structure.context))
         except Exception:
             pass
     return entities
@@ -311,9 +309,8 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
                     if media_item.usertags:
                         for tag in media_item.usertags.in_field:
                             extracted_tagged_accounts.append(TaggedAccount(
-                                tagged_account_id=tag.user.id,
+                                tagged_account_id_on_platform=tag.user.id,
                                 tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                                context_account_id=highlight.user.id,
                                 context_post_url=post.url,
                                 context_media_url=media_url,
                                 context_post_id_on_platform=post.id_on_platform,
@@ -332,7 +329,7 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
         posts=extracted_posts,
         media=extracted_media,
         tagged_accounts=extracted_tagged_accounts,
-        comments=[], likes=[], followers=[], suggested_accounts=[]
+        comments=[], likes=[], account_relations=[]
     )
 
 
@@ -366,9 +363,8 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
         if item.usertags:
             for tag in item.usertags.in_field:
                 tagged_accounts.append(TaggedAccount(
-                    tagged_account_id=tag.user.id,
+                    tagged_account_id_on_platform=tag.user.id,
                     tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                    context_account_id=item.user.id,
                     context_post_url=post.url,
                     context_media_url=None,
                     context_post_id_on_platform=post.id_on_platform,
@@ -408,9 +404,8 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
                 if media_item.usertags:
                     for tag in media_item.usertags.in_field:
                         tagged_accounts.append(TaggedAccount(
-                            tagged_account_id=tag.user.id,
+                            tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                            context_account_id=item.user.id,
                             context_post_url=post.url,
                             context_media_url=media_url,
                             context_post_id_on_platform=post.id_on_platform,
@@ -429,7 +424,7 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
         posts=extracted_posts,
         media=extracted_media,
         tagged_accounts=extracted_tagged_accounts,
-        comments=[], likes=[], followers=[], suggested_accounts=[]
+        comments=[], likes=[], account_relations=[]
     )
 
 
@@ -457,6 +452,7 @@ def graphql_comments_to_entities(structure: CommentsConnection, context: Any) ->
             account_id_on_platform=c.user.pk if c.user else None,
             account_url=f"https://www.instagram.com/{c.user.username}/" if c.user else None,
             text=c.text,
+            parent_comment_id_on_platform=c.parent_comment_id,
             publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
             data=c.model_dump()
         )
@@ -464,7 +460,7 @@ def graphql_comments_to_entities(structure: CommentsConnection, context: Any) ->
     return ExtractedEntitiesFlattened(
         comments=extracted_comments,
         accounts=extracted_accounts,
-        likes=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+        likes=[], account_relations=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
@@ -494,15 +490,15 @@ def graphql_likes_to_entities(structure: LikersApiV1, context: Any) -> Extracted
     return ExtractedEntitiesFlattened(
         likes=extracted_likes,
         accounts=extracted_accounts,
-        comments=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+        comments=[], account_relations=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
-def graphql_friends_to_entities(structure: FriendsListGraphQL, context: Any) -> ExtractedEntitiesFlattened:
+def graphql_suggested_accounts_to_entities(structure: FriendsListGraphQL, context: Any) -> ExtractedEntitiesFlattened:
     variables = context.get('variables', '{}') if isinstance(context, dict) else '{}'
     variables = json.loads(variables)
     target_account_id: Optional[str] = variables.get('target_id', None)
-    extracted_suggested_accounts: list[SuggestedAccount] = []
+    extracted_account_relations: list[AccountRelation] = []
     extracted_accounts: list[Account] = []
     for u in structure.users:
         account = Account(
@@ -513,22 +509,24 @@ def graphql_friends_to_entities(structure: FriendsListGraphQL, context: Any) -> 
             data=u.model_dump()
         )
         extracted_accounts.append(account)
-        follower = SuggestedAccount(
-            context_account_id=target_account_id,
-            suggested_account_id=u.id,
+        relation = AccountRelation(
+            follower_account_id_on_platform=target_account_id,
+            followed_account_id_on_platform=u.id,
+            followed_account_url=f"https://www.instagram.com/{u.username}/",
+            relation_type='suggested',
             data=None
         )
-        extracted_suggested_accounts.append(follower)
+        extracted_account_relations.append(relation)
     return ExtractedEntitiesFlattened(
-        suggested_accounts=extracted_suggested_accounts,
+        account_relations=extracted_account_relations,
         accounts=extracted_accounts,
-        comments=[], followers=[], likes=[], tagged_accounts=[], media=[], posts=[]
+        comments=[], likes=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
 def api_v1_to_entities(structure: ApiV1Response) -> ExtractedEntitiesFlattened:
     entities = ExtractedEntitiesFlattened(
-        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+        accounts=[], posts=[], media=[], comments=[], likes=[], account_relations=[], tagged_accounts=[]
     )
     if structure.media_info:
         extend_flattened_entities(entities, api_v1_media_info_to_entities(structure.media_info))
@@ -578,13 +576,14 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
         if item.usertags:
             for tag in item.usertags.in_field:
                 extracted_tagged_accounts.append(TaggedAccount(
-                    tagged_account_id=tag.user.id,
+                    tagged_account_id_on_platform=tag.user.id,
                     tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                    context_account_id=item.owner.id,
                     context_post_url=post.url,
                     context_media_url=None,
                     context_post_id_on_platform=post.id_on_platform,
                     context_media_id_on_platform=None,
+                    tag_x_position=tag.position[0] if tag.position and len(tag.position) > 0 else None,
+                    tag_y_position=tag.position[1] if tag.position and len(tag.position) > 1 else None,
                     data=None
                 ))
                 extracted_accounts.append(Account(
@@ -599,7 +598,7 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
         posts=extracted_posts,
         media=extracted_media,
         tagged_accounts=extracted_tagged_accounts,
-        comments=[], likes=[], followers=[], suggested_accounts=[]
+        comments=[], likes=[], account_relations=[]
     )
 
 
@@ -633,7 +632,7 @@ def api_v1_comments_to_entities(comments_insta: CommentsApiV1, context: ApiV1Con
     return ExtractedEntitiesFlattened(
         comments=comments,
         accounts=accounts,
-        likes=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+        likes=[], account_relations=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
@@ -661,7 +660,7 @@ def api_v1_likes_to_entities(structure: LikersApiV1, context: ApiV1Context) -> E
     return ExtractedEntitiesFlattened(
         likes=extracted_likes,
         accounts=accounts,
-        comments=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+        comments=[], account_relations=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
@@ -669,7 +668,7 @@ def api_v1_friendships_to_entities(structure: FriendshipsApiV1, context: ApiV1Co
     url: Optional[str] = context.url
     follow_direction = "followers" if "followers" in url else ("following" if "following" in url else None)
     target_account_id = url.split("friendships/")[1].split("/")[0] if url else None
-    extracted_friends: list[Follower] = []
+    extracted_account_relations: list[AccountRelation] = []
     accounts: list[Account] = []
     for u in structure.users:
         account = Account(
@@ -680,22 +679,33 @@ def api_v1_friendships_to_entities(structure: FriendshipsApiV1, context: ApiV1Co
             data=u.model_dump()
         )
         accounts.append(account)
-        like = Follower(
-            follower_account_id=u.id if follow_direction == "followers" else target_account_id,
-            following_account_id=u.id if follow_direction == "following" else target_account_id,
-            data=None
-        )
-        extracted_friends.append(like)
+        if follow_direction == "followers":
+            relation = AccountRelation(
+                follower_account_id_on_platform=u.id,
+                follower_account_url=f"https://www.instagram.com/{u.username}/",
+                followed_account_id_on_platform=target_account_id,
+                relation_type='follower',
+                data=None
+            )
+        else:
+            relation = AccountRelation(
+                follower_account_id_on_platform=target_account_id,
+                followed_account_id_on_platform=u.id,
+                followed_account_url=f"https://www.instagram.com/{u.username}/",
+                relation_type='follower',
+                data=None
+            )
+        extracted_account_relations.append(relation)
     return ExtractedEntitiesFlattened(
-        followers=extracted_friends,
+        account_relations=extracted_account_relations,
         accounts=accounts,
-        comments=[], likes=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+        comments=[], likes=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
 def page_to_entities(structure: PageResponse) -> ExtractedEntitiesFlattened:
     entities = ExtractedEntitiesFlattened(
-        accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[], tagged_accounts=[]
+        accounts=[], posts=[], media=[], comments=[], likes=[], account_relations=[], tagged_accounts=[]
     )
     if structure.posts:
         extend_flattened_entities(entities, page_posts_to_entities(structure.posts))
@@ -747,13 +757,14 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
         if item.usertags:
             for tag in item.usertags.in_field:
                 extracted_tagged_accounts.append(TaggedAccount(
-                    tagged_account_id=tag.user.id,
+                    tagged_account_id_on_platform=tag.user.id,
                     tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                    context_account_id=item.owner.id,
                     context_post_url=post.url,
                     context_media_url=None,
                     context_post_id_on_platform=post.id_on_platform,
                     context_media_id_on_platform=None,
+                    tag_x_position=tag.position[0] if tag.position else None,
+                    tag_y_position=tag.position[1] if tag.position and len(tag.position) > 1 else None,
                     data=None
                 ))
                 extracted_accounts.append(Account(
@@ -784,13 +795,14 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
                 if media_item.usertags:
                     for tag in media_item.usertags.in_field:
                         extracted_tagged_accounts.append(TaggedAccount(
-                            tagged_account_id=tag.user.id,
+                            tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                            context_account_id=item.owner.id,
                             context_post_url=post.url,
                             context_media_url=url,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
+                            tag_x_position=tag.position[0] if tag.position else None,
+                            tag_y_position=tag.position[1] if tag.position and len(tag.position) > 1 else None,
                             data=None
                         ))
                         extracted_accounts.append(Account(
@@ -805,7 +817,7 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
         posts=extracted_posts,
         media=extracted_media,
         tagged_accounts=extracted_tagged_accounts,
-        likes=[], comments=[], followers=[], suggested_accounts=[]
+        likes=[], comments=[], account_relations=[]
     )
 
 
@@ -818,7 +830,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
     highlight_id = highlight.id.split(":")[-1]
     if not highlight:
         return ExtractedEntitiesFlattened(
-            accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[],
+            accounts=[], posts=[], media=[], comments=[], likes=[], account_relations=[],
             tagged_accounts=[]
         )
     account = Account(
@@ -853,9 +865,8 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
         if reel.story_bloks_stickers:
             for sticker in reel.story_bloks_stickers:
                 extracted_tagged_accounts.append(TaggedAccount(
-                    tagged_account_id=None,
+                    tagged_account_id_on_platform=None,
                     tagged_account_url=f"https://www.instagram.com/{sticker.bloks_sticker.sticker_data.ig_mention.username}/",
-                    context_account_id=highlight.user.id,
                     context_post_url=post.url,
                     context_media_url=None,
                     context_post_id_on_platform=post.id_on_platform,
@@ -885,13 +896,14 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
                 if media_item.usertags:
                     for tag in media_item.usertags.in_field:
                         extracted_tagged_accounts.append(TaggedAccount(
-                            tagged_account_id=tag.user.id,
+                            tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                            context_account_id=highlight.user.id,
                             context_post_url=post.url,
                             context_media_url=media_url,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
+                            tag_x_position=tag.position[0] if tag.position else None,
+                            tag_y_position=tag.position[1] if tag.position and len(tag.position) > 1 else None,
                             data=None
                         ))
                         extracted_accounts.append(Account(
@@ -906,7 +918,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
         posts=extracted_posts,
         media=extracted_media,
         tagged_accounts=extracted_tagged_accounts,
-        comments=[], likes=[], followers=[], suggested_accounts=[]
+        comments=[], likes=[], account_relations=[]
     )
 
 
@@ -918,7 +930,7 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
     reels_media = structure.reels_media[0] if structure.reels_media and len(structure.reels_media) > 0 else None
     if not reels_media:
         return ExtractedEntitiesFlattened(
-            accounts=[], posts=[], media=[], comments=[], likes=[], followers=[], suggested_accounts=[],
+            accounts=[], posts=[], media=[], comments=[], likes=[], account_relations=[],
             tagged_accounts=[]
         )
     account = Account(
@@ -943,9 +955,8 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
         if item.story_bloks_stickers:
             for sticker in item.story_bloks_stickers:
                 extracted_tagged_accounts.append(TaggedAccount(
-                    tagged_account_id=None,
+                    tagged_account_id_on_platform=None,
                     tagged_account_url=f"https://www.instagram.com/{sticker.bloks_sticker.sticker_data.ig_mention.username}/",
-                    context_account_id=reels_media.user.id,
                     context_post_url=post.url,
                     context_media_url=None,
                     context_post_id_on_platform=post.id_on_platform,
@@ -985,13 +996,14 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
                 if media_item.usertags:
                     for tag in media_item.usertags.in_field:
                         extracted_tagged_accounts.append(TaggedAccount(
-                            tagged_account_id=tag.user.id,
+                            tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url=f"https://www.instagram.com/{tag.user.username}/",
-                            context_account_id=reels_media.user.id,
                             context_post_url=post.url,
                             context_media_url=media_url,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
+                            tag_x_position=tag.position[0] if tag.position else None,
+                            tag_y_position=tag.position[1] if tag.position and len(tag.position) > 1 else None,
                             data=None
                         ))
                         extracted_accounts.append(Account(
@@ -1006,7 +1018,7 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
         posts=extracted_posts,
         media=extracted_media,
         tagged_accounts=extracted_tagged_accounts,
-        comments=[], likes=[], followers=[], suggested_accounts=[]
+        comments=[], likes=[], account_relations=[]
     )
 
 
@@ -1036,6 +1048,7 @@ def page_comments_to_entities(comments_structure: CommentsConnection,
                 account_id_on_platform=account.id_on_platform,
                 account_url=account.url,
                 text=c.text,
+                parent_comment_id_on_platform=c.parent_comment_id,
                 publication_date=datetime.fromtimestamp(c.created_at) if c.created_at else None,
                 data=c.model_dump()
             )
@@ -1045,7 +1058,7 @@ def page_comments_to_entities(comments_structure: CommentsConnection,
     return ExtractedEntitiesFlattened(
         comments=extracted_comments,
         accounts=extracted_accounts,
-        likes=[], followers=[], suggested_accounts=[], tagged_accounts=[], media=[], posts=[]
+        likes=[], account_relations=[], tagged_accounts=[], media=[], posts=[]
     )
 
 
@@ -1130,26 +1143,13 @@ def deduplicate_entities(entities: ExtractedEntitiesFlattened) -> ExtractedEntit
             lambda x: x.url
         ]),
         likes=deduplicate_list_by_multiple_keys(entities.likes, [
-            lambda x: "_".join([x.post_id_on_platform,
-                                x.account_id_on_platform]) if x.post_id_on_platform and x.account_id_on_platform else None,
-            lambda x: "_".join([x.post_url, x.account_url]) if x.post_url and x.account_url else None
+            lambda x: x.id_on_platform,
         ]),
-        followers=deduplicate_list_by_multiple_keys(entities.followers, [
-            lambda x: "_".join([x.follower_account_id,
-                                x.following_account_id]) if x.follower_account_id and x.following_account_id else None,
-            lambda x: "_".join([x.follower_account_url,
-                                x.following_account_url]) if x.follower_account_url and x.following_account_url else None
-        ]),
-        suggested_accounts=deduplicate_list_by_multiple_keys(entities.suggested_accounts, [
-            lambda x: "_".join([x.context_account_id,
-                                x.suggested_account_id]) if x.context_account_id and x.suggested_account_id else None
+        account_relations=deduplicate_list_by_multiple_keys(entities.account_relations, [
+            lambda x: x.id_on_platform,
         ]),
         tagged_accounts=deduplicate_list_by_multiple_keys(entities.tagged_accounts, [
-            lambda x: "_".join([
-                x.tagged_account_id or "",
-                x.context_post_id_on_platform or "",
-                x.context_media_id_on_platform or ""
-            ]) if x.tagged_account_id and (x.context_post_id_on_platform or x.context_media_id_on_platform) else None,
+            lambda x: x.id_on_platform,
             lambda x: "_".join([
                 x.tagged_account_url or "",
                 x.context_post_url or "",

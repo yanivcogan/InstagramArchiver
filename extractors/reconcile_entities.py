@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Optional, Callable, TypeVar
 
-from extractors.entity_types import Account, Post, Media
+from extractors.entity_types import Account, Post, Media, Comment, Like, TaggedAccount, AccountRelation
 
 T = TypeVar('T')
 
@@ -106,6 +106,63 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     existing_media.media_type = reconcile_primitives(existing_media.media_type, new_media.media_type)
     existing_media.data = reconcile_dicts(existing_media.data, new_media.data)
     return existing_media
+
+
+def reconcile_comments(new_comment: Comment, existing_comment: Optional[Comment]) -> Comment:
+    if existing_comment is None:
+        return new_comment
+    existing_comment.id_on_platform = reconcile_primitives(existing_comment.id_on_platform, new_comment.id_on_platform)
+    existing_comment.url = reconcile_primitives(existing_comment.url, new_comment.url)
+    existing_comment.post_id_on_platform = reconcile_primitives(existing_comment.post_id_on_platform, new_comment.post_id_on_platform)
+    existing_comment.post_url = reconcile_primitives(existing_comment.post_url, new_comment.post_url)
+    existing_comment.account_id_on_platform = reconcile_primitives(existing_comment.account_id_on_platform, new_comment.account_id_on_platform)
+    existing_comment.account_url = reconcile_primitives(existing_comment.account_url, new_comment.account_url)
+    existing_comment.parent_comment_id_on_platform = reconcile_primitives(existing_comment.parent_comment_id_on_platform, new_comment.parent_comment_id_on_platform)
+    existing_comment.text = reconcile_primitives(existing_comment.text, new_comment.text)
+    existing_comment.publication_date = reconcile_primitives(existing_comment.publication_date, new_comment.publication_date)
+    existing_comment.data = reconcile_dicts(existing_comment.data, new_comment.data)
+    return existing_comment
+
+
+def reconcile_likes(new_like: Like, existing_like: Optional[Like]) -> Like:
+    if existing_like is None:
+        return new_like
+    existing_like.id_on_platform = reconcile_primitives(existing_like.id_on_platform, new_like.id_on_platform)
+    existing_like.post_id_on_platform = reconcile_primitives(existing_like.post_id_on_platform, new_like.post_id_on_platform)
+    existing_like.post_url = reconcile_primitives(existing_like.post_url, new_like.post_url)
+    existing_like.account_id_on_platform = reconcile_primitives(existing_like.account_id_on_platform, new_like.account_id_on_platform)
+    existing_like.account_url = reconcile_primitives(existing_like.account_url, new_like.account_url)
+    existing_like.data = reconcile_dicts(existing_like.data, new_like.data)
+    return existing_like
+
+
+def reconcile_tagged_accounts(new_ta: TaggedAccount, existing_ta: Optional[TaggedAccount]) -> TaggedAccount:
+    if existing_ta is None:
+        return new_ta
+    existing_ta.id_on_platform = reconcile_primitives(existing_ta.id_on_platform, new_ta.id_on_platform)
+    existing_ta.tagged_account_id_on_platform = reconcile_primitives(existing_ta.tagged_account_id_on_platform, new_ta.tagged_account_id_on_platform)
+    existing_ta.tagged_account_url = reconcile_primitives(existing_ta.tagged_account_url, new_ta.tagged_account_url)
+    existing_ta.context_post_url = reconcile_primitives(existing_ta.context_post_url, new_ta.context_post_url)
+    existing_ta.context_media_url = reconcile_primitives(existing_ta.context_media_url, new_ta.context_media_url)
+    existing_ta.context_post_id_on_platform = reconcile_primitives(existing_ta.context_post_id_on_platform, new_ta.context_post_id_on_platform)
+    existing_ta.context_media_id_on_platform = reconcile_primitives(existing_ta.context_media_id_on_platform, new_ta.context_media_id_on_platform)
+    existing_ta.tag_x_position = reconcile_primitives(existing_ta.tag_x_position, new_ta.tag_x_position)
+    existing_ta.tag_y_position = reconcile_primitives(existing_ta.tag_y_position, new_ta.tag_y_position)
+    existing_ta.data = reconcile_dicts(existing_ta.data, new_ta.data)
+    return existing_ta
+
+
+def reconcile_account_relations(new_ar: AccountRelation, existing_ar: Optional[AccountRelation]) -> AccountRelation:
+    if existing_ar is None:
+        return new_ar
+    existing_ar.id_on_platform = reconcile_primitives(existing_ar.id_on_platform, new_ar.id_on_platform)
+    existing_ar.follower_account_id_on_platform = reconcile_primitives(existing_ar.follower_account_id_on_platform, new_ar.follower_account_id_on_platform)
+    existing_ar.follower_account_url = reconcile_primitives(existing_ar.follower_account_url, new_ar.follower_account_url)
+    existing_ar.followed_account_id_on_platform = reconcile_primitives(existing_ar.followed_account_id_on_platform, new_ar.followed_account_id_on_platform)
+    existing_ar.followed_account_url = reconcile_primitives(existing_ar.followed_account_url, new_ar.followed_account_url)
+    existing_ar.relation_type = reconcile_primitives(existing_ar.relation_type, new_ar.relation_type)
+    existing_ar.data = reconcile_dicts(existing_ar.data, new_ar.data)
+    return existing_ar
 
 
 def synthesize_from_archives(records: list[T], reconcile_fn: Callable[[T, T], T]) -> Optional[T]:
