@@ -221,7 +221,43 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
     logger.info(f"Part A register_archives complete in {elapsed:.1f}s (registered {registered_count} new archives)")
 
 
+# ---------------------------------------------------------------------------
+# Algorithm version numbers
+# ---------------------------------------------------------------------------
+# Increment the relevant constant any time the corresponding algorithm changes
+# in a way that would produce different output for the same input archive.
+# The stored version on each archive_session row lets an admin queue stale
+# rows for re-processing with a targeted UPDATE, e.g.:
+#
+#   -- Re-queue all sessions parsed by an outdated version:
+#   UPDATE archive_session
+#   SET    incorporation_status = 'pending'
+#   WHERE  source_type = 'local_har'
+#     AND  parse_algorithm_version < <new_version>
+#     AND  incorporation_status NOT IN ('parse_failed');
+#
+#   -- Re-queue all sessions extracted by an outdated version:
+#   UPDATE archive_session
+#   SET    incorporation_status = 'parsed'
+#   WHERE  source_type = 'local_har'
+#     AND  extract_algorithm_version < <new_version>
+#     AND  incorporation_status NOT IN ('extract_failed');
+#
+# Changelog
+# ---------
+# PARSING_ALGORITHM_VERSION
+#   1 — initial HAR parsing logic
+#
+# ENTITY_EXTRACTION_ALGORITHM_VERSION
+#   1 — initial extraction (db_intake.py v1)
+#   2 — db_intake refactor: split get_entity into get_canonical/get_archive_record;
+#       re-synthesis from all archives on re-processing; url reconciliation added
+#       to reconcile_posts and reconcile_media; archive record lookup now uses
+#       canonical_id instead of url/id_on_platform match
+# ---------------------------------------------------------------------------
+
 PARSING_ALGORITHM_VERSION = 1
+ENTITY_EXTRACTION_ALGORITHM_VERSION = 2
 
 
 def strip_media_contents(data: ExtractedHarData) -> None:
@@ -395,9 +431,6 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
 
     elapsed = time.time() - start_time
     logger.info(f"Part B complete: {parsed_count} archives parsed, {error_count} errors in {elapsed:.1f}s")
-
-
-ENTITY_EXTRACTION_ALGORITHM_VERSION = 1
 
 
 def extract_entities(limit: Optional[int] = None, cancel_check: Optional[Callable[[], bool]] = None, emit: Optional[Callable[[str], None]] = None):
