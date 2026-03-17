@@ -18,8 +18,7 @@ def nest_entities(
         account_map[account.id] = AccountAndAssociatedEntities(
             **account.model_dump(),
             account_posts=[],
-            account_followers=[],
-            account_suggested_accounts=[]
+            account_relations=[]
         )
         nested_accounts.append(account_map[account.id])
 

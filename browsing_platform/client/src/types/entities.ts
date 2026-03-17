@@ -71,26 +71,26 @@ export interface ILike extends IEntityBase {
     data?: any;
 }
 
-export interface IFollower extends IEntityBase {
-    follower_account_id: string;
-    following_account_id: string;
-    data?: any;
-}
-
-export interface ISuggestedAccount extends IEntityBase {
-    context_account_id: string;
-    suggested_account_id: string;
+export interface IAccountRelation extends IEntityBase {
+    id_on_platform?: string;
+    follower_account_id_on_platform?: string;
+    follower_account_url?: string;
+    followed_account_id_on_platform?: string;
+    followed_account_url?: string;
+    relation_type?: string;
     data?: any;
 }
 
 export interface ITaggedAccount extends IEntityBase {
-    tagged_account_id?: string;
+    id_on_platform?: string;
+    tagged_account_id_on_platform?: string;
     tagged_account_url?: string;
-    context_account_id?: string;
     context_post_url?: string;
     context_media_url?: string;
     context_post_id_on_platform?: string;
     context_media_id_on_platform?: string;
+    tag_x_position?: number;
+    tag_y_position?: number;
     data?: any;
 }
 
@@ -100,8 +100,7 @@ export interface IExtractedEntitiesFlattened {
     media: IMedia[];
     comments: IComment[];
     likes: ILike[];
-    followers: IFollower[];
-    suggested_accounts: ISuggestedAccount[];
+    account_relations: IAccountRelation[];
     tagged_accounts: ITaggedAccount[];
 }
 
@@ -120,8 +119,7 @@ export interface IPostAndAssociatedEntities extends IPost {
 
 export interface IAccountAndAssociatedEntities extends IAccount {
     account_posts: IPostAndAssociatedEntities[];
-    account_followers: IFollower[];
-    account_suggested_accounts: ISuggestedAccount[];
+    account_relations: IAccountRelation[];
 }
 
 export interface IExtractedEntitiesNested {

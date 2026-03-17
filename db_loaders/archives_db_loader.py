@@ -254,10 +254,13 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
 #       re-synthesis from all archives on re-processing; url reconciliation added
 #       to reconcile_posts and reconcile_media; archive record lookup now uses
 #       canonical_id instead of url/id_on_platform match
+#   3 — new entity types: comment (with parent_comment_id_on_platform), post_like,
+#       tagged_account (with tag_x/y_position), account_relation (replaces Follower
+#       + SuggestedAccount); dropped post_engagement tables
 # ---------------------------------------------------------------------------
 
 PARSING_ALGORITHM_VERSION = 1
-ENTITY_EXTRACTION_ALGORITHM_VERSION = 2
+ENTITY_EXTRACTION_ALGORITHM_VERSION = 3
 
 
 def strip_media_contents(data: ExtractedHarData) -> None:
