@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {useParams} from "react-router";
+import {useParams, useSearchParams} from "react-router";
 import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchArchivingSessionsPost, fetchPost} from "../services/DataFetcher";
@@ -13,8 +13,11 @@ import {getShareTokenFromHref} from "../services/linkSharing";
 
 export default function PostPage() {
     const {id: idParam} = useParams();
+    const [searchParams] = useSearchParams();
 
     const id = idParam === undefined ? null : parseInt(idParam);
+    const highlightCommentId = searchParams.get('comment_id') ? parseInt(searchParams.get('comment_id')!) : undefined;
+    const highlightLikeId = searchParams.get('like_id') ? parseInt(searchParams.get('like_id')!) : undefined;
     const shareMode = !!getShareTokenFromHref();
     const hideHeader = shareMode;
     const disableAnnotator = shareMode;
@@ -58,6 +61,8 @@ export default function PostPage() {
         }
         return <EntitiesViewer
             entities={data}
+            highlightCommentId={highlightCommentId}
+            highlightLikeId={highlightLikeId}
             viewerConfig={
                 new EntityViewerConfig({
                     post: {annotator: disableAnnotator ? "disable" : "show"},

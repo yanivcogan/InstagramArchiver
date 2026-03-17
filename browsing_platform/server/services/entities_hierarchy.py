@@ -1,7 +1,7 @@
 from typing import Literal
 
 from extractors.entity_types import ExtractedEntitiesFlattened, ExtractedEntitiesNested, AccountAndAssociatedEntities, \
-    PostAndAssociatedEntities, MediaAndAssociatedEntities
+    PostAndAssociatedEntities, MediaAndAssociatedEntities, Comment, TaggedAccount
 
 T_Entities = Literal["archiving_session", "account", "post", "media", "media_part"]
 
@@ -49,6 +49,14 @@ def nest_entities(
                 **media.model_dump(),
                 media_parent_post=None
             ))
+
+    for comment in entities.comments:
+        if comment.post_id in post_map:
+            post_map[comment.post_id].post_comments.append(comment)
+
+    for ta in entities.tagged_accounts:
+        if ta.post_id in post_map:
+            post_map[ta.post_id].post_tagged_accounts.append(ta)
 
     return ExtractedEntitiesNested(
         accounts=nested_accounts,

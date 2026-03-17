@@ -9,9 +9,12 @@ import {EntityViewerConfig} from "./EntitiesViewerConfig";
 interface IProps {
     entities: IExtractedEntitiesNested
     viewerConfig?: EntityViewerConfig
+    highlightCommentId?: number
+    highlightLikeId?: number
+    highlightRelationId?: number
 }
 
-export default function EntitiesViewer({entities, viewerConfig}: IProps) {
+export default function EntitiesViewer({entities, viewerConfig, highlightCommentId, highlightLikeId, highlightRelationId}: IProps) {
     const sortedPosts = useMemo(() =>
         [...entities.posts].sort((a, b) =>
             (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
@@ -19,10 +22,23 @@ export default function EntitiesViewer({entities, viewerConfig}: IProps) {
 
     return <Stack gap={1}>
         {entities.accounts.map((account: IAccountAndAssociatedEntities, index: number) =>
-            <Account account={account} key={index} viewerConfig={viewerConfig}/>
+            <Account
+                account={account}
+                key={index}
+                viewerConfig={viewerConfig}
+                highlightCommentId={highlightCommentId}
+                highlightLikeId={highlightLikeId}
+                highlightRelationId={highlightRelationId}
+            />
         )}
         {sortedPosts.map((post: IPostAndAssociatedEntities, index: number) =>
-            <Post post={post} key={index} viewerConfig={viewerConfig}/>
+            <Post
+                post={post}
+                key={index}
+                viewerConfig={viewerConfig}
+                highlightCommentId={highlightCommentId}
+                highlightLikeId={highlightLikeId}
+            />
         )}
         {entities.media.map((media, index: number) =>
             <Media media={media} key={index} viewerConfig={viewerConfig}/>

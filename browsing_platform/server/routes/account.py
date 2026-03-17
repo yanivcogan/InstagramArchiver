@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.account import get_account_by_id
-from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id
+from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
+    get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions
 from browsing_platform.server.services.permissions import auth_entity_view_access
-from extractors.entity_types import ExtractedEntitiesNested
+from extractors.entity_types import ExtractedEntitiesNested, AccountRelation
 
 router = APIRouter(
     prefix="/account",
@@ -27,6 +28,22 @@ async def get_account_data(item_id:int) -> Any:
     if not account:
         raise HTTPException(status_code=404, detail="Account Not Found")
     return account.data
+
+
+@router.get("/{item_id}/relations/", dependencies=[Depends(_auth_account_view)])
+@router.get("/{item_id}/relations", dependencies=[Depends(_auth_account_view)])
+async def get_relations(item_id: int) -> list[AccountRelation]:
+    if not get_account_by_id(item_id):
+        raise HTTPException(status_code=404, detail="Account Not Found")
+    return get_account_relations_by_account_id(item_id)
+
+
+@router.get("/{item_id}/interactions/", dependencies=[Depends(_auth_account_view)])
+@router.get("/{item_id}/interactions", dependencies=[Depends(_auth_account_view)])
+async def get_interactions(item_id: int) -> AccountInteractions:
+    if not get_account_by_id(item_id):
+        raise HTTPException(status_code=404, detail="Account Not Found")
+    return get_interactions_by_account_id(item_id)
 
 
 @router.get("/{item_id}/", dependencies=[Depends(_auth_account_view)])

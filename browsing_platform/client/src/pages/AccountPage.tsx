@@ -17,6 +17,7 @@ export default function AccountPage() {
 
     const id = idParam === undefined ? null : parseInt(idParam);
     const exportMode = searchParams.get("export") === "1";
+    const highlightRelationId = searchParams.get('relation_id') ? parseInt(searchParams.get('relation_id')!) : undefined;
     const shareMode = !!getShareTokenFromHref();
 
     const showAllPosts = exportMode;
@@ -65,6 +66,7 @@ export default function AccountPage() {
         }
         return <EntitiesViewer
             entities={data}
+            highlightRelationId={highlightRelationId}
             viewerConfig={
                 new EntityViewerConfig({
                     all: {hideInnerLinks},

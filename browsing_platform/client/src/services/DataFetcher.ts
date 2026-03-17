@@ -1,4 +1,13 @@
-import {IArchiveSession, IArchiveSessionWithEntities, IExtractedEntitiesNested, IMediaPart} from "../types/entities";
+import {
+    IAccountInteractions,
+    IAccountRelation,
+    IArchiveSession,
+    IArchiveSessionWithEntities,
+    IComment,
+    IExtractedEntitiesNested,
+    IMediaPart,
+    IPostLike
+} from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
 import {ITagWithType} from "../types/tags";
@@ -84,6 +93,22 @@ export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> =>
 
 export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<Record<string, unknown>> => {
     return await server.get(`archiving_session/data/${archivingSessionId}/`);
+}
+
+export const fetchPostComments = async (postId: number): Promise<IComment[]> => {
+    return await server.get(`post/${postId}/comments/`);
+}
+
+export const fetchPostLikes = async (postId: number): Promise<IPostLike[]> => {
+    return await server.get(`post/${postId}/likes/`);
+}
+
+export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelation[]> => {
+    return await server.get(`account/${accountId}/relations/`);
+}
+
+export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions> => {
+    return await server.get(`account/${accountId}/interactions/`);
 }
 
 export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {

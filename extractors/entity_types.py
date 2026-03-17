@@ -161,6 +161,7 @@ class Comment(EntityBase):
     post_url: Optional[str] = Field(None, max_length=250)
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url: Optional[str] = Field(None, max_length=200)
+    account_display_name: Optional[str] = Field(None, max_length=100)
     parent_comment_id_on_platform: Optional[str] = None
     post_id: Optional[int] = None
     account_id: Optional[int] = None
@@ -198,6 +199,7 @@ class Like(EntityBase):
     post_url: Optional[str] = Field(None, max_length=250)
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url: Optional[str] = Field(None, max_length=200)
+    account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     account_id: Optional[int] = None
     data: Optional[Any] = None
@@ -240,9 +242,11 @@ class AccountRelation(EntityBase):
     follower_account_id: Optional[int] = None
     follower_account_id_on_platform: Optional[str] = Field(None, max_length=100)
     follower_account_url: Optional[str] = Field(None, max_length=200)
+    follower_account_display_name: Optional[str] = Field(None, max_length=100)
     followed_account_id: Optional[int] = None
     followed_account_id_on_platform: Optional[str] = Field(None, max_length=100)
     followed_account_url: Optional[str] = Field(None, max_length=200)
+    followed_account_display_name: Optional[str] = Field(None, max_length=100)
     relation_type: Optional[t_relation_type] = None
     data: Optional[Any] = None
 
@@ -285,6 +289,7 @@ class TaggedAccount(EntityBase):
     tagged_account_id: Optional[int] = None
     tagged_account_id_on_platform: Optional[str] = Field(None, max_length=200)
     tagged_account_url: Optional[str] = Field(None, max_length=250)
+    tagged_account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     media_id: Optional[int] = None
     context_post_url: Optional[str] = Field(None, max_length=250)

@@ -53,38 +53,50 @@ export interface IMediaPart extends IEntityBase {
 export interface IComment extends IEntityBase {
     id_on_platform?: string;
     url: string;
+    post_id?: number;
     post_id_on_platform: string;
     post_url?: string;
+    account_id?: number;
     account_id_on_platform?: string;
     account_url?: string;
+    account_display_name?: string;
     text?: string;
     publication_date?: string;
     data?: any;
 }
 
-export interface ILike extends IEntityBase {
+export interface IPostLike extends IEntityBase {
     id_on_platform?: string;
+    post_id?: number;
     post_id_on_platform?: string;
     post_url?: string;
+    account_id?: number;
     account_id_on_platform?: string;
     account_url?: string;
+    account_display_name?: string;
     data?: any;
 }
 
 export interface IAccountRelation extends IEntityBase {
     id_on_platform?: string;
+    follower_account_id?: number;
     follower_account_id_on_platform?: string;
     follower_account_url?: string;
+    follower_account_display_name?: string;
+    followed_account_id?: number;
     followed_account_id_on_platform?: string;
     followed_account_url?: string;
+    followed_account_display_name?: string;
     relation_type?: string;
     data?: any;
 }
 
 export interface ITaggedAccount extends IEntityBase {
     id_on_platform?: string;
+    tagged_account_id?: number;
     tagged_account_id_on_platform?: string;
     tagged_account_url?: string;
+    tagged_account_display_name?: string;
     context_post_url?: string;
     context_media_url?: string;
     context_post_id_on_platform?: string;
@@ -99,7 +111,7 @@ export interface IExtractedEntitiesFlattened {
     posts: IPost[];
     media: IMedia[];
     comments: IComment[];
-    likes: ILike[];
+    likes: IPostLike[];
     account_relations: IAccountRelation[];
     tagged_accounts: ITaggedAccount[];
 }
@@ -113,7 +125,7 @@ export interface IPostAndAssociatedEntities extends IPost {
     post_author?: IAccountAndAssociatedEntities;
     post_media: IMediaAndAssociatedEntities[];
     post_comments: IComment[];
-    post_likes: ILike[];
+    post_likes: IPostLike[];
     post_tagged_accounts: ITaggedAccount[];
 }
 
@@ -165,4 +177,10 @@ export type AnnotatableEntityType = "media" | "post" | "account";
 export interface IArchiveSessionWithEntities {
     session: IArchiveSession;
     entities: IExtractedEntitiesNested;
+}
+
+export interface IAccountInteractions {
+    comments: IComment[];
+    likes: IPostLike[];
+    tagged_in: ITaggedAccount[];
 }
