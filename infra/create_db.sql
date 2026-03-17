@@ -244,7 +244,8 @@ create table media
     data           json                                null,
     notes          text                                null,
     annotation     text                                null,
-    thumbnail_path varchar(200)                        null,
+    thumbnail_path   varchar(200)                                                null,
+    thumbnail_status enum ('pending', 'generated', 'not_needed', 'error') not null default 'pending',
     constraint media_post_id_fk
         foreign key (post_id) references post (id)
 )
@@ -264,6 +265,9 @@ create index media_post_id_index
 
 create index media_thumbnail_path_index
     on media (thumbnail_path);
+
+create index media_thumbnail_status_index
+    on media (thumbnail_status);
 
 create index media_url_index
     on media (url);

@@ -159,69 +159,100 @@ def _read_video_frame(path: str) -> Image.Image:
         cap.release()
 
 
-async def generate_missing_thumbnails(thumbnail_size=(128, 128), limit: int | None = None, cancel_check=None, emit: Optional[Callable[[str], None]] = None):
-    generated_count = 0
-    while True:
-        if cancel_check and cancel_check():
-            raise InterruptedError("Cancelled by user")
-        media = db.execute_query(
-            """SELECT *
-               FROM media
-               WHERE thumbnail_path IS NULL
-                 AND local_url IS NOT NULL
-                 AND (media_type = 'image' OR media_type = 'video')
-               LIMIT 1""",
-            {}, return_type="single_row"
-        )
-        if media is None:
-            break
-        media = Media(**media)
-        local_path = ROOT_ARCHIVES / media.local_url.split(f'{LOCAL_ARCHIVES_DIR_ALIAS}/')[1]
-        # Generate thumbnail and store it under ROOT_THUMBNAILS/{md5_hash}_{thumbnail_size}.jpg
+BATCH_SIZE = 1000
+MAX_CONCURRENT = 8
 
+
+def load_image_and_thumbnail(path: str, size: tuple) -> Image.Image:
+    """Open an image file and resize it in-place. Runs in a thread."""
+    img = Image.open(path)
+    img.thumbnail(size)
+    return img
+
+
+def save_image(img: Image.Image, out_path: Path) -> None:
+    """Save a PIL image to disk. Runs in a thread."""
+    os.makedirs(out_path.parent, exist_ok=True)
+    img.save(out_path, "JPEG")
+
+
+async def process_one_media(
+    media_row: dict,
+    thumbnail_size: tuple,
+    semaphore: asyncio.Semaphore,
+    emit: Optional[Callable[[str], None]],
+) -> bool:
+    """Generate and persist a thumbnail for one media item. Returns True on success."""
+    async with semaphore:
+        media = Media(**media_row)
+        local_path = ROOT_ARCHIVES / media.local_url.split(f'{LOCAL_ARCHIVES_DIR_ALIAS}/')[1]
         try:
             logger.info(f"Generating thumbnail for media ID {media.id} at {local_path}")
             if media.media_type == 'image':
-                img = Image.open(local_path)
+                img = await asyncio.to_thread(load_image_and_thumbnail, str(local_path), thumbnail_size)
             elif media.media_type == 'video':
+                # TODO: asyncio.wait_for cancels the asyncio task on timeout but cannot stop the
+                # underlying thread — the cv2.VideoCapture call keeps running, slowly consuming
+                # ThreadPoolExecutor slots. Fix by replacing _read_video_frame with an
+                # asyncio.create_subprocess_exec call to ffmpeg, which can be killed on timeout.
                 img = await asyncio.wait_for(asyncio.to_thread(_read_video_frame, str(local_path)), timeout=10)
+                img.thumbnail(thumbnail_size)
             else:
                 raise Exception("Unsupported media type for thumbnail generation")
-            img.thumbnail(thumbnail_size)
+
             hash_input = f"{media.id_on_platform}_{thumbnail_size[0]}x{thumbnail_size[1]}".encode('utf-8')
             thumbnail_filename = f"{md5(hash_input).hexdigest()}.jpg"
-            thumbnail_path = ROOT_THUMBNAILS / thumbnail_filename
-            os.makedirs(ROOT_THUMBNAILS, exist_ok=True)
-            img.save(thumbnail_path, "JPEG")
+            out_path = ROOT_THUMBNAILS / thumbnail_filename
+            await asyncio.to_thread(save_image, img, out_path)
         except Exception as e:
             logger.error(f"Error generating thumbnail for media ID {media.id} (type={media.media_type}, path={local_path}): {e}")
             if emit:
                 emit(f"Part D — error generating thumbnail for media {media.id}: {e}")
-            db.execute_query(f'''
-                        UPDATE media
-                        SET thumbnail_path = %(thumbnail_path)s
-                        WHERE id = %(id)s
-                    ''', {
-                "thumbnail_path": f"error: {str(e)}",
-                "id": media.id
-            }, "none")
-            continue
-        # Update database with thumbnail path
-        relative_thumbnail_path = f"{LOCAL_THUMBNAILS_DIR_ALIAS}/{thumbnail_filename}"
-        db.execute_query(f'''
-            UPDATE media
-            SET thumbnail_path = %(thumbnail_path)s
-            WHERE id = %(id)s
-        ''', {
-            "thumbnail_path": relative_thumbnail_path,
-            "id": media.id
-        }, "none")
+            db.execute_query(
+                "UPDATE media SET thumbnail_path = %(p)s, thumbnail_status = 'error' WHERE id = %(id)s",
+                {"p": f"error: {str(e)}", "id": media.id}, "none"
+            )
+            return False
+
+        relative_path = f"{LOCAL_THUMBNAILS_DIR_ALIAS}/{thumbnail_filename}"
+        db.execute_query(
+            "UPDATE media SET thumbnail_path = %(p)s, thumbnail_status = 'generated' WHERE id = %(id)s",
+            {"p": relative_path, "id": media.id}, "none"
+        )
         if emit:
             emit(f"Part D — generated thumbnail for media {media.id}")
-        generated_count += 1
-        if limit is not None and generated_count >= limit:
-            logger.info(f"Part D - Reached limit of {limit} thumbnails")
+        return True
+
+
+async def generate_missing_thumbnails(thumbnail_size=(128, 128), limit: int | None = None, cancel_check=None, emit: Optional[Callable[[str], None]] = None):
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    generated_count = 0
+    while True:
+        if cancel_check and cancel_check():
+            raise InterruptedError("Cancelled by user")
+
+        fetch_count = BATCH_SIZE if limit is None else min(BATCH_SIZE, limit - generated_count)
+        if fetch_count <= 0:
             break
+
+        rows = db.execute_query(
+            f"SELECT * FROM media WHERE thumbnail_status = 'pending' LIMIT {fetch_count}",
+            {}, return_type="rows"
+        ) or []
+        if not rows:
+            break
+
+        results = await asyncio.gather(*[
+            process_one_media(row, thumbnail_size, semaphore, emit) for row in rows
+        ])
+        generated_count += sum(1 for r in results if r)
+
+        if len(rows) < fetch_count:
+            # Received fewer rows than requested — no more pending items remain
+            break
+
+    if generated_count:
+        logger.info(f"Part D - Generated {generated_count} thumbnails")
 
 
 if __name__ == "__main__":

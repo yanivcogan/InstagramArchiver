@@ -1,9 +1,9 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional, TypeVar, Generic, Callable
+from typing import Optional, TypeVar, Generic, Callable, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media, Comment, Like, TaggedAccount, AccountRelation
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media, reconcile_comments, reconcile_likes, reconcile_tagged_accounts, reconcile_account_relations, synthesize_from_archives, reconcile_primitives
@@ -18,6 +18,8 @@ EntityType = TypeVar("EntityType", bound="EntityBase")
 
 
 class EntityProcessingConfig(BaseModel, Generic[EntityType]):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     key: str
     table: str
     get_canonical: Callable[[EntityType], Optional[EntityType]]
@@ -27,6 +29,231 @@ class EntityProcessingConfig(BaseModel, Generic[EntityType]):
     store_entity: Callable[[EntityType, Optional[EntityType], Optional[Path]], int]
     store_entity_archive: Callable[[EntityType, int, Optional[int], Optional[int], Optional[Path]], int]
     merge: Callable[[EntityType, Optional[EntityType]], EntityType]
+    # Batch variants: replace N individual queries with 1-2 queries per entity type
+    batch_get_canonicals: Optional[Any] = None        # (entities) -> list[Optional[entity]]
+    batch_get_archive_records: Optional[Any] = None   # (canonical_ids, session_id) -> dict[id, entity]
+    batch_get_all_archives: Optional[Any] = None      # (canonical_ids) -> dict[id, list[entity]]
+    # Batch INSERT for new entities: replaces N individual INSERTs with 1 multi-row INSERT each
+    batch_store_new_entities: Optional[Any] = None       # (entities, archive_location) -> list[int] canonical_ids
+    batch_store_new_entity_archives: Optional[Any] = None  # (entities, canonical_ids, session_id, archive_location) -> list[int] archive_ids
+
+
+# ---------------------------------------------------------------------------
+# Generic batch query helpers
+# ---------------------------------------------------------------------------
+
+def batch_get_canonicals_url_and_id(entities: list, table: str, entity_class: type) -> list:
+    """One batch lookup for entity types matched by url OR id_on_platform."""
+    urls = list({e.url for e in entities if getattr(e, 'url', None)})
+    ids = list({e.id_on_platform for e in entities if getattr(e, 'id_on_platform', None)})
+
+    rows: list = []
+    if urls:
+        ph = ','.join(['%s'] * len(urls))
+        rows.extend(db.execute_query(f"SELECT * FROM `{table}` WHERE url IN ({ph})", urls, return_type="rows") or [])
+    if ids:
+        ph = ','.join(['%s'] * len(ids))
+        rows.extend(db.execute_query(f"SELECT * FROM `{table}` WHERE id_on_platform IN ({ph})", ids, return_type="rows") or [])
+
+    seen: set = set()
+    canonicals: list = []
+    for row in rows:
+        if row['id'] not in seen:
+            seen.add(row['id'])
+            canonicals.append(entity_class(**row))
+
+    by_url = {c.url: c for c in canonicals if getattr(c, 'url', None)}
+    by_id = {c.id_on_platform: c for c in canonicals if getattr(c, 'id_on_platform', None)}
+    return [by_url.get(getattr(e, 'url', None)) or by_id.get(getattr(e, 'id_on_platform', None))
+            for e in entities]
+
+
+def batch_get_canonicals_id_only(entities: list, table: str, entity_class: type) -> list:
+    """One batch lookup for entity types matched only by id_on_platform."""
+    ids = list({e.id_on_platform for e in entities if getattr(e, 'id_on_platform', None)})
+    if not ids:
+        return [None] * len(entities)
+    ph = ','.join(['%s'] * len(ids))
+    rows = db.execute_query(f"SELECT * FROM `{table}` WHERE id_on_platform IN ({ph})", ids, return_type="rows") or []
+    by_id = {entity_class(**row).id_on_platform: entity_class(**row) for row in rows}
+    return [by_id.get(e.id_on_platform) for e in entities]
+
+
+def batch_get_archive_records(canonical_ids: list, archive_table: str, archive_session_id: int, entity_class: type) -> dict:
+    """One query for all archive records of the given canonicals in the current session."""
+    if not canonical_ids:
+        return {}
+    ph = ','.join(['%s'] * len(canonical_ids))
+    rows = db.execute_query(
+        f"SELECT * FROM `{archive_table}` WHERE canonical_id IN ({ph}) AND archive_session_id = %s",
+        canonical_ids + [archive_session_id],
+        return_type="rows"
+    ) or []
+    return {row['canonical_id']: entity_class(**row) for row in rows}
+
+
+def batch_get_all_archives(canonical_ids: list, archive_table: str, entity_class: type) -> dict:
+    """One query for all archive records of the given canonicals (all sessions)."""
+    if not canonical_ids:
+        return {}
+    ph = ','.join(['%s'] * len(canonical_ids))
+    rows = db.execute_query(
+        f"SELECT * FROM `{archive_table}` WHERE canonical_id IN ({ph})",
+        canonical_ids,
+        return_type="rows"
+    ) or []
+    result: dict = {}
+    for row in rows:
+        cid = row['canonical_id']
+        if cid not in result:
+            result[cid] = []
+        result[cid].append(entity_class(**row))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Batch FK resolution helpers
+# ---------------------------------------------------------------------------
+
+def batch_resolve_account_fks_by_url_and_id(entities: list, url_attr: str, id_attr: str, id_field: str) -> None:
+    """Batch-resolve account FK (sets `id_field` on each entity) using url and id_on_platform lookups."""
+    urls = list({getattr(e, url_attr) for e in entities if getattr(e, id_field, None) is None and getattr(e, url_attr, None)})
+    ids_op = list({getattr(e, id_attr) for e in entities if getattr(e, id_field, None) is None and getattr(e, id_attr, None)})
+    by_url, by_id_op = {}, {}
+    if urls:
+        ph = ','.join(['%s'] * len(urls))
+        rows = db.execute_query(f"SELECT id, url FROM account WHERE url IN ({ph})", urls, return_type="rows") or []
+        by_url = {r['url']: r['id'] for r in rows}
+    if ids_op:
+        ph = ','.join(['%s'] * len(ids_op))
+        rows = db.execute_query(f"SELECT id, id_on_platform FROM account WHERE id_on_platform IN ({ph})", ids_op, return_type="rows") or []
+        by_id_op = {r['id_on_platform']: r['id'] for r in rows}
+    for e in entities:
+        if getattr(e, id_field, None) is None:
+            resolved = by_url.get(getattr(e, url_attr, None)) or by_id_op.get(getattr(e, id_attr, None))
+            setattr(e, id_field, resolved)
+
+
+def batch_resolve_post_fks(entities: list, url_attr: str, id_attr: str, id_field: str) -> None:
+    """Batch-resolve post FK (sets `id_field` on each entity) using url and id_on_platform lookups."""
+    urls = list({getattr(e, url_attr) for e in entities if getattr(e, id_field, None) is None and getattr(e, url_attr, None)})
+    ids_op = list({getattr(e, id_attr) for e in entities if getattr(e, id_field, None) is None and getattr(e, id_attr, None)})
+    by_url, by_id_op = {}, {}
+    if urls:
+        ph = ','.join(['%s'] * len(urls))
+        rows = db.execute_query(f"SELECT id, url FROM post WHERE url IN ({ph})", urls, return_type="rows") or []
+        by_url = {r['url']: r['id'] for r in rows}
+    if ids_op:
+        ph = ','.join(['%s'] * len(ids_op))
+        rows = db.execute_query(f"SELECT id, id_on_platform FROM post WHERE id_on_platform IN ({ph})", ids_op, return_type="rows") or []
+        by_id_op = {r['id_on_platform']: r['id'] for r in rows}
+    for e in entities:
+        if getattr(e, id_field, None) is None:
+            resolved = by_url.get(getattr(e, url_attr, None)) or by_id_op.get(getattr(e, id_attr, None))
+            setattr(e, id_field, resolved)
+
+
+# ---------------------------------------------------------------------------
+# Batch INSERT new entities
+# ---------------------------------------------------------------------------
+
+def batch_store_new_accounts(new_accounts: list, _) -> list:
+    columns = ['url', 'id_on_platform', 'identifiers', 'display_name', 'bio', 'data']
+    rows = []
+    for a in new_accounts:
+        identifiers = []
+        if a.id_on_platform:
+            identifiers.append(f"id_{a.id_on_platform}")
+        if a.url:
+            identifiers.append(f"url_{a.url}")
+        rows.append([a.url, a.id_on_platform, json.dumps(identifiers), a.display_name, a.bio,
+                     json.dumps(a.data) if a.data else None])
+    return db.batch_insert('account', columns, rows)
+
+
+def batch_store_new_account_archives(new_accounts: list, canonical_ids: list, archive_session_id: int, _) -> list:
+    columns = ['url', 'id_on_platform', 'display_name', 'bio', 'data', 'archive_session_id', 'canonical_id']
+    rows = [[a.url, a.id_on_platform, a.display_name, a.bio,
+             json.dumps(a.data) if a.data else None, archive_session_id, cid]
+            for a, cid in zip(new_accounts, canonical_ids)]
+    return db.batch_insert('account_archive', columns, rows)
+
+
+def batch_store_new_posts(new_posts: list, _) -> list:
+    batch_resolve_account_fks_by_url_and_id(new_posts, 'account_url', 'account_id_on_platform', 'account_id')
+    for p in new_posts:
+        if p.account_id is None:
+            raise ValueError(f"Cannot store post {p.id_on_platform!r}: account not found "
+                             f"(url={p.account_url!r}, id_on_platform={p.account_id_on_platform!r})")
+    columns = ['url', 'id_on_platform', 'account_id', 'publication_date', 'caption', 'data']
+    rows = [[p.url, p.id_on_platform, p.account_id,
+             p.publication_date.isoformat() if p.publication_date else None,
+             p.caption, json.dumps(p.data) if p.data else None]
+            for p in new_posts]
+    return db.batch_insert('post', columns, rows)
+
+
+def batch_store_new_post_archives(new_posts: list, canonical_ids: list, archive_session_id: int, _) -> list:
+    columns = ['url', 'id_on_platform', 'publication_date', 'caption', 'data',
+               'archive_session_id', 'canonical_id', 'account_url', 'account_id_on_platform']
+    rows = [[p.url, p.id_on_platform,
+             p.publication_date.isoformat() if p.publication_date else None,
+             p.caption, json.dumps(p.data) if p.data else None,
+             archive_session_id, cid, p.account_url, p.account_id_on_platform]
+            for p, cid in zip(new_posts, canonical_ids)]
+    return db.batch_insert('post_archive', columns, rows)
+
+
+def batch_store_new_media(new_media: list, archive_location) -> list:
+    batch_resolve_post_fks(new_media, 'post_url', 'post_id_on_platform', 'post_id')
+    for m in new_media:
+        if m.post_id is None:
+            raise ValueError(f"Cannot store media {m.id_on_platform!r}: post not found "
+                             f"(url={m.post_url!r}, id_on_platform={m.post_id_on_platform!r})")
+    columns = ['url', 'id_on_platform', 'post_id', 'local_url', 'media_type', 'data', 'thumbnail_status']
+    rows = [[m.url, m.id_on_platform, m.post_id, m.local_url, m.media_type,
+             json.dumps(m.data) if m.data else None, initial_thumbnail_status(m)]
+            for m in new_media]
+    return db.batch_insert('media', columns, rows)
+
+
+def batch_store_new_media_archives(new_media: list, canonical_ids: list, archive_session_id: int, _) -> list:
+    columns = ['url', 'id_on_platform', 'local_url', 'media_type', 'data',
+               'archive_session_id', 'canonical_id', 'post_url', 'post_id_on_platform']
+    rows = [[m.url, m.id_on_platform, m.local_url, m.media_type,
+             json.dumps(m.data) if m.data else None,
+             archive_session_id, cid, m.post_url, m.post_id_on_platform]
+            for m, cid in zip(new_media, canonical_ids)]
+    return db.batch_insert('media_archive', columns, rows)
+
+
+def batch_store_new_comments(new_comments: list, _) -> list:
+    batch_resolve_post_fks(new_comments, 'post_url', 'post_id_on_platform', 'post_id')
+    for c in new_comments:
+        if c.post_id is None and (c.post_url or c.post_id_on_platform):
+            raise ValueError(f"Cannot store comment {c.id_on_platform!r}: post not found "
+                             f"(url={c.post_url!r}, id_on_platform={c.post_id_on_platform!r})")
+    batch_resolve_account_fks_by_url_and_id(new_comments, 'account_url', 'account_id_on_platform', 'account_id')
+    columns = ['id_on_platform', 'url', 'post_id', 'account_id', 'parent_comment_id_on_platform',
+               'text', 'publication_date', 'data']
+    rows = [[c.id_on_platform, c.url, c.post_id, c.account_id, c.parent_comment_id_on_platform,
+             c.text, c.publication_date.isoformat() if c.publication_date else None,
+             json.dumps(c.data) if c.data else None]
+            for c in new_comments]
+    return db.batch_insert('comment', columns, rows)
+
+
+def batch_store_new_comment_archives(new_comments: list, canonical_ids: list, archive_session_id: int, _) -> list:
+    columns = ['id_on_platform', 'url', 'post_url', 'post_id_on_platform', 'account_id_on_platform',
+               'account_url', 'parent_comment_id_on_platform', 'text', 'publication_date', 'data',
+               'archive_session_id', 'canonical_id']
+    rows = [[c.id_on_platform, c.url, c.post_url, c.post_id_on_platform,
+             c.account_id_on_platform, c.account_url, c.parent_comment_id_on_platform,
+             c.text, c.publication_date.isoformat() if c.publication_date else None,
+             json.dumps(c.data) if c.data else None,
+             archive_session_id, cid]
+            for c, cid in zip(new_comments, canonical_ids)]
+    return db.batch_insert('comment_archive', columns, rows)
 
 
 def incorporate_structures_into_db(
@@ -65,62 +292,124 @@ def incorporate_structures_into_db(
                     logger.warning(f"Skipping {skipped} {entity_config.key} with no id_on_platform")
                 entities = valid_entities
 
-            new_count = 0
-            updated_count = 0
+            if not entities:
+                logger.info(f"Processed {entity_config.key}: 0 new, 0 updated")
+                continue
+
             logger.debug(f"Processing {len(entities)} {entity_config.key}")
 
-            for entity in entities:
-                existing_canonical = entity_config.get_canonical(entity)
-                existing_canonical_id = existing_canonical.id if existing_canonical else None
+            # --- Phase 1: Batch-fetch existing canonicals (1-2 queries instead of N) ---
+            if entity_config.batch_get_canonicals:
+                existing_canonicals = entity_config.batch_get_canonicals(entities)
+            else:
+                existing_canonicals = [entity_config.get_canonical(e) for e in entities]
 
-                if entity_config.raw_entity_preprocessing is not None:
-                    entity = entity_config.raw_entity_preprocessing(entity, existing_canonical_id, archive_location)
+            new_pairs: list = []       # (entity, None)
+            existing_pairs: list = []  # (entity, canonical)
+            for entity, canonical in zip(entities, existing_canonicals):
+                if canonical is None:
+                    new_pairs.append((entity, None))
+                else:
+                    existing_pairs.append((entity, canonical))
 
-                if existing_canonical is None:
-                    # First time this entity has been seen anywhere.
-                    # Store the canonical directly from the extracted entity, then
-                    # insert the archive record pointing back to it.
+            existing_canonical_ids: list = [c.id for _, c in existing_pairs]
+
+            # --- Phase 2: Batch-fetch archive records; then fetch all archives only for
+            #              entities being re-processed (archive record already exists for
+            #              this session). First-time processing uses O(1) merge instead. ---
+            if entity_config.batch_get_archive_records and existing_canonical_ids:
+                archive_record_map = entity_config.batch_get_archive_records(existing_canonical_ids, archive_session_id)
+            else:
+                archive_record_map = {c.id: entity_config.get_archive_record(c.id, archive_session_id)
+                                      for _, c in existing_pairs}
+
+            # Entities whose archive record already exists must be fully re-synthesized
+            # so that the updated archive data correctly replaces the old contribution.
+            reprocess_ids = [c.id for _, c in existing_pairs if archive_record_map.get(c.id) is not None]
+            if reprocess_ids:
+                if entity_config.batch_get_all_archives:
+                    all_archives_map = entity_config.batch_get_all_archives(reprocess_ids)
+                else:
+                    all_archives_map = {c.id: entity_config.get_all_archives_for_canonical(c.id)
+                                        for _, c in existing_pairs if archive_record_map.get(c.id) is not None}
+            else:
+                all_archives_map = {}
+
+            # --- Phase 3: Process new entities ---
+            new_count = 0
+            if entity_config.batch_store_new_entities and entity_config.batch_store_new_entity_archives and new_pairs:
+                # Batch path: preprocess all, then multi-row INSERT for canonicals + archives
+                preprocessed_new = []
+                for entity, _ in new_pairs:
+                    if entity_config.raw_entity_preprocessing is not None:
+                        entity = entity_config.raw_entity_preprocessing(entity, None, archive_location)
+                    preprocessed_new.append(entity)
+                canonical_ids_new = entity_config.batch_store_new_entities(preprocessed_new, archive_location)
+                archive_ids_new = entity_config.batch_store_new_entity_archives(preprocessed_new, canonical_ids_new, archive_session_id, archive_location)
+                for entity, aid in zip(preprocessed_new, archive_ids_new):
+                    entity.id = aid
+                new_count = len(preprocessed_new)
+            else:
+                for entity, _ in new_pairs:
+                    if entity_config.raw_entity_preprocessing is not None:
+                        entity = entity_config.raw_entity_preprocessing(entity, None, archive_location)
                     canonical_id = entity_config.store_entity(entity, None, archive_location)
                     archive_id = entity_config.store_entity_archive(
                         entity, archive_session_id, None, canonical_id, archive_location
                     )
                     entity.id = archive_id
                     new_count += 1
-                else:
-                    # Entity already exists in the canonical table.
-                    # Upsert the archive record for this session, then re-synthesize
-                    # the canonical from all its archive records.
-                    existing_archive = entity_config.get_archive_record(existing_canonical_id, archive_session_id)
-                    existing_archive_id = existing_archive.id if existing_archive else None
 
-                    archive_entity = entity_config.merge(entity, existing_archive)
-                    archive_entity.id = existing_archive_id
-                    archive_entity.canonical_id = existing_canonical_id
+            # --- Phase 4: Process existing entities ---
+            updated_count = 0
+            for entity, existing_canonical in existing_pairs:
+                existing_canonical_id = existing_canonical.id
 
-                    archive_id = entity_config.store_entity_archive(
-                        archive_entity, archive_session_id, existing_archive_id, existing_canonical_id, archive_location
-                    )
-                    entity.id = archive_id
+                if entity_config.raw_entity_preprocessing is not None:
+                    entity = entity_config.raw_entity_preprocessing(entity, existing_canonical_id, archive_location)
 
-                    all_archives = entity_config.get_all_archives_for_canonical(existing_canonical_id)
+                existing_archive = archive_record_map.get(existing_canonical_id)
+                existing_archive_id = existing_archive.id if existing_archive else None
+
+                archive_entity = entity_config.merge(entity, existing_archive)
+                archive_entity.id = existing_archive_id
+                archive_entity.canonical_id = existing_canonical_id
+
+                archive_id = entity_config.store_entity_archive(
+                    archive_entity, archive_session_id, existing_archive_id, existing_canonical_id, archive_location
+                )
+                entity.id = archive_id
+
+                if existing_archive_id is not None:
+                    # Re-processing: archive record already existed, so the canonical's
+                    # prior contribution from this session must be replaced. Re-synthesize
+                    # from all archive records (which now include the just-updated one).
+                    all_archives = all_archives_map.get(existing_canonical_id, [])
                     synthesized = synthesize_from_archives(all_archives, entity_config.merge)
+                else:
+                    # First-time processing: canonical already embodies all prior sessions.
+                    # O(1): merge existing canonical with the new archive entity.
+                    synthesized = entity_config.merge(existing_canonical, archive_entity)
 
-                    # Identifier fields are immutable once set on the canonical —
-                    # re-synthesis may fill them in but must never clear them.
-                    _preserve_canonical_identifiers(synthesized, existing_canonical)
-                    synthesized.id = existing_canonical_id
+                # Identifier fields are immutable once set on the canonical.
+                preserve_canonical_identifiers(synthesized, existing_canonical)
+                synthesized.id = existing_canonical_id
 
-                    entity_config.store_entity(synthesized, existing_canonical, archive_location)
-                    updated_count += 1
+                entity_config.store_entity(synthesized, existing_canonical, archive_location)
+                updated_count += 1
 
             logger.info(f"Processed {entity_config.key}: {new_count} new, {updated_count} updated")
 
 
-def _preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: EntityBase) -> None:
+def preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: EntityBase) -> None:
     """
     Identifier fields on the canonical entity are used as stable external keys
     (e.g. in platform URLs) and must only grow, never shrink. Apply the same
     first-non-empty rule but always favouring the existing canonical value.
+
+    FK integer IDs (e.g. post_id, account_id) are also copied from the existing
+    canonical when the synthesized entity has None, to avoid redundant FK lookups
+    inside store_entity for updated entities.
     """
     if hasattr(synthesized, 'id_on_platform'):
         synthesized.id_on_platform = reconcile_primitives(
@@ -128,6 +417,12 @@ def _preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical:
         )
     if hasattr(synthesized, 'url'):
         synthesized.url = reconcile_primitives(existing_canonical.url, synthesized.url)
+    for fk_field in ('account_id', 'post_id', 'media_id', 'tagged_account_id',
+                     'follower_account_id', 'followed_account_id'):
+        if hasattr(synthesized, fk_field) and getattr(synthesized, fk_field) is None:
+            val = getattr(existing_canonical, fk_field, None)
+            if val is not None:
+                setattr(synthesized, fk_field, val)
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +731,13 @@ def get_all_archives_for_canonical_media(canonical_id: int) -> list[Media]:
     return [Media(**entry) for entry in (entries or [])]
 
 
+def initial_thumbnail_status(media: Media) -> str:
+    """Determine the thumbnail_status to assign when first inserting a media record."""
+    if media.local_url is None or media.media_type == 'audio':
+        return 'not_needed'
+    return 'pending'
+
+
 def store_media(media: Media, existing_media: Optional[Media], archive_location: Path) -> int:
     if media.post_id is None:
         stored_post = get_canonical_post(
@@ -469,8 +771,8 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
         return media.id
     else:
         return db.execute_query(
-            """INSERT INTO media (url, id_on_platform, post_id, local_url, media_type, data)
-               VALUES (%(url)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s)""",
+            """INSERT INTO media (url, id_on_platform, post_id, local_url, media_type, data, thumbnail_status)
+               VALUES (%(url)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s, %(thumbnail_status)s)""",
             {
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
@@ -478,6 +780,7 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                 "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
+                "thumbnail_status": initial_thumbnail_status(media),
             },
             return_type="id"
         )
@@ -1207,6 +1510,11 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity=store_account,
         store_entity_archive=store_account_archive,
         merge=reconcile_accounts,
+        batch_get_canonicals=lambda es: batch_get_canonicals_url_and_id(es, "account", Account),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "account_archive", sid, Account),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "account_archive", Account),
+        batch_store_new_entities=lambda es, loc: batch_store_new_accounts(es, loc),
+        batch_store_new_entity_archives=lambda es, ids, sid, loc: batch_store_new_account_archives(es, ids, sid, loc),
     ),
     EntityProcessingConfig(
         key="posts",
@@ -1217,6 +1525,11 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity=store_post,
         store_entity_archive=store_post_archive,
         merge=reconcile_posts,
+        batch_get_canonicals=lambda es: batch_get_canonicals_url_and_id(es, "post", Post),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "post_archive", sid, Post),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "post_archive", Post),
+        batch_store_new_entities=lambda es, loc: batch_store_new_posts(es, loc),
+        batch_store_new_entity_archives=lambda es, ids, sid, loc: batch_store_new_post_archives(es, ids, sid, loc),
     ),
     EntityProcessingConfig(
         key="media",
@@ -1228,6 +1541,11 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity_archive=store_media_archive,
         merge=reconcile_media,
         raw_entity_preprocessing=preprocess_media,
+        batch_get_canonicals=lambda es: batch_get_canonicals_url_and_id(es, "media", Media),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "media_archive", sid, Media),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "media_archive", Media),
+        batch_store_new_entities=lambda es, loc: batch_store_new_media(es, loc),
+        batch_store_new_entity_archives=lambda es, ids, sid, loc: batch_store_new_media_archives(es, ids, sid, loc),
     ),
     EntityProcessingConfig(
         key="comments",
@@ -1238,6 +1556,11 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity=store_comment,
         store_entity_archive=store_comment_archive,
         merge=reconcile_comments,
+        batch_get_canonicals=lambda es: batch_get_canonicals_url_and_id(es, "comment", Comment),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "comment_archive", sid, Comment),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "comment_archive", Comment),
+        batch_store_new_entities=lambda es, loc: batch_store_new_comments(es, loc),
+        batch_store_new_entity_archives=lambda es, ids, sid, loc: batch_store_new_comment_archives(es, ids, sid, loc),
     ),
     EntityProcessingConfig(
         key="likes",
@@ -1248,6 +1571,9 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity=store_post_like,
         store_entity_archive=store_post_like_archive,
         merge=reconcile_likes,
+        batch_get_canonicals=lambda es: batch_get_canonicals_id_only(es, "post_like", Like),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "post_like_archive", sid, Like),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "post_like_archive", Like),
     ),
     EntityProcessingConfig(
         key="tagged_accounts",
@@ -1258,6 +1584,9 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity=store_tagged_account,
         store_entity_archive=store_tagged_account_archive,
         merge=reconcile_tagged_accounts,
+        batch_get_canonicals=lambda es: batch_get_canonicals_id_only(es, "tagged_account", TaggedAccount),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "tagged_account_archive", sid, TaggedAccount),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "tagged_account_archive", TaggedAccount),
     ),
     EntityProcessingConfig(
         key="account_relations",
@@ -1268,5 +1597,8 @@ entity_types: list[EntityProcessingConfig] = [
         store_entity=store_account_relation,
         store_entity_archive=store_account_relation_archive,
         merge=reconcile_account_relations,
+        batch_get_canonicals=lambda es: batch_get_canonicals_id_only(es, "account_relation", AccountRelation),
+        batch_get_archive_records=lambda ids, sid: batch_get_archive_records(ids, "account_relation_archive", sid, AccountRelation),
+        batch_get_all_archives=lambda ids: batch_get_all_archives(ids, "account_relation_archive", AccountRelation),
     ),
 ]

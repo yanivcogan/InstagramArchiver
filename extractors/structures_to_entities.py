@@ -1,9 +1,13 @@
+import base64
 import json
+import time  # PROFILING
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Callable, TypeVar
+from urllib import parse as urllib_parse
 
+import ijson
 import pyperclip
 from pydantic import BaseModel
 
@@ -11,22 +15,121 @@ from extractors.entity_types import Post, Account, Media, \
     ExtractedEntitiesFlattened, Comment, Like, AccountRelation, \
     TaggedAccount, ExtractedEntitiesNested, AccountAndAssociatedEntities, PostAndAssociatedEntities, \
     MediaAndAssociatedEntities
-from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig, Photo
-from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig, Video
+from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig, Photo, \
+    _is_image_request, extract_xpv_asset_id as _extract_photo_asset_id
+from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig, Video, \
+    MediaTrack, MediaSegment, extract_xpv_asset_id as _extract_video_xpv_asset_id
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed, CommentsConnection
 from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1, LikersApiV1, FriendshipsApiV1
 from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection, FriendsListGraphQL
+from extractors.models_har import HarRequest
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 from extractors.structures_extraction import StructureType, structures_from_har
-from extractors.structures_extraction_api_v1 import ApiV1Response, ApiV1Context
-from extractors.structures_extraction_graphql import GraphQLResponse
-from extractors.structures_extraction_html import PageResponse
+from extractors.structures_extraction_api_v1 import ApiV1Response, ApiV1Context, extract_data_from_api_v1_entry
+from extractors.structures_extraction_graphql import GraphQLResponse, extract_data_from_graphql_entry
+from extractors.structures_extraction_html import PageResponse, extract_data_from_html_entry
 
 
 class ExtractedHarData(BaseModel):
     structures: list[StructureType]
     videos: list[Video]
     photos: list[Photo]
+
+
+def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], list[Photo]]:
+    """
+    Single streaming pass over a HAR file that simultaneously extracts:
+    - structures (GraphQL / API v1 / HTML responses)
+    - video segment maps (.mp4 entries)
+    - photo maps (image entries)
+
+    Replaces three separate ijson passes with one, roughly tripling parse speed.
+    """
+    structures: list[StructureType] = []
+    videos_dict: dict[int, Video] = {}
+    photos_dict: dict = {}  # keys are str (filename) or int (hash fallback)
+
+    with open(har_path, 'rb') as f:
+        for entry in ijson.items(f, 'log.entries.item'):
+            url: str = entry['request']['url']
+            content: dict = entry['response']['content']
+            mime: str = content.get('mimeType', '')
+
+            # --- Structures (GraphQL, API v1, HTML) ---
+            try:
+                if 'graphql/query' in url:
+                    res_json = content.get('text')
+                    if res_json:
+                        structure = extract_data_from_graphql_entry(json.loads(res_json), HarRequest(**entry['request']))
+                        if structure:
+                            structures.append(structure)
+                elif 'instagram.com/api/v1/media/' in url and not mime.startswith('text/html'):
+                    res_json = content.get('text')
+                    if res_json:
+                        structure = extract_data_from_api_v1_entry(json.loads(res_json), HarRequest(**entry['request']))
+                        if structure:
+                            structures.append(structure)
+                elif mime.startswith('text/html'):
+                    html_text = content.get('text')
+                    if html_text:
+                        structure = extract_data_from_html_entry(html_text, HarRequest(**entry['request']))
+                        if structure:
+                            structures.append(structure)
+            except Exception as e:
+                print(f"Error processing structures entry: {e}")
+                traceback.print_exc()
+
+            # --- Video segment maps (.mp4 entries with base64 content) ---
+            try:
+                if '.mp4' in url and 'text' in content:
+                    base_url = url.split('.mp4')[0]
+                    full_url = str(urllib_parse.urlunparse(
+                        urllib_parse.urlparse(url)._replace(
+                            query='&'.join(
+                                f"{k}={v[0]}" if len(v) == 1 else '&'.join(f"{k}={i}" for i in v)
+                                for k, v in urllib_parse.parse_qs(urllib_parse.urlparse(url).query).items()
+                                if k not in ('bytestart', 'byteend')
+                            )
+                        )
+                    ))
+                    xpv_asset_id = _extract_video_xpv_asset_id(url)
+                    filename = base_url.split('/')[-1]
+                    start = end = None
+                    if 'bytestart=' in url:
+                        start = int(url.split('bytestart=')[1].split('&')[0])
+                    if 'byteend=' in url:
+                        end = int(url.split('byteend=')[1].split('&')[0])
+                    segment_data = base64.b64decode(content['text'])
+                    if xpv_asset_id not in videos_dict:
+                        videos_dict[xpv_asset_id] = Video(xpv_asset_id=xpv_asset_id, fetched_tracks={})
+                    if filename not in videos_dict[xpv_asset_id].fetched_tracks:
+                        videos_dict[xpv_asset_id].fetched_tracks[filename] = MediaTrack(
+                            base_url=base_url, full_url=full_url, segments=[]
+                        )
+                    videos_dict[xpv_asset_id].fetched_tracks[filename].segments.append(
+                        MediaSegment(start=start, end=end, data=segment_data)
+                    )
+            except Exception as e:
+                print(f"Error processing video entry: {e}")
+                traceback.print_exc()
+
+            # --- Photo maps (image content entries) ---
+            try:
+                if _is_image_request(url) and 'text' in content:
+                    try:
+                        img_data = base64.b64decode(content['text'])
+                    except Exception:
+                        pass
+                    else:
+                        asset_id = _extract_photo_asset_id(url) or hash(url)
+                        img_filename = url.split('/')[-1].split('?')[0]
+                        if asset_id not in photos_dict:
+                            photos_dict[asset_id] = Photo(asset_id=str(asset_id), fetched_assets={}, url=url)
+                        photos_dict[asset_id].fetched_assets[img_filename] = img_data
+            except Exception:
+                pass
+
+    return structures, list(videos_dict.values()), list(photos_dict.values())
 
 
 def extract_data_from_har(
@@ -42,21 +145,26 @@ def extract_data_from_har(
 ) -> ExtractedHarData:
     archive_dir = har_path.parent
 
-    structures = structures_from_har(har_path)
+    _t = time.time(); structures, har_video_maps, har_photo_maps = _scan_har_once(har_path); _dt = time.time() - _t  # PROFILING
+    print(f"[PROF] extract_data_from_har: _scan_har_once={_dt:.3f}s ({len(structures)} structures, {len(har_video_maps)} video maps, {len(har_photo_maps)} photo maps)")  # PROFILING
 
-    videos = acquire_videos(
+    _t = time.time(); videos = acquire_videos(  # PROFILING
         har_path,
         archive_dir / "videos",
         structures=structures,
-        config=video_acquisition_config
-    )
+        config=video_acquisition_config,
+        har_video_maps=har_video_maps,
+    ); _dt = time.time() - _t  # PROFILING
+    print(f"[PROF] extract_data_from_har: acquire_videos={_dt:.3f}s ({len(videos)} videos)")  # PROFILING
 
-    photos = acquire_photos(
+    _t = time.time(); photos = acquire_photos(  # PROFILING
         har_path,
         archive_dir / "photos",
         structures=structures,
-        config=photo_acquisition_config
-    )
+        config=photo_acquisition_config,
+        har_photo_maps=har_photo_maps,
+    ); _dt = time.time() - _t  # PROFILING
+    print(f"[PROF] extract_data_from_har: acquire_photos={_dt:.3f}s ({len(photos)} photos)")  # PROFILING
 
     return ExtractedHarData(
         structures=structures,

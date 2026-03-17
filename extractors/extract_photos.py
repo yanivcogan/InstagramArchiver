@@ -311,7 +311,8 @@ def acquire_photos(
     har_path: Path,
     output_dir: Path = Path('../temp_photos'),
     structures: Optional[list[StructureType]] = None,
-    config: PhotoAcquisitionConfig = PhotoAcquisitionConfig()
+    config: PhotoAcquisitionConfig = PhotoAcquisitionConfig(),
+    har_photo_maps: Optional[list['Photo']] = None,
 ) -> list[Photo]:
     download_missing = config.download_missing
     download_media_not_in_structures = config.download_media_not_in_structures
@@ -321,7 +322,7 @@ def acquire_photos(
     os.makedirs(output_dir, exist_ok=True)
 
     existing = get_existing_photos(output_dir)
-    har_photos = extract_photo_maps(har_path)
+    har_photos = har_photo_maps if har_photo_maps is not None else extract_photo_maps(har_path)
     structure_photos = extract_photos_from_structures(structures or [])
 
     combined: dict[str, Photo] = {}

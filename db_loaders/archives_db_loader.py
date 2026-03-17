@@ -386,6 +386,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
             # --- Step 4: Save parsed content to database ---
             try:
                 logger.debug(f"Storing extracted structures...")
+                structures_json = json.dumps(extracted_data.model_dump(), default=str, ensure_ascii=False)
                 db.execute_query(
                     '''
                     UPDATE archive_session
@@ -401,7 +402,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                     ''',
                     {
                         "id": entry['id'],
-                        "structures": json.dumps(extracted_data.model_dump(), default=str, ensure_ascii=False),
+                        "structures": structures_json,
                         "parsing_code_version": PARSING_ALGORITHM_VERSION,
                         "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
                         "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str),

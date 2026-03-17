@@ -129,6 +129,7 @@ class Media(EntityBase):
     data: Optional[Any] = None
     annotation: Optional[str] = None
     thumbnail_path: Optional[str] = None
+    thumbnail_status: Optional[str] = None
 
     @field_validator('id_on_platform', 'post_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):

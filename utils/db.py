@@ -74,6 +74,35 @@ def transaction_batch():
         cnx.close()
 
 
+def batch_insert(table: str, columns: list, rows: list) -> list:
+    """
+    Perform a single multi-row INSERT and return the list of auto-increment IDs.
+    IDs are guaranteed consecutive for a single INSERT statement in InnoDB.
+    Must be called inside a transaction_batch() context.
+    """
+    if not rows:
+        return []
+    cnx = getattr(_local, "connection", None)
+    if cnx is None:
+        raise RuntimeError("batch_insert must be called inside a transaction_batch() context")
+    n = len(rows)
+    cols_sql = ', '.join(f'`{c}`' for c in columns)
+    row_ph = '(' + ', '.join(['%s'] * len(columns)) + ')'
+    values_sql = ', '.join([row_ph] * n)
+    query = f'INSERT INTO `{table}` ({cols_sql}) VALUES {values_sql}'
+    flat_args = [val for row in rows for val in row]
+    cursor = cnx.cursor(buffered=True)
+    try:
+        cursor.execute(query, flat_args)
+        first_id = cursor.lastrowid
+        return list(range(first_id, first_id + n))
+    except mysql.connector.Error as err:
+        logger.error("batch_insert failed: %s\nTable: %s\nColumns: %s", err, table, columns)
+        raise DbError(str(err)) from err
+    finally:
+        cursor.close()
+
+
 def execute_query(query, args, return_type: Literal["single_row", "rows", "id", "none", "debug"] = "rows"):
     if getattr(_local, "connection", None) is not None:
         # Reuse the open transaction connection on this thread.
