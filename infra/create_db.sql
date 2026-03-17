@@ -103,7 +103,9 @@ create table account_archive
     constraint account_archive_account_id_fk
         foreign key (canonical_id) references account (id),
     constraint account_archive_archive_session_id_fk
-        foreign key (archive_session_id) references archive_session (id)
+        foreign key (archive_session_id) references archive_session (id),
+    constraint uq_account_archive_canonical_session
+        unique (canonical_id, archive_session_id)
 )
     engine = InnoDB;
 
@@ -280,7 +282,9 @@ create table media_archive
     constraint media_archive_archive_session_id_fk
         foreign key (archive_session_id) references archive_session (id),
     constraint media_archive_media_id_fk
-        foreign key (canonical_id) references media (id)
+        foreign key (canonical_id) references media (id),
+    constraint uq_media_archive_canonical_session
+        unique (canonical_id, archive_session_id)
 )
     engine = InnoDB;
 
@@ -354,7 +358,9 @@ create table post_archive
     constraint post_archive_archive_session_id_fk
         foreign key (archive_session_id) references archive_session (id),
     constraint post_archive_post_id_fk
-        foreign key (canonical_id) references post (id)
+        foreign key (canonical_id) references post (id),
+    constraint uq_post_archive_canonical_session
+        unique (canonical_id, archive_session_id)
 )
     engine = InnoDB;
 
