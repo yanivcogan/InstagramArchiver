@@ -304,43 +304,40 @@ def incorporate_structures_into_db(
             else:
                 existing_canonicals = [entity_config.get_canonical(e) for e in entities]
 
-            new_pairs: list = []       # (entity, None)
-            existing_pairs: list = []  # (entity, canonical)
+            new_entities: list = []
+            existing_pairs: list = []  # (entity, existing_canonical)
             for entity, canonical in zip(entities, existing_canonicals):
                 if canonical is None:
-                    new_pairs.append((entity, None))
+                    new_entities.append(entity)
                 else:
                     existing_pairs.append((entity, canonical))
 
             existing_canonical_ids: list = [c.id for _, c in existing_pairs]
 
             # --- Phase 2: Batch-fetch archive records; then fetch all archives only for
-            #              entities being re-processed (archive record already exists for
-            #              this session). First-time processing uses O(1) merge instead. ---
+            #              entities being re-processed. First-time processing uses O(1) merge instead. ---
             if entity_config.batch_get_archive_records and existing_canonical_ids:
-                archive_record_map = entity_config.batch_get_archive_records(existing_canonical_ids, archive_session_id)
+                this_session_archive_by_canonical = entity_config.batch_get_archive_records(existing_canonical_ids, archive_session_id)
             else:
-                archive_record_map = {c.id: entity_config.get_archive_record(c.id, archive_session_id)
-                                      for _, c in existing_pairs}
+                this_session_archive_by_canonical = {c.id: entity_config.get_archive_record(c.id, archive_session_id)
+                                                     for _, c in existing_pairs}
 
-            # Entities whose archive record already exists must be fully re-synthesized
-            # so that the updated archive data correctly replaces the old contribution.
-            reprocess_ids = [c.id for _, c in existing_pairs if archive_record_map.get(c.id) is not None]
-            if reprocess_ids:
+            canonical_ids_to_reprocess = [c.id for _, c in existing_pairs if this_session_archive_by_canonical.get(c.id) is not None]
+            if canonical_ids_to_reprocess:
                 if entity_config.batch_get_all_archives:
-                    all_archives_map = entity_config.batch_get_all_archives(reprocess_ids)
+                    all_archives_by_canonical = entity_config.batch_get_all_archives(canonical_ids_to_reprocess)
                 else:
-                    all_archives_map = {c.id: entity_config.get_all_archives_for_canonical(c.id)
-                                        for _, c in existing_pairs if archive_record_map.get(c.id) is not None}
+                    all_archives_by_canonical = {c.id: entity_config.get_all_archives_for_canonical(c.id)
+                                                 for _, c in existing_pairs if this_session_archive_by_canonical.get(c.id) is not None}
             else:
-                all_archives_map = {}
+                all_archives_by_canonical = {}
 
             # --- Phase 3: Process new entities ---
             new_count = 0
-            if entity_config.batch_store_new_entities and entity_config.batch_store_new_entity_archives and new_pairs:
+            if entity_config.batch_store_new_entities and entity_config.batch_store_new_entity_archives and new_entities:
                 # Batch path: preprocess all, then multi-row INSERT for canonicals + archives
                 preprocessed_new = []
-                for entity, _ in new_pairs:
+                for entity in new_entities:
                     if entity_config.raw_entity_preprocessing is not None:
                         entity = entity_config.raw_entity_preprocessing(entity, None, archive_location)
                     preprocessed_new.append(entity)
@@ -350,14 +347,14 @@ def incorporate_structures_into_db(
                     entity.id = aid
                 new_count = len(preprocessed_new)
             else:
-                for entity, _ in new_pairs:
+                for entity in new_entities:
                     if entity_config.raw_entity_preprocessing is not None:
                         entity = entity_config.raw_entity_preprocessing(entity, None, archive_location)
                     canonical_id = entity_config.store_entity(entity, None, archive_location)
-                    archive_id = entity_config.store_entity_archive(
+                    saved_archive_id = entity_config.store_entity_archive(
                         entity, archive_session_id, None, canonical_id, archive_location
                     )
-                    entity.id = archive_id
+                    entity.id = saved_archive_id
                     new_count += 1
 
             # --- Phase 4: Process existing entities ---
@@ -368,34 +365,34 @@ def incorporate_structures_into_db(
                 if entity_config.raw_entity_preprocessing is not None:
                     entity = entity_config.raw_entity_preprocessing(entity, existing_canonical_id, archive_location)
 
-                existing_archive = archive_record_map.get(existing_canonical_id)
-                existing_archive_id = existing_archive.id if existing_archive else None
+                prior_run_archive = this_session_archive_by_canonical.get(existing_canonical_id)
+                prior_run_archive_id = prior_run_archive.id if prior_run_archive else None
+                is_reprocessing = prior_run_archive is not None
 
-                archive_entity = entity_config.merge(entity, existing_archive)
-                archive_entity.id = existing_archive_id
-                archive_entity.canonical_id = existing_canonical_id
+                merged_archive_record = entity_config.merge(entity, prior_run_archive)
+                merged_archive_record.id = prior_run_archive_id
+                merged_archive_record.canonical_id = existing_canonical_id
 
-                archive_id = entity_config.store_entity_archive(
-                    archive_entity, archive_session_id, existing_archive_id, existing_canonical_id, archive_location
+                saved_archive_id = entity_config.store_entity_archive(
+                    merged_archive_record, archive_session_id, prior_run_archive_id, existing_canonical_id, archive_location
                 )
-                entity.id = archive_id
+                entity.id = saved_archive_id
 
-                if existing_archive_id is not None:
-                    # Re-processing: archive record already existed, so the canonical's
-                    # prior contribution from this session must be replaced. Re-synthesize
-                    # from all archive records (which now include the just-updated one).
-                    all_archives = all_archives_map.get(existing_canonical_id, [])
-                    synthesized = synthesize_from_archives(all_archives, entity_config.merge)
+                if is_reprocessing:
+                    # This session's archive record already existed from a prior run — our update
+                    # replaced its old contribution, so re-derive the canonical from all sessions.
+                    all_archives = all_archives_by_canonical.get(existing_canonical_id, [])
+                    updated_canonical = synthesize_from_archives(all_archives, entity_config.merge)
                 else:
-                    # First-time processing: canonical already embodies all prior sessions.
-                    # O(1): merge existing canonical with the new archive entity.
-                    synthesized = entity_config.merge(existing_canonical, archive_entity)
+                    # First time for this session: canonical already embodies all prior sessions.
+                    # O(1): merge existing canonical with this session's archive record.
+                    updated_canonical = entity_config.merge(existing_canonical, merged_archive_record)
 
                 # Identifier fields are immutable once set on the canonical.
-                preserve_canonical_identifiers(synthesized, existing_canonical)
-                synthesized.id = existing_canonical_id
+                preserve_canonical_identifiers(updated_canonical, existing_canonical)
+                updated_canonical.id = existing_canonical_id
 
-                entity_config.store_entity(synthesized, existing_canonical, archive_location)
+                entity_config.store_entity(updated_canonical, existing_canonical, archive_location)
                 updated_count += 1
 
             logger.info(f"Processed {entity_config.key}: {new_count} new, {updated_count} updated")
