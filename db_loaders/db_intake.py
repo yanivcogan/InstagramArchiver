@@ -6,7 +6,7 @@ from typing import Optional, TypeVar, Generic, Callable
 from pydantic import BaseModel
 
 from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media
-from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
+from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media, synthesize_from_archives, reconcile_primitives
 from root_anchor import ROOT_DIR
 from utils import db
 
@@ -20,28 +20,37 @@ EntityType = TypeVar("EntityType", bound="EntityBase")
 class EntityProcessingConfig(BaseModel, Generic[EntityType]):
     key: str
     table: str
-    get_entity: Callable[[EntityType, Optional[int]], Optional[EntityType]]
+    get_canonical: Callable[[EntityType], Optional[EntityType]]
+    get_archive_record: Callable[[int, int], Optional[EntityType]]
+    get_all_archives_for_canonical: Callable[[int], list[EntityType]]
     raw_entity_preprocessing: Optional[Callable[[EntityType, Optional[int], Optional[Path]], EntityType]] = None
     store_entity: Callable[[EntityType, Optional[EntityType], Optional[Path]], int]
     store_entity_archive: Callable[[EntityType, int, Optional[int], Optional[int], Optional[Path]], int]
     merge: Callable[[EntityType, Optional[EntityType]], EntityType]
 
 
-def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archive_session_id: int, archive_location: Optional[Path]) -> None:
+def incorporate_structures_into_db(
+        structures: ExtractedEntitiesFlattened,
+        archive_session_id: int,
+        archive_location: Optional[Path]
+) -> None:
     """
     Process extracted entities and store them in the database.
     Creates both canonical records and archive-specific records for each entity.
+
+    Re-processing safety: if an archive session is processed more than once, archive
+    records for that session are updated in place (no duplicates). The canonical entity
+    is then re-synthesized from ALL its archive records (oldest-first, first-non-empty
+    wins). Identifier fields (id_on_platform, url) on the canonical are immutable once
+    set — re-synthesis can fill them in but never clears them.
     """
     logger.debug(f"Incorporating structures into DB for archive session {archive_session_id}")
 
-    # Use transaction batching - commits once at the end instead of after every query
-    # This provides ~5x speedup for bulk operations
     with db.transaction_batch():
         for entity_config in entity_types:
             entities: list = getattr(structures, entity_config.key, [])
 
-            # Posts without an id_on_platform cannot be identified or deduplicated;
-            # skip them rather than storing an unidentifiable record.
+            # Posts without an id_on_platform cannot be identified or deduplicated.
             if entity_config.key == "posts":
                 valid_entities = [e for e in entities if e.id_on_platform is not None]
                 skipped = len(entities) - len(valid_entities)
@@ -49,118 +58,108 @@ def incorporate_structures_into_db(structures: ExtractedEntitiesFlattened, archi
                     logger.warning(f"Skipping {skipped} post(s) with no id_on_platform")
                 entities = valid_entities
 
-            entity_count = len(entities)
             new_count = 0
             updated_count = 0
-
-            logger.debug(f"Processing {entity_count} {entity_config.key}")
+            logger.debug(f"Processing {len(entities)} {entity_config.key}")
 
             for entity in entities:
-                # Check if entity already exists in canonical table
-                existing_entity = entity_config.get_entity(entity, None)
-                existing_entity_id = existing_entity.id if existing_entity is not None else None
+                existing_canonical = entity_config.get_canonical(entity)
+                existing_canonical_id = existing_canonical.id if existing_canonical else None
 
-                # Apply any preprocessing (e.g., path normalization for media)
                 if entity_config.raw_entity_preprocessing is not None:
-                    entity = entity_config.raw_entity_preprocessing(entity, existing_entity_id, archive_location)
+                    entity = entity_config.raw_entity_preprocessing(entity, existing_canonical_id, archive_location)
 
-                # Store/update the canonical entity record
-                entity_id = entity_config.store_entity(
-                    entity_config.merge(entity, existing_entity),
-                    existing_entity,
-                    archive_location
-                )
-
-                if existing_entity_id is None:
+                if existing_canonical is None:
+                    # First time this entity has been seen anywhere.
+                    # Store the canonical directly from the extracted entity, then
+                    # insert the archive record pointing back to it.
+                    canonical_id = entity_config.store_entity(entity, None, archive_location)
+                    archive_id = entity_config.store_entity_archive(
+                        entity, archive_session_id, None, canonical_id, archive_location
+                    )
+                    entity.id = archive_id
                     new_count += 1
                 else:
+                    # Entity already exists in the canonical table.
+                    # Upsert the archive record for this session, then re-synthesize
+                    # the canonical from all its archive records.
+                    existing_archive = entity_config.get_archive_record(existing_canonical_id, archive_session_id)
+                    existing_archive_id = existing_archive.id if existing_archive else None
+
+                    archive_entity = entity_config.merge(entity, existing_archive)
+                    archive_entity.id = existing_archive_id
+                    archive_entity.canonical_id = existing_canonical_id
+
+                    archive_id = entity_config.store_entity_archive(
+                        archive_entity, archive_session_id, existing_archive_id, existing_canonical_id, archive_location
+                    )
+                    entity.id = archive_id
+
+                    all_archives = entity_config.get_all_archives_for_canonical(existing_canonical_id)
+                    synthesized = synthesize_from_archives(all_archives, entity_config.merge)
+
+                    # Identifier fields are immutable once set on the canonical —
+                    # re-synthesis may fill them in but must never clear them.
+                    _preserve_canonical_identifiers(synthesized, existing_canonical)
+                    synthesized.id = existing_canonical_id
+
+                    entity_config.store_entity(synthesized, existing_canonical, archive_location)
                     updated_count += 1
-
-                # Now handle the archive-specific record
-                existing_entity_within_archive = entity_config.get_entity(
-                    existing_entity, archive_session_id
-                ) if existing_entity else None
-                existing_entity_within_archive_id = existing_entity_within_archive.id if existing_entity_within_archive is not None else None
-
-                entity_within_archive_for_storage = entity_config.merge(entity, existing_entity_within_archive)
-                entity_within_archive_for_storage.canonical_id = entity_id
-                entity_within_archive_for_storage.id = existing_entity_within_archive_id
-
-                entity_within_archive_id = entity_config.store_entity_archive(
-                    entity_within_archive_for_storage,
-                    archive_session_id,
-                    existing_entity_within_archive_id,
-                    entity_id,
-                    archive_location
-                )
-                entity.id = entity_within_archive_id
 
             logger.info(f"Processed {entity_config.key}: {new_count} new, {updated_count} updated")
 
 
-def get_stored_account_archive(account: Account, archive_session_id: Optional[int] = None) -> Optional[Account]:
+def _preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: EntityBase) -> None:
+    """
+    Identifier fields on the canonical entity are used as stable external keys
+    (e.g. in platform URLs) and must only grow, never shrink. Apply the same
+    first-non-empty rule but always favouring the existing canonical value.
+    """
+    if hasattr(synthesized, 'id_on_platform'):
+        synthesized.id_on_platform = reconcile_primitives(
+            existing_canonical.id_on_platform, synthesized.id_on_platform
+        )
+    if hasattr(synthesized, 'url'):
+        synthesized.url = reconcile_primitives(existing_canonical.url, synthesized.url)
+
+
+# ---------------------------------------------------------------------------
+# Account
+# ---------------------------------------------------------------------------
+
+def get_canonical_account(account: Account) -> Optional[Account]:
     entry = db.execute_query(
-        f'''SELECT * 
-           FROM account{'_archive' if archive_session_id else ''}
-           WHERE 
-               ((url=%(url)s AND url IS NOT NULL) OR (id_on_platform=%(id_on_platform)s AND id_on_platform IS NOT NULL))
-             {'AND archive_session_id=%(archive_session_id)s' if archive_session_id else ''}
-        ''',
-        {
-            "url": account.url,
-            "id_on_platform": account.id_on_platform,
-            "archive_session_id": archive_session_id
-        },
+        """SELECT * FROM account
+           WHERE (url = %(url)s AND url IS NOT NULL)
+              OR (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
+           LIMIT 1""",
+        {"url": account.url, "id_on_platform": account.id_on_platform},
         return_type="single_row"
     )
-    if not entry:
-        return None
-    return Account(**entry)
+    return Account(**entry) if entry else None
 
 
-def get_stored_post_archive(post: Post, archive_session_id: Optional[int] = None) -> Optional[Post]:
+def get_archive_record_account(canonical_id: int, archive_session_id: int) -> Optional[Account]:
     entry = db.execute_query(
-        f'''SELECT * 
-           FROM post{'_archive' if archive_session_id else ''}
-           WHERE 
-               ((url=%(url)s AND url IS NOT NULL) OR (id_on_platform=%(id_on_platform)s AND id_on_platform IS NOT NULL))
-             {'AND archive_session_id=%(archive_session_id)s' if archive_session_id else ''}
-        ''',
-        {
-            "url": post.url,
-            "id_on_platform": post.id_on_platform,
-            "archive_session_id": archive_session_id
-        },
+        """SELECT * FROM account_archive
+           WHERE canonical_id = %(canonical_id)s
+             AND archive_session_id = %(archive_session_id)s""",
+        {"canonical_id": canonical_id, "archive_session_id": archive_session_id},
         return_type="single_row"
     )
-    if not entry:
-        return None
-    return Post(**entry)
+    return Account(**entry) if entry else None
 
 
-def get_stored_media_archive(media: Media, archive_session_id: Optional[int] = None) -> Optional[Media]:
-    entry = db.execute_query(
-        f'''SELECT * 
-           FROM media{'_archive' if archive_session_id else ''}
-           WHERE 
-               ((url=%(url)s AND url IS NOT NULL) OR (id_on_platform=%(id_on_platform)s AND id_on_platform IS NOT NULL))
-             {'AND archive_session_id=%(archive_session_id)s' if archive_session_id else ''}
-        ''',
-        {
-            "url": media.url,
-            "id_on_platform": media.id_on_platform,
-            "archive_session_id": archive_session_id
-        },
-        return_type="single_row"
+def get_all_archives_for_canonical_account(canonical_id: int) -> list[Account]:
+    entries = db.execute_query(
+        "SELECT * FROM account_archive WHERE canonical_id = %(canonical_id)s",
+        {"canonical_id": canonical_id},
+        return_type="rows"
     )
-    if not entry:
-        return None
-    return Media(**entry)
+    return [Account(**entry) for entry in (entries or [])]
 
 
-def store_account(
-        account: Account, existing_account: Optional[Account], _: Optional[Path]
-) -> int:
+def store_account(account: Account, existing_account: Optional[Account], _: Optional[Path]) -> int:
     account_identifiers: list[str] = (existing_account.identifiers if existing_account else None) or []
     if account.id_on_platform and f"id_{account.id_on_platform}" not in account_identifiers:
         account_identifiers.append(f"id_{account.id_on_platform}")
@@ -183,13 +182,13 @@ def store_account(
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
-                "identifiers": json.dumps(account_identifiers)
+                "identifiers": json.dumps(account_identifiers),
             },
             return_type="none"
         )
         return account.id
     else:
-        account_id = db.execute_query(
+        return db.execute_query(
             """INSERT INTO account (url, id_on_platform, identifiers, display_name, bio, data)
                VALUES (%(url)s, %(id_on_platform)s, %(identifiers)s, %(display_name)s, %(bio)s, %(data)s)""",
             {
@@ -198,11 +197,10 @@ def store_account(
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
-                "identifiers": json.dumps(account_identifiers)
+                "identifiers": json.dumps(account_identifiers),
             },
             return_type="id"
         )
-        return account_id
 
 
 def store_account_archive(
@@ -231,13 +229,11 @@ def store_account_archive(
             },
             return_type="none"
         )
-        return account.id
+        return existing_id
     else:
-        account_id = db.execute_query(
-            """INSERT INTO account_archive (url, id_on_platform, display_name, bio, data, archive_session_id,
-                                            canonical_id)
-               VALUES (%(url)s, %(id_on_platform)s, %(display_name)s, %(bio)s, %(data)s, %(archive_session_id)s,
-                       %(canonical_id)s)""",
+        return db.execute_query(
+            """INSERT INTO account_archive (url, id_on_platform, display_name, bio, data, archive_session_id, canonical_id)
+               VALUES (%(url)s, %(id_on_platform)s, %(display_name)s, %(bio)s, %(data)s, %(archive_session_id)s, %(canonical_id)s)""",
             {
                 "id_on_platform": account.id_on_platform,
                 "url": account.url,
@@ -245,24 +241,57 @@ def store_account_archive(
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
                 "archive_session_id": archive_session_id,
-                "canonical_id": canonical_id
+                "canonical_id": canonical_id,
             },
             return_type="id"
         )
-        return account_id
 
 
-def store_post(
-        post: Post, existing_post: Optional[Post], _: Optional[Path]
-) -> int:
+# ---------------------------------------------------------------------------
+# Post
+# ---------------------------------------------------------------------------
+
+def get_canonical_post(post: Post) -> Optional[Post]:
+    entry = db.execute_query(
+        """SELECT * FROM post
+           WHERE (url = %(url)s AND url IS NOT NULL)
+              OR (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
+           LIMIT 1""",
+        {"url": post.url, "id_on_platform": post.id_on_platform},
+        return_type="single_row"
+    )
+    return Post(**entry) if entry else None
+
+
+def get_archive_record_post(canonical_id: int, archive_session_id: int) -> Optional[Post]:
+    entry = db.execute_query(
+        """SELECT * FROM post_archive
+           WHERE canonical_id = %(canonical_id)s
+             AND archive_session_id = %(archive_session_id)s""",
+        {"canonical_id": canonical_id, "archive_session_id": archive_session_id},
+        return_type="single_row"
+    )
+    return Post(**entry) if entry else None
+
+
+def get_all_archives_for_canonical_post(canonical_id: int) -> list[Post]:
+    entries = db.execute_query(
+        "SELECT * FROM post_archive WHERE canonical_id = %(canonical_id)s",
+        {"canonical_id": canonical_id},
+        return_type="rows"
+    )
+    return [Post(**entry) for entry in (entries or [])]
+
+
+def store_post(post: Post, existing_post: Optional[Post], _: Optional[Path]) -> int:
     if post.account_id is None:
-        stored_account = get_stored_account_archive(
-            Account(url=post.account_url, id_on_platform=post.account_id_on_platform), None
+        stored_account = get_canonical_account(
+            Account(url=post.account_url, id_on_platform=post.account_id_on_platform)
         )
         if stored_account is None:
-            raise ValueError("Post must have account_id set before storing.")
-        else:
-            post.account_id = stored_account.id
+            raise ValueError(f"Cannot store post {post.id_on_platform!r}: account not found "
+                             f"(url={post.account_url!r}, id_on_platform={post.account_id_on_platform!r})")
+        post.account_id = stored_account.id
     if existing_post is not None:
         db.execute_query(
             """UPDATE post
@@ -274,7 +303,7 @@ def store_post(
                    data             = %(data)s
                WHERE id = %(id)s""",
             {
-                "id": existing_post.id,
+                "id": post.id,
                 "url": post.url,
                 "id_on_platform": post.id_on_platform,
                 "account_id": post.account_id,
@@ -286,7 +315,7 @@ def store_post(
         )
         return post.id
     else:
-        post_id = db.execute_query(
+        return db.execute_query(
             """INSERT INTO post (url, id_on_platform, account_id, publication_date, caption, data)
                VALUES (%(url)s, %(id_on_platform)s, %(account_id)s, %(publication_date)s, %(caption)s, %(data)s)""",
             {
@@ -299,7 +328,6 @@ def store_post(
             },
             return_type="id"
         )
-        return post_id
 
 
 def store_post_archive(
@@ -328,17 +356,19 @@ def store_post_archive(
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
                 "account_url": post.account_url,
-                "account_id_on_platform": post.account_id_on_platform
+                "account_id_on_platform": post.account_id_on_platform,
             },
             return_type="none"
         )
-        return post.id
+        return existing_id
     else:
-        post_id = db.execute_query(
-            """INSERT INTO post_archive (url, id_on_platform, publication_date, caption, data, archive_session_id,
-                                         canonical_id, account_url, account_id_on_platform)
-               VALUES (%(url)s, %(id_on_platform)s, %(publication_date)s, %(caption)s, %(data)s, %(archive_session_id)s,
-                       %(canonical_id)s, %(account_url)s, %(account_id_on_platform)s)""",
+        return db.execute_query(
+            """INSERT INTO post_archive
+                   (url, id_on_platform, publication_date, caption, data,
+                    archive_session_id, canonical_id, account_url, account_id_on_platform)
+               VALUES
+                   (%(url)s, %(id_on_platform)s, %(publication_date)s, %(caption)s, %(data)s,
+                    %(archive_session_id)s, %(canonical_id)s, %(account_url)s, %(account_id_on_platform)s)""",
             {
                 "url": post.url,
                 "id_on_platform": post.id_on_platform,
@@ -348,30 +378,66 @@ def store_post_archive(
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
                 "account_url": post.account_url,
-                "account_id_on_platform": post.account_id_on_platform
+                "account_id_on_platform": post.account_id_on_platform,
             },
             return_type="id"
         )
-        return post_id
 
+
+# ---------------------------------------------------------------------------
+# Media
+# ---------------------------------------------------------------------------
 
 def preprocess_media(media: Media, _: Optional[int], archive_location: Path) -> Media:
-    local_url = (f"{LOCAL_ARCHIVES_DIR_ALIAS}/" + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()) if media.local_url is not None else None
+    local_url = (
+        f"{LOCAL_ARCHIVES_DIR_ALIAS}/"
+        + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()
+    ) if media.local_url is not None else None
     media.local_url = local_url
     return media
 
 
-def store_media(
-        media: Media, existing_media: Optional[Media], archive_location: Path
-) -> int:
+def get_canonical_media(media: Media) -> Optional[Media]:
+    entry = db.execute_query(
+        """SELECT * FROM media
+           WHERE (url = %(url)s AND url IS NOT NULL)
+              OR (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
+           LIMIT 1""",
+        {"url": media.url, "id_on_platform": media.id_on_platform},
+        return_type="single_row"
+    )
+    return Media(**entry) if entry else None
+
+
+def get_archive_record_media(canonical_id: int, archive_session_id: int) -> Optional[Media]:
+    entry = db.execute_query(
+        """SELECT * FROM media_archive
+           WHERE canonical_id = %(canonical_id)s
+             AND archive_session_id = %(archive_session_id)s""",
+        {"canonical_id": canonical_id, "archive_session_id": archive_session_id},
+        return_type="single_row"
+    )
+    return Media(**entry) if entry else None
+
+
+def get_all_archives_for_canonical_media(canonical_id: int) -> list[Media]:
+    entries = db.execute_query(
+        "SELECT * FROM media_archive WHERE canonical_id = %(canonical_id)s",
+        {"canonical_id": canonical_id},
+        return_type="rows"
+    )
+    return [Media(**entry) for entry in (entries or [])]
+
+
+def store_media(media: Media, existing_media: Optional[Media], archive_location: Path) -> int:
     if media.post_id is None:
-        stored_post = get_stored_post_archive(
-            Post(url=media.post_url, id_on_platform=media.post_id_on_platform), None
+        stored_post = get_canonical_post(
+            Post(url=media.post_url, id_on_platform=media.post_id_on_platform)
         )
         if stored_post is None:
-            raise ValueError("Media must have post_id set before storing.")
-        else:
-            media.post_id = stored_post.id
+            raise ValueError(f"Cannot store media {media.id_on_platform!r}: post not found "
+                             f"(url={media.post_url!r}, id_on_platform={media.post_id_on_platform!r})")
+        media.post_id = stored_post.id
     if existing_media is not None:
         db.execute_query(
             """UPDATE media
@@ -383,7 +449,7 @@ def store_media(
                    data           = %(data)s
                WHERE id = %(id)s""",
             {
-                "id": existing_media.id,
+                "id": media.id,
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
@@ -395,7 +461,7 @@ def store_media(
         )
         return media.id
     else:
-        media_id = db.execute_query(
+        return db.execute_query(
             """INSERT INTO media (url, id_on_platform, post_id, local_url, media_type, data)
                VALUES (%(url)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s)""",
             {
@@ -408,7 +474,6 @@ def store_media(
             },
             return_type="id"
         )
-        return media_id
 
 
 def store_media_archive(
@@ -437,17 +502,19 @@ def store_media_archive(
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
                 "post_url": media.post_url,
-                "post_id_on_platform": media.post_id_on_platform
+                "post_id_on_platform": media.post_id_on_platform,
             },
             return_type="none"
         )
-        return media.id
+        return existing_id
     else:
-        media_id = db.execute_query(
-            """INSERT INTO media_archive (url, id_on_platform, local_url, media_type, data, archive_session_id,
-                                          canonical_id, post_url, post_id_on_platform)
-               VALUES (%(url)s, %(id_on_platform)s, %(local_url)s, %(media_type)s, %(data)s, %(archive_session_id)s,
-                       %(canonical_id)s, %(post_url)s, %(post_id_on_platform)s)""",
+        return db.execute_query(
+            """INSERT INTO media_archive
+                   (url, id_on_platform, local_url, media_type, data,
+                    archive_session_id, canonical_id, post_url, post_id_on_platform)
+               VALUES
+                   (%(url)s, %(id_on_platform)s, %(local_url)s, %(media_type)s, %(data)s,
+                    %(archive_session_id)s, %(canonical_id)s, %(post_url)s, %(post_id_on_platform)s)""",
             {
                 "url": media.url,
                 "id_on_platform": media.id_on_platform,
@@ -457,37 +524,46 @@ def store_media_archive(
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
                 "post_url": media.post_url,
-                "post_id_on_platform": media.post_id_on_platform
+                "post_id_on_platform": media.post_id_on_platform,
             },
             return_type="id"
         )
-        return media_id
 
+
+# ---------------------------------------------------------------------------
+# Entity processing registry
+# ---------------------------------------------------------------------------
 
 entity_types: list[EntityProcessingConfig] = [
     EntityProcessingConfig(
         key="accounts",
         table="account",
-        get_entity=get_stored_account_archive,
+        get_canonical=get_canonical_account,
+        get_archive_record=get_archive_record_account,
+        get_all_archives_for_canonical=get_all_archives_for_canonical_account,
         store_entity=store_account,
         store_entity_archive=store_account_archive,
-        merge=reconcile_accounts
+        merge=reconcile_accounts,
     ),
     EntityProcessingConfig(
         key="posts",
         table="post",
-        get_entity=get_stored_post_archive,
+        get_canonical=get_canonical_post,
+        get_archive_record=get_archive_record_post,
+        get_all_archives_for_canonical=get_all_archives_for_canonical_post,
         store_entity=store_post,
         store_entity_archive=store_post_archive,
-        merge=reconcile_posts
+        merge=reconcile_posts,
     ),
     EntityProcessingConfig(
         key="media",
         table="media",
-        get_entity=get_stored_media_archive,
+        get_canonical=get_canonical_media,
+        get_archive_record=get_archive_record_media,
+        get_all_archives_for_canonical=get_all_archives_for_canonical_media,
         store_entity=store_media,
         store_entity_archive=store_media_archive,
         merge=reconcile_media,
-        raw_entity_preprocessing=preprocess_media
+        raw_entity_preprocessing=preprocess_media,
     ),
 ]
