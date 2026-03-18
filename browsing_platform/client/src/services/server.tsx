@@ -1,4 +1,3 @@
-import fetch, {Headers} from 'node-fetch';
 import config from './config';
 import PubSub from "pubsub-js";
 import events from "../lib/events";
@@ -139,14 +138,6 @@ export const anchor_local_static_files = (path?: string) => {
     } else if (path && path.startsWith("local_thumbnails")) {
         //  path = path.replace("local_thumbnails", "http://127.0.0.1:4444/thumbnails");
         path = path.replace("local_thumbnails", `${baseUrl}/thumbnails`);
-    }
-    const token = cookie.get("token");
-    if (token) {
-        if (path.indexOf("?") === -1) {
-            path += "?token=" + token;
-        } else {
-            path += "&token=" + token;
-        }
     }
     return path;
 }

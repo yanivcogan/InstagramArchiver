@@ -27,7 +27,7 @@ def package_archives_zip():
     root_archives = Path(ROOT_DIR) / "archives"
     archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
 
-    root_zips = Path(ROOT_DIR) / "packaged_archives"
+    root_zips = Path(ROOT_DIR) / "utils" / "data_transfers" / "packaged_archives"
     packaged_list_path = root_zips / "packaged_list.txt"
     if packaged_list_path.exists():
         with packaged_list_path.open("r", encoding="utf-8") as f:
@@ -75,7 +75,7 @@ def package_archives_zstd():
     root_archives = Path(ROOT_DIR) / "archives"
     archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
 
-    root_zips = Path(ROOT_DIR) / "packaged_archives"
+    root_zips = Path(ROOT_DIR) / "utils" / "data_transfers" / "packaged_archives"
     packaged_list_path = root_zips / "packaged_list_zstd.txt"
     if packaged_list_path.exists():
         with packaged_list_path.open("r", encoding="utf-8") as f:

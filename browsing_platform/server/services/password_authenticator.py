@@ -22,12 +22,13 @@ def hash_password(password: str) -> tuple[str, str]:
     h = _ph.hash(password)
     return h, "argon2id"
 
-def verify_password(stored_hash: str, provided: str) -> bool:
+def verify_password(stored_hash: str, provided: str) -> bool | str:
+    """Verify a password. Returns True on match, False on mismatch, or a new hash string
+    if the hash needs to be upgraded (caller must persist it)."""
     try:
         _ph.verify(stored_hash, provided)
         if _ph.check_needs_rehash(stored_hash):
-            # Optional: return flag so caller re-saves upgraded hash
-            pass
+            return _ph.hash(provided)
         return True
     except argon_exc.VerifyMismatchError:
         return False
@@ -74,6 +75,13 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             {"id": user["id"]},
             "none"
         )
+        if isinstance(ok, str):
+            # Hash needs upgrading — persist the new hash transparently
+            db.execute_query(
+                "UPDATE user SET password_hash=%(h)s WHERE id=%(id)s",
+                {"h": ok, "id": user["id"]},
+                "none"
+            )
         db.execute_query(
             '''INSERT INTO token (user_id, token) VALUES (%(user_id)s, %(token)s)'''
             , {"user_id": user["id"], "token": token}, "id"
@@ -81,7 +89,7 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
         log_event(
             "login_attempt", None,
             "{'success': true}",
-            "{'email': " + email + "}"
+            f"{{'email': {email!r}}}"
         )
         return {"token": token, "permissions": user["admin"]}
     else:

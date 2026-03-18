@@ -44,6 +44,10 @@ def check_token(token: Optional[str]) -> TokenPermissions:
         else:
             token = Token(**token_check)
             if token.last_use > datetime.now() - TOKEN_EXPIRY:
+                db.execute_query(
+                    "UPDATE token SET last_use = NOW() WHERE token = %(token)s",
+                    {"token": token.token}, "none"
+                )
                 return TokenPermissions(valid=True, admin=(token.admin ==1), user_id=token.user_id)
             return TokenPermissions(valid=False, admin=False, user_id=None)
     except Exception:

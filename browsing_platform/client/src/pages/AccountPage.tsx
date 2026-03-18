@@ -1,5 +1,5 @@
-import React from 'react';
-import withRouter, {IRouterProps} from "../services/withRouter";
+import React, {useEffect, useState} from 'react';
+import {useParams, useSearchParams} from "react-router";
 import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchAccount, fetchArchivingSessionsAccount} from "../services/DataFetcher";
@@ -11,117 +11,51 @@ import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
 import cookie from "js-cookie";
 import {getShareTokenFromHref} from "../services/linkSharing";
 
-type IProps = {} & IRouterProps;
+export default function AccountPage() {
+    const {id: idParam} = useParams();
+    const [searchParams] = useSearchParams();
 
-interface IState {
-    id: number | null;
-    data: IExtractedEntitiesNested | null;
-    loadingData: boolean;
-    sessions: IArchiveSession[] | null;
-    loadingSessions: boolean;
+    const id = idParam === undefined ? null : parseInt(idParam);
+    const exportMode = searchParams.get("export") === "1";
+    const highlightRelationId = searchParams.get('relation_id') ? parseInt(searchParams.get('relation_id')!) : undefined;
+    const shareMode = !!getShareTokenFromHref();
 
-    showAllPosts: boolean;
-    hideHeader: boolean;
-    hideInnerLinks: boolean;
-    disableAnnotator: boolean;
-    preloadMetadata: boolean;
-}
+    const showAllPosts = exportMode;
+    const hideHeader = exportMode || shareMode;
+    const hideInnerLinks = exportMode;
+    const disableAnnotator = exportMode || shareMode;
+    const preloadMetadata = exportMode;
 
-class AccountPage extends React.Component<IProps, IState> {
-    constructor(props: IProps) {
-        super(props);
-        const idArg = this.props.params.id;
-        const id = idArg === undefined ? null : parseInt(idArg);
+    const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
+    const [loadingData, setLoadingData] = useState(id !== null);
+    const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
+    const [loadingSessions, setLoadingSessions] = useState(false);
 
-        const export_mode = this.props.searchParams.get("export") === "1";
-        const config = !export_mode ? {
-            showAllPosts: false,
-            hideHeader: false,
-            hideInnerLinks: false,
-            disableAnnotator: false,
-            preloadMetadata: false,
-        } : {
-            showAllPosts: true,
-            hideHeader: true,
-            hideInnerLinks: true,
-            disableAnnotator: true,
-            preloadMetadata: true,
-        }
-
-        const shareMode = !!getShareTokenFromHref();
-        if(shareMode){
-            config.hideHeader = true;
-            config.disableAnnotator = true
-        }
-
-        this.state = {
-            id,
-            data: null,
-            loadingData: id !== null,
-            sessions: null,
-            loadingSessions: false,
-            ...config,
-        }
-    }
-
-    componentDidUpdate() {
-        const id_param = this.props.params.id;
-        const id = id_param === undefined ? null : parseInt(id_param);
-        if (id !== this.state.id) {
-            this.setState((curr) => ({...curr, id}), async () => {
-                await Promise.all([
-                    this.fetchData(),
-                    this.fetchSessions(),
-                ])
-            })
-        }
-    }
-
-    async componentDidMount() {
-        await Promise.all([
-            this.fetchData(),
-            this.fetchSessions(),
-        ])
-    }
-
-    fetchData = async () => {
-        const id = this.state.id;
-        if (id === null) {
-            return;
-        }
-        this.setState((curr) => ({...curr, loadingData: true}), async () => {
-            const data = await fetchAccount(
-                id,
-                {
-                    flattened_entities_transform: {
-                        strip_raw_data: !this.state.preloadMetadata,
-                        retain_only_media_with_local_files: true,
-                        local_files_root: null,
-                    },
-                    nested_entities_transform: {
-                        retain_only_posts_with_media: true,
-                        retain_only_accounts_with_posts: false,
-                    }
-                }
-            )
-            this.setState((curr) => ({...curr, data, loadingData: false}))
+    useEffect(() => {
+        if (id === null) return;
+        setLoadingData(true);
+        setLoadingSessions(true);
+        fetchAccount(id, {
+            flattened_entities_transform: {
+                strip_raw_data: !preloadMetadata,
+                retain_only_media_with_local_files: true,
+                local_files_root: null,
+            },
+            nested_entities_transform: {
+                retain_only_posts_with_media: true,
+                retain_only_accounts_with_posts: false,
+            }
+        }).then(data => {
+            setData(data);
+            setLoadingData(false);
         });
-    }
-
-    fetchSessions = async () => {
-        const id = this.state.id;
-        if (id === null) {
-            return;
-        }
-        this.setState((curr) => ({...curr, loadingSessions: true}), async () => {
-            const sessions = await fetchArchivingSessionsAccount(id, {});
-            this.setState((curr) => ({...curr, sessions, loadingSessions: false}))
+        fetchArchivingSessionsAccount(id, {}).then(sessions => {
+            setSessions(sessions);
+            setLoadingSessions(false);
         });
-    }
+    }, [id]);
 
-    renderData() {
-        const data = this.state.data;
-        const loadingData = this.state.loadingData;
+    const renderData = () => {
         if (loadingData) {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
                 <CircularProgress/>
@@ -132,14 +66,13 @@ class AccountPage extends React.Component<IProps, IState> {
         }
         return <EntitiesViewer
             entities={data}
+            highlightRelationId={highlightRelationId}
             viewerConfig={
                 new EntityViewerConfig({
-                    all: {
-                        hideInnerLinks: this.state.hideInnerLinks,
-                    },
+                    all: {hideInnerLinks},
                     account: {
-                        annotator: this.state.disableAnnotator ? "disable" : "show",
-                        postsPageSize: this.state.showAllPosts ? null : 5,
+                        annotator: disableAnnotator ? "disable" : "show",
+                        postsPageSize: showAllPosts ? null : 5,
                     },
                     media: {
                         style: {
@@ -151,51 +84,28 @@ class AccountPage extends React.Component<IProps, IState> {
                 })
             }
         />
-    }
+    };
 
-    render() {
-        const entityId = this.state.id;
-        const isLoggedIn = !!(cookie.get("token"));
-        return <div className={"page-wrap"}>
-            {
-                <TopNavBar hideMenuButton={this.state.hideHeader}>
-                    <Stack
-                        direction={"row"}
-                        alignItems={"center"} justifyContent={"space-between"}
-                        gap={1}
-                        sx={{width: '100%'}}
-                    >
-                        <Stack direction={"row"} alignItems={"center"} gap={1}>
-                            <Typography>
-                                Account Data
-                            </Typography>
-                            {
-                                this.state.data ?
-                                    <Typography>
-                                        {this.state.data.accounts?.[0].display_name || this.state.data.accounts?.[0].url}
-                                    </Typography> :
-                                    <CircularProgress color={"primary"} size={"16"}/>
-                            }
-                        </Stack>
-                        {
-                            isLoggedIn && entityId ?
-                                <LinkSharing entityType={"account"} entityId={entityId}/> :
-                                null
-                        }
-                    </Stack>
-                </TopNavBar>
-            }
-            <div className={"page-content content-wrap"}>
-                <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
-                    {this.renderData()}
-                    <ArchivingSessionsList
-                        sessions={this.state.sessions}
-                        loadingSessions={this.state.loadingSessions}
-                    />
+    const isLoggedIn = !!(cookie.get("token"));
+    return <div className={"page-wrap"}>
+        <TopNavBar hideMenuButton={hideHeader}>
+            <Stack direction={"row"} alignItems={"center"} justifyContent={"space-between"} gap={1} sx={{width: '100%'}}>
+                <Stack direction={"row"} alignItems={"center"} gap={1}>
+                    <Typography>Account Data</Typography>
+                    {
+                        data ?
+                            <Typography>{data.accounts?.[0].display_name || data.accounts?.[0].url}</Typography> :
+                            <CircularProgress color={"primary"} size={"16"}/>
+                    }
                 </Stack>
-            </div>
+                {isLoggedIn && id ? <LinkSharing entityType={"account"} entityId={id}/> : null}
+            </Stack>
+        </TopNavBar>
+        <div className={"page-content content-wrap"}>
+            <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
+                {renderData()}
+                <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>
+            </Stack>
         </div>
-    }
+    </div>
 }
-
-export default withRouter(AccountPage);

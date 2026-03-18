@@ -46,7 +46,7 @@ def has_uncommitted_changes():
 def get_current_commit_id() -> Optional[str]:
     if is_bundled():
         # When running as executable, use the pre-stored commit ID
-        commit_file = os.path.join(getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))), 'commit_id.txt')
+        commit_file = os.path.join(getattr(sys, '_MEIPASS'), 'utils', 'commit_tracker', 'commit_id.txt')
         try:
             with open(commit_file, 'r') as f:
                 return f.read().strip()

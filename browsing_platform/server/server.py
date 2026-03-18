@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 import uvicorn
 import os
 import time
@@ -8,6 +8,15 @@ import logging
 from logging.handlers import RotatingFileHandler
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from starlette.middleware.base import BaseHTTPMiddleware
+from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
+    permissions, tags, annotate, share, upload, incorporate
+from browsing_platform.server.services.sharing_manager import get_link_permissions
+from browsing_platform.server.services.token_manager import check_token
+from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
+from utils.db import DbError
+import asyncio
+from contextlib import asynccontextmanager
 
 load_dotenv()
 is_production = os.getenv("ENVIRONMENT") == "production"
@@ -41,13 +50,25 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-from starlette.middleware.base import BaseHTTPMiddleware
-from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share
-from browsing_platform.server.services.sharing_manager import get_link_permissions
-from browsing_platform.server.services.token_manager import check_token
-from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
-app = FastAPI()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    from browsing_platform.server.services import ws_manager
+    from browsing_platform.server.services.incorporation_service import cleanup_stale_jobs
+    ws_manager.set_event_loop(asyncio.get_event_loop())
+    cleanup_stale_jobs()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.exception_handler(DbError)
+async def db_error_handler(request: Request, exc: DbError):
+    logger.error("Unhandled database error during %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 # CORS configuration
 ALLOWED_ORIGINS = [
@@ -65,6 +86,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # TUS protocol requires these response headers to be readable cross-origin
+    expose_headers=["Location", "Upload-Offset", "Upload-Length", "Tus-Resumable", "Tus-Version", "Tus-Extension"],
 )
 
 # Serve the 'archives' directory statically
@@ -104,8 +127,18 @@ class StaticFilesAuthMiddleware(BaseHTTPMiddleware):
         # Security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "media-src 'self' blob:; "
+            "connect-src 'self'; "
+            "font-src 'self' data:; "
+            "form-action 'self'; "
+            "frame-ancestors 'none';"
+        )
         if is_production:
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
@@ -130,6 +163,8 @@ for r in [
     login.router,
     permissions.router,
     share.router,
+    upload.router,
+    incorporate.router,
 ]:
     app.include_router(r, prefix="/api")
 
@@ -141,8 +176,15 @@ async def serve_spa(request: Request, full_path: str):
         logger.info(f"SPA catch-all: API route not found -> {full_path}")
         return Response('{"detail":"Not Found"}', status_code=404, media_type="application/json")
 
-    build_dir = "browsing_platform/client/build"
-    file_path = os.path.join(build_dir, full_path)
+    build_dir = os.path.abspath("browsing_platform/client/build")
+    file_path = os.path.abspath(os.path.join(build_dir, full_path))
+
+    # Prevent path traversal: reject any resolved path outside the build directory.
+    # os.path.join discards earlier components when given an absolute path (e.g.
+    # "c:/Windows/system.ini"), so we must check after resolving the full path.
+    if not file_path.startswith(build_dir + os.sep) and file_path != build_dir:
+        logger.warning(f"SPA catch-all: path traversal attempt blocked -> {full_path!r}")
+        return Response("Not Found", status_code=404)
 
     # Serve actual static files if they exist
     if full_path and os.path.isfile(file_path):
@@ -159,4 +201,4 @@ async def serve_spa(request: Request, full_path: str):
 
 if __name__ == "__main__":
     reload = not is_production
-    uvicorn.run("browse:app", host="127.0.0.1", port=4444, reload=reload)
+    uvicorn.run("browsing_platform.server.server:app", host="127.0.0.1", port=4444, reload=reload)

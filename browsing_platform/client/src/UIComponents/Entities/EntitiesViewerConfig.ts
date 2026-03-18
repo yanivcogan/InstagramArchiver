@@ -37,9 +37,15 @@ interface IEntityViewerConfig {
         display: IEntityDisplayOption;
         annotator: IEntityAnnotatorOption;
     }
-    like: {
+    postLike: {
         display: IEntityDisplayOption;
         annotator: IEntityAnnotatorOption;
+    }
+    taggedAccount: {
+        display: IEntityDisplayOption;
+    }
+    accountRelation: {
+        display: IEntityDisplayOption;
     }
 }
 
@@ -74,9 +80,15 @@ export class EntityViewerConfig implements IEntityViewerConfig {
         display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
-    like = {
+    postLike = {
         display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
+    };
+    taggedAccount = {
+        display: "display" as IEntityDisplayOption,
+    };
+    accountRelation = {
+        display: "display" as IEntityDisplayOption,
     };
 
     constructor(config?: DeepPartial<IEntityViewerConfig>) {

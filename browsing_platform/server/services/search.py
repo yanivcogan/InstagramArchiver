@@ -10,8 +10,6 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 from browsing_platform.server.services.archiving_session import ArchiveSession
 from browsing_platform.server.services.media import get_media_by_posts, get_media_thumbnail_path
 from extractors.entity_types import Account, Post, Media
@@ -205,7 +203,7 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
             SearchResult(
                 page="post",
                 id=p.id,
-                title=p.url,
+                title=p.url if p.url else f"item {p.id_on_platform}",
                 details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or ""),
                 thumbnails=post_thumbnails[p.id] if p.id in post_thumbnails else None
             )
@@ -311,14 +309,15 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("archived_url", "text"),
         ("archive_location", "text"),
         ("summary_html", "text"),
-        ("parsed_content", "number"),
+        ("parse_algorithm_version", "number"),
         ("structures", "text"),
         ("metadata", "text"),
-        ("extracted_entities", "number"),
+        ("extract_algorithm_version", "number"),
         ("archiving_timestamp", "date"),
         ("notes", "text"),
         ("extraction_error", "text"),
-        ("source_type", "number"),
+        ("incorporation_status", "text"),
+        ("source_type", "text"),
         ("attachments", "text"),
         ("archived_url_parts", "text"),
     ],

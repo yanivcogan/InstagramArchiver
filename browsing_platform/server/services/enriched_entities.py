@@ -12,8 +12,133 @@ from browsing_platform.server.services.media import get_media_by_posts, get_medi
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
 from browsing_platform.server.services.tag import get_tags_by_entity_ids
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
-from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post
+from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post, \
+    Comment, Like, TaggedAccount, AccountRelation
 from utils import db
+
+
+class AccountInteractions(BaseModel):
+    comments: list[Comment] = []
+    likes: list[Like] = []
+    tagged_in: list[TaggedAccount] = []
+
+
+def _build_in_clause(ids: list[int]) -> tuple[dict, str]:
+    """Returns (query_args_dict, IN clause string) for a list of int IDs."""
+    args = {f"id_{i}": id_ for i, id_ in enumerate(ids)}
+    clause = ", ".join(f"%(id_{i})s" for i in range(len(ids)))
+    return args, clause
+
+
+def get_comments_by_post_ids(post_ids: list[int]) -> list[Comment]:
+    if not post_ids:
+        return []
+    args, clause = _build_in_clause(post_ids)
+    rows = db.execute_query(
+        f"""SELECT c.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+                   a.display_name AS account_display_name,
+                   p.url AS post_url, p.id_on_platform AS post_id_on_platform
+            FROM comment c
+            LEFT JOIN account a ON c.account_id = a.id
+            LEFT JOIN post p ON c.post_id = p.id
+            WHERE c.post_id IN ({clause})
+            ORDER BY c.publication_date""",
+        args,
+        return_type="rows"
+    )
+    return [Comment(**r) for r in rows]
+
+
+def get_tagged_accounts_by_post_ids(post_ids: list[int]) -> list[TaggedAccount]:
+    if not post_ids:
+        return []
+    args, clause = _build_in_clause(post_ids)
+    rows = db.execute_query(
+        f"""SELECT ta.*, a.url AS tagged_account_url, a.id_on_platform AS tagged_account_id_on_platform,
+                   a.display_name AS tagged_account_display_name
+            FROM tagged_account ta
+            LEFT JOIN account a ON ta.tagged_account_id = a.id
+            WHERE ta.post_id IN ({clause})""",
+        args,
+        return_type="rows"
+    )
+    return [TaggedAccount(**r) for r in rows]
+
+
+def get_likes_by_post_id(post_id: int) -> list[Like]:
+    rows = db.execute_query(
+        """SELECT pl.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+                  a.display_name AS account_display_name,
+                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+           FROM post_like pl
+           LEFT JOIN account a ON pl.account_id = a.id
+           LEFT JOIN post p ON pl.post_id = p.id
+           WHERE pl.post_id = %(post_id)s""",
+        {"post_id": post_id},
+        return_type="rows"
+    )
+    return [Like(**r) for r in rows]
+
+
+def get_account_relations_by_account_id(account_id: int) -> list[AccountRelation]:
+    rows = db.execute_query(
+        """SELECT ar.*,
+                  fa.url AS follower_account_url, fa.id_on_platform AS follower_account_id_on_platform,
+                  fa.display_name AS follower_account_display_name,
+                  fd.url AS followed_account_url, fd.id_on_platform AS followed_account_id_on_platform,
+                  fd.display_name AS followed_account_display_name
+           FROM account_relation ar
+           LEFT JOIN account fa ON ar.follower_account_id = fa.id
+           LEFT JOIN account fd ON ar.followed_account_id = fd.id
+           WHERE ar.follower_account_id = %(id)s OR ar.followed_account_id = %(id)s""",
+        {"id": account_id},
+        return_type="rows"
+    )
+    return [AccountRelation(**r) for r in rows]
+
+
+def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
+    comment_rows = db.execute_query(
+        """SELECT c.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+                  a.display_name AS account_display_name,
+                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+           FROM comment c
+           LEFT JOIN account a ON c.account_id = a.id
+           LEFT JOIN post p ON c.post_id = p.id
+           WHERE c.account_id = %(id)s
+           ORDER BY c.publication_date""",
+        {"id": account_id},
+        return_type="rows"
+    )
+    like_rows = db.execute_query(
+        """SELECT pl.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+                  a.display_name AS account_display_name,
+                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+           FROM post_like pl
+           LEFT JOIN account a ON pl.account_id = a.id
+           LEFT JOIN post p ON pl.post_id = p.id
+           WHERE pl.account_id = %(id)s""",
+        {"id": account_id},
+        return_type="rows"
+    )
+    tagged_rows = db.execute_query(
+        """SELECT ta.*, a.url AS tagged_account_url, a.id_on_platform AS tagged_account_id_on_platform,
+                  a.display_name AS tagged_account_display_name,
+                  p.url AS context_post_url, p.id_on_platform AS context_post_id_on_platform,
+                  m.url AS context_media_url, m.id_on_platform AS context_media_id_on_platform
+           FROM tagged_account ta
+           LEFT JOIN account a ON ta.tagged_account_id = a.id
+           LEFT JOIN post p ON ta.post_id = p.id
+           LEFT JOIN media m ON ta.media_id = m.id
+           WHERE ta.tagged_account_id = %(id)s""",
+        {"id": account_id},
+        return_type="rows"
+    )
+    return AccountInteractions(
+        comments=[Comment(**r) for r in comment_rows],
+        likes=[Like(**r) for r in like_rows],
+        tagged_in=[TaggedAccount(**r) for r in tagged_rows]
+    )
 
 
 class FlattenedEntitiesTransform(BaseModel):
@@ -127,13 +252,18 @@ def get_enriched_media_by_id(
     if media is None:
         return None
     post = get_post_by_id(media.post_id)
-    account = get_account_by_id(post.account_id)
+    account = get_account_by_id(post.account_id) if post else None
 
-    # Flatten and nest entities
+    post_ids = [post.id] if post else []
+    tagged_accounts = get_tagged_accounts_by_post_ids(post_ids)
+
+    accounts = [account] if account else []
+    posts = [post] if post else []
     flattened_entities = ExtractedEntitiesFlattened(
-        accounts=[account],
-        posts=[post],
-        media=[media]
+        accounts=accounts,
+        posts=posts,
+        media=[media],
+        tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
     return nested_entities
@@ -148,12 +278,16 @@ def get_enriched_post_by_id(
         return None
     account = get_account_by_id(post.account_id)
     media = get_media_by_posts([post])
+    comments = get_comments_by_post_ids([post_id])
+    tagged_accounts = get_tagged_accounts_by_post_ids([post_id])
 
-    # Flatten and nest entities
+    accounts = [account] if account else []
     flattened_entities = ExtractedEntitiesFlattened(
-        accounts=[account],
+        accounts=accounts,
         posts=[post],
-        media=media
+        media=media,
+        comments=comments,
+        tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
     return nested_entities
@@ -168,12 +302,14 @@ def get_enriched_account_by_id(
         return None
     posts = get_posts_by_accounts([account])
     media = get_media_by_posts(posts)
+    post_ids = [p.id for p in posts if p.id is not None]
+    tagged_accounts = get_tagged_accounts_by_post_ids(post_ids)
 
-    # Flatten and nest entities
     flattened_entities = ExtractedEntitiesFlattened(
         accounts=[account],
         posts=posts,
-        media=media
+        media=media,
+        tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
     return nested_entities

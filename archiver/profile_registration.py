@@ -16,7 +16,7 @@ class Profile(BaseModel):
 
 
 def register_instagram_account():
-    profiles_dir = Path(ROOT_DIR) / "profiles"
+    profiles_dir = Path(ROOT_DIR) / "archiver" / "profiles"
     profiles_dir.mkdir(exist_ok=True)
     map_path = profiles_dir / "map.json"
     profiles_map = []

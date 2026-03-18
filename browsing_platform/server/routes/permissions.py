@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from browsing_platform.server.services.permissions import auth_user_access
+from browsing_platform.server.services.permissions import auth_user_access, parse_token_from_header
 from browsing_platform.server.services.token_manager import check_token
 
 router = APIRouter(
@@ -13,10 +13,7 @@ router = APIRouter(
 
 @router.get("/")
 async def get_permissions(request: Request):
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=401)
-    token = auth_header.split(":")[1]
+    token = parse_token_from_header(request.headers.get("Authorization"))
     if not token:
         raise HTTPException(status_code=401)
     token_permissions = check_token(token)

@@ -22,7 +22,7 @@ def get_posts_by_accounts(accounts: list[Account]) -> list[Post]:
     query_args = {f"account_id_{i}": f"{account.id}" for i, account in enumerate(accounts)}
     query_in_clause = ', '.join([f"%(account_id_{i})s" for i in range(len(accounts))])
     posts = db.execute_query(
-        f"""SELECT * FROM post WHERE account_id IN ({query_in_clause})""",
+        f"""SELECT * FROM post WHERE account_id IN ({query_in_clause})""",  # nosec B608 - query_in_clause contains only %(key)s placeholders, not user input
         query_args,
         return_type="rows"
     )

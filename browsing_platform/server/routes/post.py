@@ -1,13 +1,14 @@
-from http.client import HTTPException
+from fastapi import HTTPException
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
-from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id
+from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id, get_comments_by_post_ids, \
+    get_likes_by_post_id
 from browsing_platform.server.services.permissions import auth_entity_view_access
 from browsing_platform.server.services.post import get_post_by_id
-from extractors.entity_types import ExtractedEntitiesNested
+from extractors.entity_types import ExtractedEntitiesNested, Comment, Like
 
 router = APIRouter(
     prefix="/post",
@@ -28,6 +29,22 @@ async def get_post_data(item_id:int) -> Any:
     if not post:
         raise HTTPException(status_code=404, detail="Post Not Found")
     return post.data
+
+
+@router.get("/{item_id}/comments/", dependencies=[Depends(_auth_post_view)])
+@router.get("/{item_id}/comments", dependencies=[Depends(_auth_post_view)])
+async def get_post_comments(item_id: int) -> list[Comment]:
+    if not get_post_by_id(item_id):
+        raise HTTPException(status_code=404, detail="Post Not Found")
+    return get_comments_by_post_ids([item_id])
+
+
+@router.get("/{item_id}/likes/", dependencies=[Depends(_auth_post_view)])
+@router.get("/{item_id}/likes", dependencies=[Depends(_auth_post_view)])
+async def get_post_likes(item_id: int) -> list[Like]:
+    if not get_post_by_id(item_id):
+        raise HTTPException(status_code=404, detail="Post Not Found")
+    return get_likes_by_post_id(item_id)
 
 
 @router.get("/{item_id}/", dependencies=[Depends(_auth_post_view)])

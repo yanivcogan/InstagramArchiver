@@ -14,18 +14,6 @@ from browsing_platform.server.services.token_manager import check_token, TokenPe
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
-
-def parse_token_from_header(auth_header: Optional[str]) -> Optional[str]:
-    """Safely parse token from Authorization header. Expected format: 'token:xxx'"""
-    if not auth_header:
-        return None
-    parts = auth_header.split(":", 1)
-    if len(parts) != 2 or parts[0] != "token":
-        return None
-    return parts[1] if parts[1] else None
-
 
 def parse_token_from_header(auth_header: Optional[str]) -> Optional[str]:
     """Safely parse token from Authorization header. Expected format: 'token:xxx'"""
@@ -66,11 +54,11 @@ async def raise_auth_user_error(request: Request, token_permissions: Optional[To
 
 
 async def auth_user_access(request: Request):
+    """verify that user has a valid session"""
     # Bypass auth in dev mode (only when explicitly set to "1")
     if os.getenv("BROWSING_PLATFORM_DEV") == "1":
         logger.debug("Auth bypassed - dev mode enabled")
         return True
-    """verify that user has a valid session"""
     token_permissions = await get_auth_permissions(request)
     return await raise_auth_user_error(request, token_permissions)
 
@@ -109,6 +97,19 @@ async def auth_entity_view_access(request: Request, entity: T_Entities, entity_i
         return await raise_auth_user_error(request, token_permissions)
 
 
+async def auth_admin_access(request: Request):
+    """Verify that the user has a valid admin session."""
+    if os.getenv("BROWSING_PLATFORM_DEV") == "1":
+        logger.debug("Admin auth bypassed - dev mode enabled")
+        return True
+    token_permissions = await get_auth_permissions(request)
+    await raise_auth_user_error(request, token_permissions)
+    if not token_permissions.admin:
+        logger.warning(f"Forbidden - non-admin access attempt: {request.scope['route'].path}")
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return token_permissions
+
+
 def get_user_id(request: Request):
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
@@ -127,7 +128,7 @@ async def log_server_call(request: Request):
         try:
             token_permissions = check_token(token)
             user_id = token_permissions.user_id
-        except Exception:
+        except Exception:  # nosec B110 - optional enrichment for logging; failure is non-fatal
             pass
     body = await request.body()
     log_event(

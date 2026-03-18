@@ -12,10 +12,11 @@ from hashlib import md5
 from typing import Literal, Optional
 
 from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
+from root_anchor import ROOT_DIR
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.git_helper import ensure_committed
+from utils.commit_tracker.git_helper import ensure_committed
 
 import cv2
 import pyautogui
@@ -30,9 +31,9 @@ from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from dotenv import load_dotenv
 
 from archiver.profile_selection import select_profile
-from utils.timestamper_opentimestamps import timestamp_file
+from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 from archiver.profile_registration import Profile
-from summarizers.entities_summary_generator import generate_entities_summary
+from archiver.summarizers.entities_summary_generator import generate_entities_summary
 
 from utils.misc import get_my_public_ip, get_system_info
 
@@ -374,7 +375,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
 
 
 def archive_instagram_content(profile: Profile, target_url: str):
-    profiles_dir = Path("profiles")
+    profiles_dir = Path(ROOT_DIR) / "archiver" / "profiles"
     profile_name = profile.name
     profile_path = profiles_dir / profile_name
 
@@ -385,7 +386,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
     # Create archive directory with timestamp
     archiving_start_time = datetime.datetime.now()
     archiving_start_timestamp = archiving_start_time.isoformat()
-    archive_dir = Path("archives") / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
+    archive_dir = Path(ROOT_DIR) / "archives" / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
     my_public_ip = get_my_public_ip()
 
@@ -445,9 +446,9 @@ def archive_instagram_content(profile: Profile, target_url: str):
 if __name__ == "__main__":
     commit_id = ensure_committed()
     ensure_ffmpeg_installed()
-    profile = select_profile()
+    selected_profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")
     url = url.split("?igsh=")[0].strip().split("&igsh=")[0].strip()
 
-    archive_instagram_content(profile, url)
+    archive_instagram_content(selected_profile, url)
     sys.exit(0)

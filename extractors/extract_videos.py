@@ -19,7 +19,7 @@ from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
-from utils.timestamper_opentimestamps import timestamp_file
+from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 
 
 class MediaSegment(BaseModel):
@@ -478,7 +478,8 @@ def acquire_videos(
         har_path: Path,
         output_dir: Path = Path('../temp_video_segments'),
         structures: Optional[list[StructureType]] = None,
-        config: VideoAcquisitionConfig = VideoAcquisitionConfig()
+        config: VideoAcquisitionConfig = VideoAcquisitionConfig(),
+        har_video_maps: Optional[list['Video']] = None,
 ) -> list[Video]:
     # unpack the config
     download_missing = config.download_missing
@@ -492,7 +493,7 @@ def acquire_videos(
 
     existing_videos = get_existing_videos(output_dir)
 
-    har_videos = extract_video_maps(har_path)
+    har_videos = har_video_maps if har_video_maps is not None else extract_video_maps(har_path)
     structures_videos = extract_videos_from_structures(structures)
 
     combined_videos_dict: dict[int, Video] = dict()

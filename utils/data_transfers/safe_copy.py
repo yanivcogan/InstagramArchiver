@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from pathlib import Path
 from typing import Optional
 from root_anchor import ROOT_DIR
-from utils.git_helper import get_github_permalink
+from utils.commit_tracker.git_helper import get_github_permalink
 
 
 def copy_archives(dest_dir: Path):

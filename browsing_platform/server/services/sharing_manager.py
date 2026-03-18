@@ -77,13 +77,23 @@ def create_share_link(scope: EntitySharePermissions, user_id: int) -> ShareLinkC
 def get_existing_share_link(entity: T_Entities, entity_id: int) -> Optional[EntityShareLink]:
     link_share = db.execute_query(
         '''SELECT * FROM entity_share_link
-        WHERE entity = %(entity)s AND entity_id = %(entity_id)s AND valid = TRUE'''
+        WHERE entity = %(entity)s AND entity_id = %(entity_id)s
+        ORDER BY create_date DESC
+        LIMIT 1'''
         , {"entity": entity, "entity_id": entity_id}, "single_row"
     )
     if not link_share or not isinstance(link_share, dict):
         return None
     else:
         return EntityShareLink(**link_share)
+
+
+def set_link_validity(link_suffix: str, valid: bool):
+    db.execute_query(
+        'UPDATE entity_share_link SET valid = %(valid)s WHERE link_suffix = %(link_suffix)s',
+        {"valid": valid, "link_suffix": link_suffix},
+        "none"
+    )
 
 
 def get_link_permissions(link_suffix: str) -> EntitySharePermissions:

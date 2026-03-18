@@ -11,9 +11,9 @@ export interface IPopupAlertAction {
 export interface IPopupAlert {
     id?: number;
     title?: string;
-    message?: React.ReactElement | string;
+    message?: React.ReactElement<any> | string;
     actions?: IPopupAlertAction[];
-    html?: React.ReactElement;
+    html?: React.ReactElement<any>;
     dismissible?: boolean;
     opaque?: boolean;
     onClose?: () => void;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 
 from cryptography.exceptions import InvalidTag
@@ -10,7 +11,9 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from pydantic import BaseModel
 
-FILE_TOKEN_SECRET_ENV = "FILE_TOKEN_SECRET"
+logger = logging.getLogger(__name__)
+
+FILE_TOKEN_SECRET_ENV = "FILE_TOKEN_SECRET"  # nosec B105 - this is the env var name, not a hardcoded credential
 # number of bytes of nonce for ChaCha20-Poly1305
 NONCE_SIZE = 12
 KEY_LEN = 32
@@ -29,7 +32,7 @@ def _get_secret() -> bytes:
     try:
         if all(c in "0123456789abcdefABCDEF" for c in s) and len(s) % 2 == 0:
             return bytes.fromhex(s)
-    except Exception:
+    except Exception:  # nosec B110 - intentional fallback: non-hex secrets are used as raw UTF-8 bytes
         pass
     return s.encode("utf-8")
 
@@ -54,7 +57,7 @@ class FileTokenPayload(BaseModel):
 
 
 def generate_file_token(login_token: str, file_path: str) -> str:
-    print("Generating file token for path:", file_path)
+    logger.debug("Generating file token for path: %s", file_path)  # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure - file_path is the request URL path, not a secret
     # Generate a url-safe per-file token that encrypts the login token.
     key = _derive_key_for_path(file_path)
     aead = ChaCha20Poly1305(key)

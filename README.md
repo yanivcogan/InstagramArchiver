@@ -90,7 +90,7 @@ The script will prompt you for an email and password (minimum 12 characters).
 From the project root:
 ```bash
 uv sync --upgrade
-BROWSING_PLATFORM_DEV=1 uv run python browse.py
+BROWSING_PLATFORM_DEV=1 uv run python browsing_platform/server/server.py
 ```
 This starts the API server on port **4444**.
 
