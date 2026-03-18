@@ -412,7 +412,8 @@ def incorporate_structures_into_db(
             return_type="none"
         )
 
-        # Sync media.publication_date from the associated post for all media touched by this session.
+        # Sync media.publication_date and media.account_id from the associated post
+        # for all media touched by this session.
         db.execute_query(
             """UPDATE media m
                INNER JOIN (
@@ -421,7 +422,8 @@ def incorporate_structures_into_db(
                    WHERE ma.archive_session_id = %(session_id)s
                ) affected ON m.id = affected.media_id
                INNER JOIN post p ON m.post_id = p.id
-               SET m.publication_date = p.publication_date""",
+               SET m.publication_date = p.publication_date,
+                   m.account_id = p.account_id""",
             {"session_id": archive_session_id},
             return_type="none"
         )

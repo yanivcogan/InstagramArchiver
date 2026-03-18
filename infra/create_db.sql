@@ -254,8 +254,11 @@ create table media
     thumbnail_path   varchar(200)                                                null,
     thumbnail_status enum ('pending', 'generated', 'not_needed', 'error') not null default 'pending',
     publication_date datetime                                                    null,
+    account_id       int                                                         null,
     constraint media_post_id_fk
-        foreign key (post_id) references post (id)
+        foreign key (post_id) references post (id),
+    constraint media_account_id_fk
+        foreign key (account_id) references account (id)
 )
     engine = InnoDB;
 
@@ -276,6 +279,9 @@ create index media_thumbnail_path_index
 
 create index media_thumbnail_status_index
     on media (thumbnail_status);
+
+create index media_account_id_index
+    on media (account_id);
 
 create index media_publication_date_index
     on media (publication_date);

@@ -256,7 +256,8 @@ export interface SearchResult {
     id: number,
     title: string,
     details?: string;
-    thumbnails?: string[]
+    thumbnails?: string[];
+    metadata?: Record<string, any>;
 }
 
 export const searchData = async (

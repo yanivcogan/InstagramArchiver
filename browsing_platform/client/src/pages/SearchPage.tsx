@@ -3,8 +3,6 @@ import {useLocation, useNavigate, useSearchParams} from "react-router";
 import {
     Box,
     Button,
-    Card,
-    CardMedia,
     CircularProgress,
     Collapse,
     Divider,
@@ -16,7 +14,6 @@ import {
     Select,
     Stack,
     Tooltip,
-    Typography
 } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
@@ -31,6 +28,7 @@ import {
 } from "../services/DataFetcher";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import {SEARCH_SHORTCUTS} from "../UIComponents/SearchShortcuts";
+import {DefaultSearchResults, SEARCH_RESULT_RENDERERS} from "../UIComponents/SearchResults";
 import {
     Builder,
     BuilderProps,
@@ -44,9 +42,13 @@ import {
 import '@react-awesome-query-builder/mui/css/styles.css';
 import rison from "rison";
 import {removeUndefinedValues} from "../services/utils";
-import {anchor_local_static_files} from "../services/server";
 
 const InitialConfig = MuiConfig;
+
+const DEFAULT_PAGE_SIZES: Partial<Record<T_Search_Mode, number>> = {
+    media: 100,
+};
+const defaultPageSize = (mode: T_Search_Mode) => DEFAULT_PAGE_SIZES[mode] ?? 20;
 
 const getEmptyTree = (search_mode: T_Search_Mode): ImmutableTree => {
     return QbUtils.loadTree({
@@ -85,8 +87,9 @@ const extractQueryFromParams = (searchParams: URLSearchParams): ISearchQuery => 
     }
     let page_number = parseInt(searchParams.get("p") || "1");
     page_number = isNaN(page_number) || page_number < 1 ? 1 : page_number;
-    let page_size = parseInt(searchParams.get("ps") || "20");
-    page_size = isNaN(page_size) || page_size < 20 ? 20 : page_size;
+    const modeDefault = defaultPageSize(search_mode as T_Search_Mode);
+    let page_size = parseInt(searchParams.get("ps") || String(modeDefault));
+    page_size = isNaN(page_size) || page_size < 20 ? modeDefault : page_size;
     return {
         search_term,
         advanced_filters,
@@ -166,7 +169,7 @@ export default function SearchPage() {
         if (q.page_number && q.page_number > 1) {
             params.append("p", q.page_number.toString());
         }
-        if (q.page_size && q.page_size !== 20) {
+        if (q.page_size && q.page_size !== defaultPageSize(q.search_mode)) {
             params.append("ps", q.page_size.toString());
         }
         if (q.search_mode && q.search_mode !== "accounts") {
@@ -272,10 +275,12 @@ export default function SearchPage() {
                                         <Select
                                             value={query.search_mode}
                                             onChange={(e) => {
-                                                setAdvancedFiltersTree(getEmptyTree(e.target.value as T_Search_Mode));
+                                                const newMode = e.target.value as T_Search_Mode;
+                                                setAdvancedFiltersTree(getEmptyTree(newMode));
                                                 performSearch({
-                                                    search_mode: e.target.value as T_Search_Mode,
+                                                    search_mode: newMode,
                                                     advanced_filters: null,
+                                                    page_size: defaultPageSize(newMode),
                                                 });
                                             }}
                                             sx={{
@@ -342,40 +347,10 @@ export default function SearchPage() {
                         <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200}}>
                             <CircularProgress/>
                         </Box>
-                    ) : (
-                        <Stack spacing={2} divider={<Divider orientation={"horizontal"} flexItem/>}>
-                            {results.length === 0 ? (
-                                <Box>No results found.</Box>
-                            ) : (
-                                results.map((result, idx) => (
-                                    <a
-                                        key={idx}
-                                        href={`/${result.page}/${result.id}`}
-                                        style={{textDecoration: 'none'}}
-                                    >
-                                        <Card variant="elevation" elevation={0}>
-                                            <Typography variant={"h6"}>{result.title}</Typography>
-                                            {result.details && (
-                                                <Typography variant={"body2"}>{result.details}</Typography>
-                                            )}
-                                            <CardMedia>
-                                                <Stack direction="row" gap={1}>
-                                                    {result.thumbnails?.map((tn, i) => (
-                                                        <img
-                                                            key={i}
-                                                            src={anchor_local_static_files(tn) || undefined}
-                                                            alt={`Thumbnail ${i + 1}`}
-                                                            style={{maxWidth: '100px', maxHeight: '100px'}}
-                                                        />
-                                                    ))}
-                                                </Stack>
-                                            </CardMedia>
-                                        </Card>
-                                    </a>
-                                ))
-                            )}
-                        </Stack>
-                    )}
+                    ) : (() => {
+                        const ResultsComponent = SEARCH_RESULT_RENDERERS[query.search_mode] ?? DefaultSearchResults;
+                        return <ResultsComponent results={results}/>;
+                    })()}
                 </Box>
                 {/* Pagination */}
                 <Stack direction="row" spacing={2} justifyContent={'center'} alignItems={'center'}>

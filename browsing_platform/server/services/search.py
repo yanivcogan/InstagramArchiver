@@ -35,6 +35,7 @@ class SearchResult(BaseModel):
     title: str
     details: Optional[str]
     thumbnails: Optional[list[str]] = None
+    metadata: Optional[dict] = None
 
     @field_validator('thumbnails', mode='before')
     def parse_thumbnails(cls, v, _):
@@ -79,19 +80,56 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT id, archived_url, notes
+        f"""SELECT id, archived_url, notes, archiving_timestamp
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    return [SearchResult(
-        page="archive",
-        id=row["id"],
-        title=row["archived_url"] or f"Archive Session {row['id']}",
-        details=row["notes"] or ""
-    ) for row in rows]
+    if not rows:
+        return []
+    session_ids = [row["id"] for row in rows]
+    thumb_args = {f"sid_{i}": sid for i, sid in enumerate(session_ids)}
+    thumb_in = ", ".join(f"%(sid_{i})s" for i in range(len(session_ids)))
+    thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
+        f"""SELECT archive_session_id, thumbnail_path, local_url, media_count
+            FROM (
+                SELECT ma.archive_session_id, m.thumbnail_path, m.local_url,
+                       COUNT(*) OVER (PARTITION BY ma.archive_session_id) AS media_count,
+                       ROW_NUMBER() OVER (PARTITION BY ma.archive_session_id ORDER BY m.id) AS rn
+                FROM media_archive ma
+                JOIN media m ON ma.canonical_id = m.id
+                WHERE ma.archive_session_id IN ({thumb_in})
+                  AND m.local_url IS NOT NULL
+            ) ranked
+            WHERE rn <= 4""",
+        thumb_args
+    )
+    session_thumbnails: dict[int, list[str]] = {}
+    session_media_count: dict[int, int] = {}
+    for t in thumb_rows:
+        sid = t["archive_session_id"]
+        session_media_count[sid] = t["media_count"]
+        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if thumb:
+            session_thumbnails.setdefault(sid, []).append(thumb)
+    results = [
+        SearchResult(
+            page="archive",
+            id=row["id"],
+            title=row["archived_url"] or f"Archive Session {row['id']}",
+            details=row["notes"] or "",
+            thumbnails=session_thumbnails.get(row["id"]),
+            metadata={
+                "archiving_timestamp": row["archiving_timestamp"].isoformat() if row["archiving_timestamp"] else None,
+                "media_count": session_media_count.get(row["id"], 0),
+            }
+        )
+        for row in rows
+    ]
+    results = apply_search_results_transform(results, search_results_transform)
+    return results
 
 
 def string_to_instagram_account_url(s: str) -> Optional[str]:
@@ -155,11 +193,39 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
+    if not rows:
+        return []
+    account_ids = [row["id"] for row in rows]
+    thumb_args = {f"aid_{i}": aid for i, aid in enumerate(account_ids)}
+    thumb_in = ", ".join(f"%(aid_{i})s" for i in range(len(account_ids)))
+    thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
+        f"""SELECT account_id, thumbnail_path, local_url, media_count
+            FROM (
+                SELECT account_id, thumbnail_path, local_url,
+                       COUNT(*) OVER (PARTITION BY account_id) AS media_count,
+                       ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY id DESC) AS rn
+                FROM media
+                WHERE account_id IN ({thumb_in})
+                  AND local_url IS NOT NULL
+            ) ranked
+            WHERE rn <= 8""",
+        thumb_args
+    )
+    account_thumbnails: dict[int, list[str]] = {}
+    account_media_count: dict[int, int] = {}
+    for t in thumb_rows:
+        aid = t["account_id"]
+        account_media_count[aid] = t["media_count"]
+        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if thumb:
+            account_thumbnails.setdefault(aid, []).append(thumb)
     return [SearchResult(
         page="account",
         id=row["id"],
         title=row["url"] + (f" ({row['display_name']})" if row["display_name"] else ""),
-        details=row["bio"] or ""
+        details=row["bio"] or "",
+        thumbnails=account_thumbnails.get(row["id"]),
+        metadata={"media_count": account_media_count.get(row["id"], 0)},
     ) for row in rows]
 
 
@@ -176,16 +242,22 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
         query_args.update(general_args)
+    inner_where = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
     order_by = (
         "MATCH(`url`, `caption`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
         if query.search_term else "publication_date DESC"
     )
-    rows = db.execute_query(
-        f"""SELECT id, url, id_on_platform, caption
-           FROM post
-           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY {order_by}
-           LIMIT %(limit)s OFFSET %(offset)s""",
+    rows = db.execute_query(  # nosec B608 - inner_where and order_by built from safe clauses only
+        f"""SELECT p.id, p.url, p.id_on_platform, p.caption, p.publication_date,
+                   a.display_name AS account_display_name, a.url AS account_url
+           FROM (
+               SELECT id, url, id_on_platform, caption, publication_date, account_id
+               FROM post
+               {inner_where}
+               ORDER BY {order_by}
+               LIMIT %(limit)s OFFSET %(offset)s
+           ) p
+           LEFT JOIN account a ON p.account_id = a.id""",
         query_args
     )
     if not rows:
@@ -208,7 +280,12 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
             id=row["id"],
             title=row["url"] if row["url"] else f"item {row['id_on_platform']}",
             details=(row["caption"][:100] + '...') if row["caption"] and len(row["caption"]) > 100 else (row["caption"] or ""),
-            thumbnails=post_thumbnails.get(row["id"])
+            thumbnails=post_thumbnails.get(row["id"]),
+            metadata={
+                "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
+                "account_display_name": row["account_display_name"],
+                "account_url": row["account_url"],
+            }
         )
         for row in rows
     ]
@@ -231,21 +308,32 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "media")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    rows = db.execute_query(
-        f"""SELECT id, url, thumbnail_path, local_url
-           FROM media
-           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY id DESC
-           LIMIT %(limit)s OFFSET %(offset)s""",
+    inner_where = ' AND '.join(where_clauses)
+    rows = db.execute_query(  # nosec B608 - inner_where built from safe clauses only
+        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.publication_date,
+                   a.display_name AS account_display_name, a.url AS account_url
+           FROM (
+               SELECT id, thumbnail_path, local_url, publication_date, account_id
+               FROM media
+               WHERE {inner_where}
+               ORDER BY id DESC
+               LIMIT %(limit)s OFFSET %(offset)s
+           ) m
+           LEFT JOIN account a ON m.account_id = a.id""",
         query_args
     )
     results = [
         SearchResult(
             page="media",
             id=row["id"],
-            title=row["url"],
+            title=row["account_url"] or "",
             details="",
-            thumbnails=[thumb] if (thumb := get_media_thumbnail_path(row["thumbnail_path"], row["local_url"])) else None
+            thumbnails=[thumb] if (thumb := get_media_thumbnail_path(row["thumbnail_path"], row["local_url"])) else None,
+            metadata={
+                "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
+                "account_display_name": row["account_display_name"],
+                "account_url": row["account_url"],
+            }
         )
         for row in rows
     ]
