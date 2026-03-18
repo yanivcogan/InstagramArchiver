@@ -9,7 +9,7 @@ from browsing_platform.server.routes.fast_api_request_processor import extract_e
 from browsing_platform.server.routes.media import _auth_media_view
 from browsing_platform.server.routes.post import _auth_post_view
 from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, ArchiveSession, \
-    get_archiving_session_by_id
+    get_archiving_session_by_id, get_archiving_session_structures
 from browsing_platform.server.services.enriched_entities import get_enriched_archiving_session_by_id, \
     get_archiving_sessions_by_account_id, get_archiving_sessions_by_post_id, \
     get_archiving_sessions_by_media_id
@@ -29,10 +29,10 @@ async def _auth_archiving_session_view(req: Request, item_id: int):
 @router.get("/data/{item_id}/", dependencies=[Depends(_auth_archiving_session_view)])
 @router.get("/data/{item_id}", dependencies=[Depends(_auth_archiving_session_view)])
 async def get_archiving_session_data(item_id:int) -> Any:
-    session = get_archiving_session_by_id(item_id)
-    if not session:
+    found, structures = get_archiving_session_structures(item_id)
+    if not found:
         raise HTTPException(status_code=404, detail="Session Not Found")
-    return session.structures
+    return structures
 
 
 @router.get("/{item_id}/", dependencies=[Depends(_auth_archiving_session_view)])

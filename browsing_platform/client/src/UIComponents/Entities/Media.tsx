@@ -85,6 +85,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                             p: 2,
                             textAlign: "center",
                         }}
+                        className={"media-item-interactions-layout"}
                     >
                         {
                             viewerConfig?.all?.hideInnerLinks ? null : <IconButton

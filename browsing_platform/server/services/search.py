@@ -10,9 +10,7 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 
 logger = logging.getLogger(__name__)
 
-from browsing_platform.server.services.archiving_session import ArchiveSession
-from browsing_platform.server.services.media import get_media_by_posts, get_media_thumbnail_path
-from extractors.entity_types import Account, Post, Media
+from browsing_platform.server.services.media import get_media_thumbnail_path
 from utils import db
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
@@ -37,6 +35,7 @@ class SearchResult(BaseModel):
     title: str
     details: Optional[str]
     thumbnails: Optional[list[str]] = None
+    metadata: Optional[dict] = None
 
     @field_validator('thumbnails', mode='before')
     def parse_thumbnails(cls, v, _):
@@ -75,28 +74,62 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     where_clauses = []
     if query.search_term:
         query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
-        query_args["search_term_like"] = f'%{query.search_term}%'
-        where_clauses.append('''MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE) OR 
-        `notes` LIKE %(search_term_like)s''')
+        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT *
+        f"""SELECT id, archived_url, notes, archiving_timestamp
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    sessions = [ArchiveSession(**row) for row in rows]
-    return [SearchResult(
-        page="archive",
-        id=s.id,
-        title=f"Archive Session {s.id}",
-        details=f"{s.archived_url}" + (f" ({s.notes})" if s.notes else "")
-    ) for s in sessions]
+    if not rows:
+        return []
+    session_ids = [row["id"] for row in rows]
+    thumb_args = {f"sid_{i}": sid for i, sid in enumerate(session_ids)}
+    thumb_in = ", ".join(f"%(sid_{i})s" for i in range(len(session_ids)))
+    thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
+        f"""SELECT archive_session_id, thumbnail_path, local_url, media_count
+            FROM (
+                SELECT ma.archive_session_id, m.thumbnail_path, m.local_url,
+                       COUNT(*) OVER (PARTITION BY ma.archive_session_id) AS media_count,
+                       ROW_NUMBER() OVER (PARTITION BY ma.archive_session_id ORDER BY m.id) AS rn
+                FROM media_archive ma
+                JOIN media m ON ma.canonical_id = m.id
+                WHERE ma.archive_session_id IN ({thumb_in})
+                  AND m.local_url IS NOT NULL
+            ) ranked
+            WHERE rn <= 4""",
+        thumb_args
+    )
+    session_thumbnails: dict[int, list[str]] = {}
+    session_media_count: dict[int, int] = {}
+    for t in thumb_rows:
+        sid = t["archive_session_id"]
+        session_media_count[sid] = t["media_count"]
+        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if thumb:
+            session_thumbnails.setdefault(sid, []).append(thumb)
+    results = [
+        SearchResult(
+            page="archive",
+            id=row["id"],
+            title=row["archived_url"] or f"Archive Session {row['id']}",
+            details=row["notes"] or "",
+            thumbnails=session_thumbnails.get(row["id"]),
+            metadata={
+                "archiving_timestamp": row["archiving_timestamp"].isoformat() if row["archiving_timestamp"] else None,
+                "media_count": session_media_count.get(row["id"], 0),
+            }
+        )
+        for row in rows
+    ]
+    results = apply_search_results_transform(results, search_results_transform)
+    return results
 
 
 def string_to_instagram_account_url(s: str) -> Optional[str]:
@@ -148,23 +181,52 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
         query_args.update(general_args)
+    order_by = (
+        "MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        if query.search_term else "id DESC"
+    )
     rows = db.execute_query(
-        f"""SELECT *
+        f"""SELECT id, url, display_name, bio
            FROM account
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY id DESC
+           ORDER BY {order_by}
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    accounts = [Account(**row) for row in rows]
-    results = [SearchResult(
+    if not rows:
+        return []
+    account_ids = [row["id"] for row in rows]
+    thumb_args = {f"aid_{i}": aid for i, aid in enumerate(account_ids)}
+    thumb_in = ", ".join(f"%(aid_{i})s" for i in range(len(account_ids)))
+    thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
+        f"""SELECT account_id, thumbnail_path, local_url, media_count
+            FROM (
+                SELECT account_id, thumbnail_path, local_url,
+                       COUNT(*) OVER (PARTITION BY account_id) AS media_count,
+                       ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY id DESC) AS rn
+                FROM media
+                WHERE account_id IN ({thumb_in})
+                  AND local_url IS NOT NULL
+            ) ranked
+            WHERE rn <= 8""",
+        thumb_args
+    )
+    account_thumbnails: dict[int, list[str]] = {}
+    account_media_count: dict[int, int] = {}
+    for t in thumb_rows:
+        aid = t["account_id"]
+        account_media_count[aid] = t["media_count"]
+        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if thumb:
+            account_thumbnails.setdefault(aid, []).append(thumb)
+    return [SearchResult(
         page="account",
-        id=a.id,
-        title=a.url + (f" ({a.display_name})" if a.display_name else ""),
-        details=a.bio or ""
-    ) for a in accounts]
-    results = apply_search_results_transform(results, search_results_transform)
-    return results
+        id=row["id"],
+        title=row["url"] + (f" ({row['display_name']})" if row["display_name"] else ""),
+        details=row["bio"] or "",
+        thumbnails=account_thumbnails.get(row["id"]),
+        metadata={"media_count": account_media_count.get(row["id"], 0)},
+    ) for row in rows]
 
 
 def search_posts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
@@ -180,34 +242,53 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    rows = db.execute_query(
-        f"""SELECT *
-           FROM post
-           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY publication_date DESC
-           LIMIT %(limit)s OFFSET %(offset)s""",
+    inner_where = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
+    order_by = (
+        "MATCH(`url`, `caption`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        if query.search_term else "publication_date DESC"
+    )
+    rows = db.execute_query(  # nosec B608 - inner_where and order_by built from safe clauses only
+        f"""SELECT p.id, p.url, p.id_on_platform, p.caption, p.publication_date,
+                   a.display_name AS account_display_name, a.url AS account_url
+           FROM (
+               SELECT id, url, id_on_platform, caption, publication_date, account_id
+               FROM post
+               {inner_where}
+               ORDER BY {order_by}
+               LIMIT %(limit)s OFFSET %(offset)s
+           ) p
+           LEFT JOIN account a ON p.account_id = a.id""",
         query_args
     )
-    posts = [Post(**row) for row in rows]
-    media = get_media_by_posts(posts)
+    if not rows:
+        return []
+    post_ids = [row["id"] for row in rows]
+    media_args = {f"pid_{i}": pid for i, pid in enumerate(post_ids)}
+    media_in = ", ".join(f"%(pid_{i})s" for i in range(len(post_ids)))
+    media_rows = db.execute_query(  # nosec B608 - media_in contains only %(key)s placeholders
+        f"SELECT post_id, thumbnail_path, local_url FROM media WHERE post_id IN ({media_in})",
+        media_args
+    )
     post_thumbnails: dict[int, list[str]] = {}
-    for m in media:
-        if m.post_id not in post_thumbnails:
-            post_thumbnails[m.post_id] = []
-        media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
-        if media_thumbnail:
-            post_thumbnails[m.post_id].append(media_thumbnail)
-    results: list[SearchResult] = []
-    for p in posts:
-        results.append(
-            SearchResult(
-                page="post",
-                id=p.id,
-                title=p.url if p.url else f"item {p.id_on_platform}",
-                details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or ""),
-                thumbnails=post_thumbnails[p.id] if p.id in post_thumbnails else None
-            )
+    for m in media_rows:
+        thumb = get_media_thumbnail_path(m["thumbnail_path"], m["local_url"])
+        if thumb:
+            post_thumbnails.setdefault(m["post_id"], []).append(thumb)
+    results = [
+        SearchResult(
+            page="post",
+            id=row["id"],
+            title=row["url"] if row["url"] else f"item {row['id_on_platform']}",
+            details=(row["caption"][:100] + '...') if row["caption"] and len(row["caption"]) > 100 else (row["caption"] or ""),
+            thumbnails=post_thumbnails.get(row["id"]),
+            metadata={
+                "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
+                "account_display_name": row["account_display_name"],
+                "account_url": row["account_url"],
+            }
         )
+        for row in rows
+    ]
     results = apply_search_results_transform(results, search_results_transform)
     return results
 
@@ -224,30 +305,38 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args["search_term"] = default_fulltext_query(query.search_term)
         where_clauses.append("MATCH(`annotation`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
-        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
+        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "media")
         where_clauses.append(general_filter)
         query_args.update(general_args)
-    rows = db.execute_query(
-        f"""SELECT *
-           FROM media
-           {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY id DESC
-           LIMIT %(limit)s OFFSET %(offset)s""",
+    inner_where = ' AND '.join(where_clauses)
+    rows = db.execute_query(  # nosec B608 - inner_where built from safe clauses only
+        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.publication_date,
+                   a.display_name AS account_display_name, a.url AS account_url
+           FROM (
+               SELECT id, thumbnail_path, local_url, publication_date, account_id
+               FROM media
+               WHERE {inner_where}
+               ORDER BY id DESC
+               LIMIT %(limit)s OFFSET %(offset)s
+           ) m
+           LEFT JOIN account a ON m.account_id = a.id""",
         query_args
     )
-    media = [Media(**row) for row in rows]
-    results: list[SearchResult] = []
-    for m in media:
-        media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
-        results.append(
-            SearchResult(
-                page="media",
-                id=m.id,
-                title=m.url,
-                details="",
-                thumbnails=[media_thumbnail] if media_thumbnail else None
-            )
+    results = [
+        SearchResult(
+            page="media",
+            id=row["id"],
+            title=row["account_url"] or "",
+            details="",
+            thumbnails=[thumb] if (thumb := get_media_thumbnail_path(row["thumbnail_path"], row["local_url"])) else None,
+            metadata={
+                "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
+                "account_display_name": row["account_display_name"],
+                "account_url": row["account_url"],
+            }
         )
+        for row in rows
+    ]
     results = apply_search_results_transform(results, search_results_transform)
     return results
 
@@ -259,8 +348,10 @@ def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTran
         thumb: str = res.thumbnails[i]
         if LOCAL_ARCHIVES_DIR_ALIAS in thumb:
             local_path = thumb.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
-        if LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
+        elif LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
             local_path = thumb.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
+        else:
+            local_path = thumb
         parsed = urlparse(local_path)
         qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
         qs['ft'] = generate_file_token(
@@ -300,6 +391,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("data", "text"),
         ("notes", "text"),
         ("url_parts", "text"),
+        ("post_count", "number"),
     ],
     "archive_session": [
         ("id", "number"),
@@ -346,6 +438,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("notes", "text"),
         ("annotation", "text"),
         ("thumbnail_path", "text"),
+        ("publication_date", "date"),
     ],
 }
 
@@ -378,6 +471,11 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
     """
     Converts a JSONLogic object to a MySQL WHERE clause and argument dict.
     """
+    counter = [0]
+
+    def next_key(col: str, suffix: str) -> str:
+        counter[0] += 1
+        return f"{col}_{suffix}_{counter[0]}"
 
     def parse_logic(logic_rec: dict, args_rec: dict, table_rec: str) -> str:
         if not isinstance(logic_rec, dict):
@@ -387,7 +485,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 col, v = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
-                arg_key = f"{col}_eq"
+                arg_key = next_key(col, "eq")
                 args_rec[arg_key] = v
                 if col_def.data_type == "date":
                     return f"DATE(`{col}`) = DATE(%({arg_key})s)"
@@ -397,14 +495,14 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 v, col = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
-                arg_key = f"{col}_like"
+                arg_key = next_key(col, "like")
                 args_rec[arg_key] = f'%{v}%'
                 return f"`{col}` LIKE %({arg_key})s"
             elif op == "!=":
                 col, v = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
-                arg_key = f"{col}_neq"
+                arg_key = next_key(col, "neq")
                 args_rec[arg_key] = v
                 return f"`{col}` != %({arg_key})s"
             elif op == ">":
@@ -412,68 +510,84 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_gt"
+                    arg_key = next_key(col, "gt")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) > DATE(%({arg_key})s)"
                     return f"`{col}` > %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gt"
-                    arg_key2 = f"{col}_lt"
+                    arg_key1 = next_key(col, "gt")
+                    arg_key2 = next_key(col, "lt")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) > DATE(%({arg_key1})s) AND DATE(`{col}`) < DATE(%({arg_key2})s)"
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
             elif op == "<":
                 if len(val) == 2:
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_lt"
+                    arg_key = next_key(col, "lt")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) < DATE(%({arg_key})s)"
                     return f"`{col}` < %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gt"
-                    arg_key2 = f"{col}_lt"
+                    arg_key1 = next_key(col, "gt")
+                    arg_key2 = next_key(col, "lt")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) > DATE(%({arg_key1})s) AND DATE(`{col}`) < DATE(%({arg_key2})s)"
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
             elif op == "<=":
                 if len(val) == 2:
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_lte"
+                    arg_key = next_key(col, "lte")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) <= DATE(%({arg_key})s)"
                     return f"`{col}` <= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gte"
-                    arg_key2 = f"{col}_lte"
+                    arg_key1 = next_key(col, "gte")
+                    arg_key2 = next_key(col, "lte")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) >= DATE(%({arg_key1})s) AND DATE(`{col}`) <= DATE(%({arg_key2})s)"
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
             elif op == ">=":
                 if len(val) == 2:
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_gte"
+                    arg_key = next_key(col, "gte")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) >= DATE(%({arg_key})s)"
                     return f"`{col}` >= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gte"
-                    arg_key2 = f"{col}_lte"
+                    arg_key1 = next_key(col, "gte")
+                    arg_key2 = next_key(col, "lte")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) >= DATE(%({arg_key1})s) AND DATE(`{col}`) <= DATE(%({arg_key2})s)"
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
             elif op == "and":
                 clauses = [parse_logic(item, args_rec, table_rec) for item in val]

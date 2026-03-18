@@ -10,6 +10,8 @@ import events from './lib/events';
 import NoMatch from "./pages/404";
 import Login from "./pages/Login";
 
+import {LocalizationProvider} from '@mui/x-date-pickers/LocalizationProvider';
+import {AdapterDayjs} from '@mui/x-date-pickers/AdapterDayjs';
 import {KeyStatesProvider} from './services/keys/keyStates';
 import {ToastContainer} from "material-react-toastify";
 import {incorporateArrayInQueue, IPopupAlert, IPreparedPopupAlert} from "./services/alerts/alerts";
@@ -50,6 +52,7 @@ export default function App() {
     }, []);
 
     return (
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
         <KeyStatesProvider>
             <Router>
                 <meta/>
@@ -71,5 +74,6 @@ export default function App() {
                 />
             </Router>
         </KeyStatesProvider>
+        </LocalizationProvider>
     );
 }

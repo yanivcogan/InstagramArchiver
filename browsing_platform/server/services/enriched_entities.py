@@ -244,15 +244,24 @@ def transform_and_nest(
     return nested_entities
 
 
+def _include_data(config: Optional[EntitiesTransformConfig]) -> bool:
+    return not (
+        config is not None
+        and config.flattened_entities_transform is not None
+        and config.flattened_entities_transform.strip_raw_data
+    )
+
+
 def get_enriched_media_by_id(
         media_id: int,
         config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
-    media = get_media_by_id(media_id)
+    include_data = _include_data(config)
+    media = get_media_by_id(media_id, include_data=include_data)
     if media is None:
         return None
-    post = get_post_by_id(media.post_id)
-    account = get_account_by_id(post.account_id) if post else None
+    post = get_post_by_id(media.post_id, include_data=include_data)
+    account = get_account_by_id(post.account_id, include_data=include_data) if post else None
 
     post_ids = [post.id] if post else []
     tagged_accounts = get_tagged_accounts_by_post_ids(post_ids)
@@ -273,11 +282,12 @@ def get_enriched_post_by_id(
         post_id: int,
         config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
-    post = get_post_by_id(post_id)
+    include_data = _include_data(config)
+    post = get_post_by_id(post_id, include_data=include_data)
     if post is None:
         return None
-    account = get_account_by_id(post.account_id)
-    media = get_media_by_posts([post])
+    account = get_account_by_id(post.account_id, include_data=include_data)
+    media = get_media_by_posts([post], include_data=include_data)
     comments = get_comments_by_post_ids([post_id])
     tagged_accounts = get_tagged_accounts_by_post_ids([post_id])
 
@@ -297,11 +307,12 @@ def get_enriched_account_by_id(
         account_id: int,
         config: Optional[EntitiesTransformConfig] = None
 ) -> Optional[ExtractedEntitiesNested]:
-    account = get_account_by_id(account_id)
+    include_data = _include_data(config)
+    account = get_account_by_id(account_id, include_data=include_data)
     if account is None:
         return None
-    posts = get_posts_by_accounts([account])
-    media = get_media_by_posts(posts)
+    posts = get_posts_by_accounts([account], include_data=include_data)
+    media = get_media_by_posts(posts, include_data=include_data)
     post_ids = [p.id for p in posts if p.id is not None]
     tagged_accounts = get_tagged_accounts_by_post_ids(post_ids)
 
@@ -396,7 +407,11 @@ def get_archiving_sessions_by_account_id(
     query_args = {f"post_id_{i}": f"{post_id}" for i, post_id in enumerate(post_ids)}
     query_in_clause = ', '.join([f"%(post_id_{i})s" for i in range(len(post_ids))])
     session_rows = db.execute_query(
-        f"""SELECT DISTINCT a_s.*
+        f"""SELECT DISTINCT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
+                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
+                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
+                   a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
             WHERE p_a.canonical_id IN ({query_in_clause})
@@ -417,7 +432,11 @@ def get_archiving_sessions_by_post_id(
     if post is None:
         return []
     session_rows = db.execute_query(
-        """SELECT a_s.*
+        """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
+                  a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                  a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
+                  a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
+                  a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
             WHERE p_a.canonical_id = %(post_id)s
@@ -435,14 +454,18 @@ def get_archiving_sessions_by_media_id(
         transform: ArchivingSessionTransform
 ) -> list[ArchiveSession]:
     media = db.execute_query(
-        """SELECT * FROM media WHERE id = %(id)s""",
+        """SELECT id FROM media WHERE id = %(id)s""",
         {"id": media_id},
         return_type="single_row"
     )
     if media is None:
         return []
     session_rows = db.execute_query(
-        """SELECT a_s.*
+        """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
+                  a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                  a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
+                  a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
+                  a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN media_archive AS m_a ON a_s.id = m_a.archive_session_id
             WHERE m_a.canonical_id = %(media_id)s""",

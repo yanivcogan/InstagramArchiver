@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.enriched_entities import get_enriched_media_by_id
-from browsing_platform.server.services.media import get_media_by_id
+from browsing_platform.server.services.media import get_media_by_id, get_media_data_by_id, media_exists
 from browsing_platform.server.services.media_part import get_media_part_by_media
 from browsing_platform.server.services.permissions import auth_entity_view_access
 from extractors.entity_types import ExtractedEntitiesNested
@@ -24,18 +24,18 @@ async def _auth_media_view(req: Request, item_id: int):
 @router.get("/data/{item_id}/", dependencies=[Depends(_auth_media_view)])
 @router.get("/data/{item_id}", dependencies=[Depends(_auth_media_view)])
 async def get_media_data(item_id:int) -> Any:
-    media = get_media_by_id(item_id)
-    if not media:
+    found, data = get_media_data_by_id(item_id)
+    if not found:
         raise HTTPException(status_code=404, detail="Media Not Found")
-    return media.data
+    return data
 
 
 @router.get("/parts/{item_id}/", dependencies=[Depends(_auth_media_view)])
 @router.get("/parts/{item_id}", dependencies=[Depends(_auth_media_view)])
 async def get_media_parts(item_id:int) -> Any:
-    media = get_media_by_id(item_id)
-    if not media:
+    if not media_exists(item_id):
         raise HTTPException(status_code=404, detail="Media Not Found")
+    media = get_media_by_id(item_id)
     return get_media_part_by_media([media])
 
 

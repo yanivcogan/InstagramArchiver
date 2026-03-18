@@ -397,6 +397,37 @@ def incorporate_structures_into_db(
 
             logger.info(f"Processed {entity_config.key}: {new_count} new, {updated_count} updated")
 
+        # Keep account.post_count in sync for every account whose posts were touched.
+        db.execute_query(
+            """UPDATE account a
+               INNER JOIN (
+                   SELECT DISTINCT p.account_id
+                   FROM post_archive pa
+                   JOIN post p ON pa.canonical_id = p.id
+                   WHERE pa.archive_session_id = %(session_id)s
+                     AND p.account_id IS NOT NULL
+               ) affected ON a.id = affected.account_id
+               SET a.post_count = (SELECT COUNT(*) FROM post WHERE account_id = a.id)""",
+            {"session_id": archive_session_id},
+            return_type="none"
+        )
+
+        # Sync media.publication_date and media.account_id from the associated post
+        # for all media touched by this session.
+        db.execute_query(
+            """UPDATE media m
+               INNER JOIN (
+                   SELECT DISTINCT ma.canonical_id AS media_id
+                   FROM media_archive ma
+                   WHERE ma.archive_session_id = %(session_id)s
+               ) affected ON m.id = affected.media_id
+               INNER JOIN post p ON m.post_id = p.id
+               SET m.publication_date = p.publication_date,
+                   m.account_id = p.account_id""",
+            {"session_id": archive_session_id},
+            return_type="none"
+        )
+
 
 def preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: EntityBase) -> None:
     """
