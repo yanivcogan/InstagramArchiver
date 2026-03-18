@@ -75,9 +75,7 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     where_clauses = []
     if query.search_term:
         query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
-        query_args["search_term_like"] = f'%{query.search_term}%'
-        where_clauses.append('''MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE) OR 
-        `notes` LIKE %(search_term_like)s''')
+        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
@@ -94,8 +92,8 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     return [SearchResult(
         page="archive",
         id=s.id,
-        title=f"Archive Session {s.id}",
-        details=f"{s.archived_url}" + (f" ({s.notes})" if s.notes else "")
+        title=s.archived_url or f"Archive Session {s.id}",
+        details=s.notes or ""
     ) for s in sessions]
 
 
@@ -148,11 +146,15 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
         query_args.update(general_args)
+    order_by = (
+        "MATCH(`url`, `url_parts`, `bio`, `display_name`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        if query.search_term else "id DESC"
+    )
     rows = db.execute_query(
         f"""SELECT *
            FROM account
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY id DESC
+           ORDER BY {order_by}
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
@@ -180,11 +182,15 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
         query_args.update(general_args)
+    order_by = (
+        "MATCH(`url`, `caption`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        if query.search_term else "publication_date DESC"
+    )
     rows = db.execute_query(
         f"""SELECT *
            FROM post
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
-           ORDER BY publication_date DESC
+           ORDER BY {order_by}
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
@@ -224,7 +230,7 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args["search_term"] = default_fulltext_query(query.search_term)
         where_clauses.append("MATCH(`annotation`, `notes`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
-        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
+        general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "media")
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
@@ -259,8 +265,10 @@ def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTran
         thumb: str = res.thumbnails[i]
         if LOCAL_ARCHIVES_DIR_ALIAS in thumb:
             local_path = thumb.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
-        if LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
+        elif LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
             local_path = thumb.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
+        else:
+            local_path = thumb
         parsed = urlparse(local_path)
         qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
         qs['ft'] = generate_file_token(
@@ -378,6 +386,11 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
     """
     Converts a JSONLogic object to a MySQL WHERE clause and argument dict.
     """
+    counter = [0]
+
+    def next_key(col: str, suffix: str) -> str:
+        counter[0] += 1
+        return f"{col}_{suffix}_{counter[0]}"
 
     def parse_logic(logic_rec: dict, args_rec: dict, table_rec: str) -> str:
         if not isinstance(logic_rec, dict):
@@ -387,7 +400,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 col, v = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
-                arg_key = f"{col}_eq"
+                arg_key = next_key(col, "eq")
                 args_rec[arg_key] = v
                 if col_def.data_type == "date":
                     return f"DATE(`{col}`) = DATE(%({arg_key})s)"
@@ -397,14 +410,14 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 v, col = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
-                arg_key = f"{col}_like"
+                arg_key = next_key(col, "like")
                 args_rec[arg_key] = f'%{v}%'
                 return f"`{col}` LIKE %({arg_key})s"
             elif op == "!=":
                 col, v = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
-                arg_key = f"{col}_neq"
+                arg_key = next_key(col, "neq")
                 args_rec[arg_key] = v
                 return f"`{col}` != %({arg_key})s"
             elif op == ">":
@@ -412,15 +425,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_gt"
+                    arg_key = next_key(col, "gt")
                     args_rec[arg_key] = v
                     return f"`{col}` > %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gt"
-                    arg_key2 = f"{col}_lt"
+                    arg_key1 = next_key(col, "gt")
+                    arg_key2 = next_key(col, "lt")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
@@ -429,15 +442,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_lt"
+                    arg_key = next_key(col, "lt")
                     args_rec[arg_key] = v
                     return f"`{col}` < %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gt"
-                    arg_key2 = f"{col}_lt"
+                    arg_key1 = next_key(col, "gt")
+                    arg_key2 = next_key(col, "lt")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
@@ -446,15 +459,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_lte"
+                    arg_key = next_key(col, "lte")
                     args_rec[arg_key] = v
                     return f"`{col}` <= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gte"
-                    arg_key2 = f"{col}_lte"
+                    arg_key1 = next_key(col, "gte")
+                    arg_key2 = next_key(col, "lte")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
@@ -463,15 +476,15 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col, v = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key = f"{col}_gte"
+                    arg_key = next_key(col, "gte")
                     args_rec[arg_key] = v
                     return f"`{col}` >= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
-                    arg_key1 = f"{col}_gte"
-                    arg_key2 = f"{col}_lte"
+                    arg_key1 = next_key(col, "gte")
+                    arg_key2 = next_key(col, "lte")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"

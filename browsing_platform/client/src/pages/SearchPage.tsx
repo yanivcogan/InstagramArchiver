@@ -112,7 +112,7 @@ export default function SearchPage() {
             ) || getEmptyTree(query.search_mode) : getEmptyTree(query.search_mode)
     );
     const [results, setResults] = useState<SearchResult[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -171,19 +171,19 @@ export default function SearchPage() {
         if (q.search_mode && q.search_mode !== "accounts") {
             params.append("sm", q.search_mode);
         }
-        navigate({
-            pathname: location.pathname,
-            search: params.toString()
-                .replaceAll("%28", "(")
-                .replaceAll("%29", ")")
-                .replaceAll("%27", "'")
-                .replaceAll("%3A", ":")
-                .replaceAll("%3D", "=")
-                .replaceAll("%21", "!")
-                .replaceAll("%2C", ",")
-                .replaceAll("%3C", "<")
-                .replaceAll("%3E", ">")
-        }, {replace: true});
+        const newSearch = params.toString()
+            .replaceAll("%28", "(")
+            .replaceAll("%29", ")")
+            .replaceAll("%27", "'")
+            .replaceAll("%3A", ":")
+            .replaceAll("%3D", "=")
+            .replaceAll("%21", "!")
+            .replaceAll("%2C", ",")
+            .replaceAll("%3C", "<")
+            .replaceAll("%3E", ">");
+        // Don't navigate (and thus don't abort the in-flight request) if params haven't changed
+        if (newSearch === searchParams.toString()) return;
+        navigate({pathname: location.pathname, search: newSearch}, {replace: true});
     };
 
     const performSearch = (overrides?: Partial<ISearchQuery>) => {

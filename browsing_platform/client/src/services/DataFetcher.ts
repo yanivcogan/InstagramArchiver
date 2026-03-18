@@ -196,7 +196,7 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         },
     },
     'media': {
-        ai_caption: {
+        annotation: {
             label: 'AI Generated Caption',
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],

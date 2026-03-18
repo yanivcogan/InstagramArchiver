@@ -186,6 +186,9 @@ create index idx_incorporation_queue
 create fulltext index idx_search_fulltext
     on archive_session (archived_url, archived_url_parts, notes);
 
+create index archive_session_archiving_date
+    on archive_session ((DATE(archiving_timestamp)));
+
 create table error_log
 (
     id         int auto_increment
@@ -347,6 +350,9 @@ create index post_id_on_platform_index
 
 create index post_publication_date_index
     on post (publication_date);
+
+create index post_publication_date_date
+    on post ((DATE(publication_date)));
 
 create index post_url_index
     on post (url);
