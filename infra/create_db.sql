@@ -21,7 +21,8 @@ create table account
     bio            varchar(200)                        null,
     data           json                                null,
     notes          text                                null,
-    url_parts      text                                null
+    url_parts      text                                null,
+    post_count     int          default 0              not null
 )
     engine = InnoDB;
 
@@ -33,6 +34,9 @@ create index account_display_name_index
 
 create index account_id_on_platform_index
     on account (id_on_platform);
+
+create index account_post_count_index
+    on account (post_count);
 
 create index account_url_index
     on account (url);
@@ -249,6 +253,7 @@ create table media
     annotation     text                                null,
     thumbnail_path   varchar(200)                                                null,
     thumbnail_status enum ('pending', 'generated', 'not_needed', 'error') not null default 'pending',
+    publication_date datetime                                                    null,
     constraint media_post_id_fk
         foreign key (post_id) references post (id)
 )
@@ -271,6 +276,12 @@ create index media_thumbnail_path_index
 
 create index media_thumbnail_status_index
     on media (thumbnail_status);
+
+create index media_publication_date_index
+    on media (publication_date);
+
+create index media_publication_date_date
+    on media ((DATE(publication_date)));
 
 create index media_url_index
     on media (url);

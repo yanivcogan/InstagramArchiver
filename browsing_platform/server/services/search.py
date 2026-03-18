@@ -303,6 +303,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("data", "text"),
         ("notes", "text"),
         ("url_parts", "text"),
+        ("post_count", "number"),
     ],
     "archive_session": [
         ("id", "number"),
@@ -349,6 +350,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("notes", "text"),
         ("annotation", "text"),
         ("thumbnail_path", "text"),
+        ("publication_date", "date"),
     ],
 }
 
@@ -422,6 +424,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key = next_key(col, "gt")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) > DATE(%({arg_key})s)"
                     return f"`{col}` > %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
@@ -431,6 +435,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     arg_key2 = next_key(col, "lt")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) > DATE(%({arg_key1})s) AND DATE(`{col}`) < DATE(%({arg_key2})s)"
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
             elif op == "<":
                 if len(val) == 2:
@@ -439,6 +445,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key = next_key(col, "lt")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) < DATE(%({arg_key})s)"
                     return f"`{col}` < %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
@@ -448,6 +456,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     arg_key2 = next_key(col, "lt")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) > DATE(%({arg_key1})s) AND DATE(`{col}`) < DATE(%({arg_key2})s)"
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
             elif op == "<=":
                 if len(val) == 2:
@@ -456,6 +466,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key = next_key(col, "lte")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) <= DATE(%({arg_key})s)"
                     return f"`{col}` <= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
@@ -465,6 +477,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     arg_key2 = next_key(col, "lte")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) >= DATE(%({arg_key1})s) AND DATE(`{col}`) <= DATE(%({arg_key2})s)"
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
             elif op == ">=":
                 if len(val) == 2:
@@ -473,6 +487,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key = next_key(col, "gte")
                     args_rec[arg_key] = v
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) >= DATE(%({arg_key})s)"
                     return f"`{col}` >= %({arg_key})s"
                 elif len(val) == 3:
                     v1, col, v2 = val
@@ -482,6 +498,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     arg_key2 = next_key(col, "lte")
                     args_rec[arg_key1] = v1
                     args_rec[arg_key2] = v2
+                    if col_def.data_type == "date":
+                        return f"DATE(`{col}`) >= DATE(%({arg_key1})s) AND DATE(`{col}`) <= DATE(%({arg_key2})s)"
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
             elif op == "and":
                 clauses = [parse_logic(item, args_rec, table_rec) for item in val]

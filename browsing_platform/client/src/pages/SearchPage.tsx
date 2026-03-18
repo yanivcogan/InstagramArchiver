@@ -30,6 +30,7 @@ import {
     T_Search_Mode
 } from "../services/DataFetcher";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
+import {SEARCH_SHORTCUTS} from "../UIComponents/SearchShortcuts";
 import {
     Builder,
     BuilderProps,
@@ -204,6 +205,22 @@ export default function SearchPage() {
         setAdvancedFiltersTree(immutableTree);
     };
 
+    const onShortcutChange = (newLogic: JsonLogicFunction | null) => {
+        const modeConfig = {...InitialConfig, fields: ADVANCED_FILTERS_CONFIG[query.search_mode]};
+        const newTree = newLogic
+            ? Utils.Import.loadFromJsonLogic(newLogic, modeConfig) || getEmptyTree(query.search_mode)
+            : getEmptyTree(query.search_mode);
+        setAdvancedFiltersTree(newTree);
+        encodeQueryToParams({
+            ...query,
+            search_term: typedSearchTerm || "",
+            advanced_filters: newLogic,
+            page_number: 1,
+        });
+    };
+
+    const SearchShortcuts = SEARCH_SHORTCUTS[query.search_mode];
+
     const renderAdvancedFiltersBuilder = (props: BuilderProps) => (
         <div className="query-builder-container" style={{padding: "10px"}}>
             <div className="query-builder qb-lite">
@@ -277,18 +294,28 @@ export default function SearchPage() {
                                 </Stack>
                             }
                         />
-                        <IconButton color="primary" sx={{padding: '8px'}} onClick={() => performSearch()}>
-                            <SearchIcon/>
-                        </IconButton>
-                        <IconButton
-                            color="primary"
-                            sx={{padding: '8px'}}
-                            onClick={() => setShowAdvancedFilters(prev => !prev)}
-                        >
-                            <FilterListIcon/>
-                        </IconButton>
+                        <Tooltip title="Search" arrow disableInteractive>
+                            <IconButton color="primary" sx={{padding: '8px'}} onClick={() => performSearch()}>
+                                <SearchIcon/>
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Advanced Filtering" arrow disableInteractive>
+                            <IconButton
+                                color="primary"
+                                sx={{padding: '8px'}}
+                                onClick={() => setShowAdvancedFilters(prev => !prev)}
+                            >
+                                <FilterListIcon/>
+                            </IconButton>
+                        </Tooltip>
                     </Stack>
                 </Box>
+                {/* Search shortcuts — always-visible, mode-specific quick controls */}
+                {SearchShortcuts && (
+                    <Box>
+                        <SearchShortcuts tree={advancedFiltersTree} onChange={onShortcutChange}/>
+                    </Box>
+                )}
                 <Collapse in={showAdvancedFilters} timeout="auto" unmountOnExit>
                     <Stack direction={"column"} gap={1} sx={{width: "100%"}}>
                         <Box onKeyDown={(e: React.KeyboardEvent) => {
