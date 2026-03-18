@@ -46,6 +46,8 @@ Use Dbeaver or something to do a database dump just in case (on dev first)
 To load new data into the database:
 ```bash
 # this expects data to be in archives folder eg folders like eran_2025_1234
+# took a few minutes on dev
+# then 95 minutes on prod (8GB)
 uv run db_loaders/archives_db_loader.py full
 
 # to read from a separate drive - careful to have archives in the remote folder.

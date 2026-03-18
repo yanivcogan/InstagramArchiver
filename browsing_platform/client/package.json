@@ -35,7 +35,7 @@
     "cookie-parser": "^1.4.7",
     "csv-string": "^4.1.1",
     "custom-id": "^1.2.0",
-    "dayjs": "^1.11.19",
+    "dayjs": "^1.11.20",
     "dotenv": "^8.6.0",
     "email-validator": "^2.0.4",
     "env-cmd": "^10.1.0",
