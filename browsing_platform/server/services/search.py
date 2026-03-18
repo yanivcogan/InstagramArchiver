@@ -10,9 +10,7 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 
 logger = logging.getLogger(__name__)
 
-from browsing_platform.server.services.archiving_session import ArchiveSession
-from browsing_platform.server.services.media import get_media_by_posts, get_media_thumbnail_path
-from extractors.entity_types import Account, Post, Media
+from browsing_platform.server.services.media import get_media_thumbnail_path
 from utils import db
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
@@ -81,20 +79,19 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT *
+        f"""SELECT id, archived_url, notes
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    sessions = [ArchiveSession(**row) for row in rows]
     return [SearchResult(
         page="archive",
-        id=s.id,
-        title=s.archived_url or f"Archive Session {s.id}",
-        details=s.notes or ""
-    ) for s in sessions]
+        id=row["id"],
+        title=row["archived_url"] or f"Archive Session {row['id']}",
+        details=row["notes"] or ""
+    ) for row in rows]
 
 
 def string_to_instagram_account_url(s: str) -> Optional[str]:
@@ -151,22 +148,19 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         if query.search_term else "id DESC"
     )
     rows = db.execute_query(
-        f"""SELECT *
+        f"""SELECT id, url, display_name, bio
            FROM account
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY {order_by}
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    accounts = [Account(**row) for row in rows]
-    results = [SearchResult(
+    return [SearchResult(
         page="account",
-        id=a.id,
-        title=a.url + (f" ({a.display_name})" if a.display_name else ""),
-        details=a.bio or ""
-    ) for a in accounts]
-    results = apply_search_results_transform(results, search_results_transform)
-    return results
+        id=row["id"],
+        title=row["url"] + (f" ({row['display_name']})" if row["display_name"] else ""),
+        details=row["bio"] or ""
+    ) for row in rows]
 
 
 def search_posts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
@@ -187,33 +181,37 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         if query.search_term else "publication_date DESC"
     )
     rows = db.execute_query(
-        f"""SELECT *
+        f"""SELECT id, url, id_on_platform, caption
            FROM post
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY {order_by}
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    posts = [Post(**row) for row in rows]
-    media = get_media_by_posts(posts)
+    if not rows:
+        return []
+    post_ids = [row["id"] for row in rows]
+    media_args = {f"pid_{i}": pid for i, pid in enumerate(post_ids)}
+    media_in = ", ".join(f"%(pid_{i})s" for i in range(len(post_ids)))
+    media_rows = db.execute_query(  # nosec B608 - media_in contains only %(key)s placeholders
+        f"SELECT post_id, thumbnail_path, local_url FROM media WHERE post_id IN ({media_in})",
+        media_args
+    )
     post_thumbnails: dict[int, list[str]] = {}
-    for m in media:
-        if m.post_id not in post_thumbnails:
-            post_thumbnails[m.post_id] = []
-        media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
-        if media_thumbnail:
-            post_thumbnails[m.post_id].append(media_thumbnail)
-    results: list[SearchResult] = []
-    for p in posts:
-        results.append(
-            SearchResult(
-                page="post",
-                id=p.id,
-                title=p.url if p.url else f"item {p.id_on_platform}",
-                details=(p.caption[:100] + '...') if p.caption and len(p.caption) > 100 else (p.caption or ""),
-                thumbnails=post_thumbnails[p.id] if p.id in post_thumbnails else None
-            )
+    for m in media_rows:
+        thumb = get_media_thumbnail_path(m["thumbnail_path"], m["local_url"])
+        if thumb:
+            post_thumbnails.setdefault(m["post_id"], []).append(thumb)
+    results = [
+        SearchResult(
+            page="post",
+            id=row["id"],
+            title=row["url"] if row["url"] else f"item {row['id_on_platform']}",
+            details=(row["caption"][:100] + '...') if row["caption"] and len(row["caption"]) > 100 else (row["caption"] or ""),
+            thumbnails=post_thumbnails.get(row["id"])
         )
+        for row in rows
+    ]
     results = apply_search_results_transform(results, search_results_transform)
     return results
 
@@ -234,26 +232,23 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT *
+        f"""SELECT id, url, thumbnail_path, local_url
            FROM media
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY id DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
         query_args
     )
-    media = [Media(**row) for row in rows]
-    results: list[SearchResult] = []
-    for m in media:
-        media_thumbnail = get_media_thumbnail_path(m.thumbnail_path, m.local_url)
-        results.append(
-            SearchResult(
-                page="media",
-                id=m.id,
-                title=m.url,
-                details="",
-                thumbnails=[media_thumbnail] if media_thumbnail else None
-            )
+    results = [
+        SearchResult(
+            page="media",
+            id=row["id"],
+            title=row["url"],
+            details="",
+            thumbnails=[thumb] if (thumb := get_media_thumbnail_path(row["thumbnail_path"], row["local_url"])) else None
         )
+        for row in rows
+    ]
     results = apply_search_results_transform(results, search_results_transform)
     return results
 
