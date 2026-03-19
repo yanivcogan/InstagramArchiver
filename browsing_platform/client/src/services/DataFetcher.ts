@@ -168,6 +168,10 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
+        post_count: {
+            label: 'Posts Archived',
+            type: 'number',
+        },
     },
     'posts': {
         publication_date: {
@@ -196,7 +200,11 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         },
     },
     'media': {
-        ai_caption: {
+        publication_date: {
+            label: 'Publication Date',
+            type: 'date',
+        },
+        annotation: {
             label: 'AI Generated Caption',
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
@@ -248,7 +256,8 @@ export interface SearchResult {
     id: number,
     title: string,
     details?: string;
-    thumbnails?: string[]
+    thumbnails?: string[];
+    metadata?: Record<string, any>;
 }
 
 export const searchData = async (

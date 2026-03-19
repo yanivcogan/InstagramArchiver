@@ -21,7 +21,8 @@ create table account
     bio            varchar(200)                        null,
     data           json                                null,
     notes          text                                null,
-    url_parts      text                                null
+    url_parts      text                                null,
+    post_count     int          default 0              not null
 )
     engine = InnoDB;
 
@@ -33,6 +34,9 @@ create index account_display_name_index
 
 create index account_id_on_platform_index
     on account (id_on_platform);
+
+create index account_post_count_index
+    on account (post_count);
 
 create index account_url_index
     on account (url);
@@ -186,6 +190,9 @@ create index idx_incorporation_queue
 create fulltext index idx_search_fulltext
     on archive_session (archived_url, archived_url_parts, notes);
 
+create index archive_session_archiving_date
+    on archive_session ((DATE(archiving_timestamp)));
+
 create table error_log
 (
     id         int auto_increment
@@ -246,8 +253,12 @@ create table media
     annotation     text                                null,
     thumbnail_path   varchar(200)                                                null,
     thumbnail_status enum ('pending', 'generated', 'not_needed', 'error') not null default 'pending',
+    publication_date datetime                                                    null,
+    account_id       int                                                         null,
     constraint media_post_id_fk
-        foreign key (post_id) references post (id)
+        foreign key (post_id) references post (id),
+    constraint media_account_id_fk
+        foreign key (account_id) references account (id)
 )
     engine = InnoDB;
 
@@ -268,6 +279,15 @@ create index media_thumbnail_path_index
 
 create index media_thumbnail_status_index
     on media (thumbnail_status);
+
+create index media_account_id_index
+    on media (account_id);
+
+create index media_publication_date_index
+    on media (publication_date);
+
+create index media_publication_date_date
+    on media ((DATE(publication_date)));
 
 create index media_url_index
     on media (url);
@@ -347,6 +367,9 @@ create index post_id_on_platform_index
 
 create index post_publication_date_index
     on post (publication_date);
+
+create index post_publication_date_date
+    on post ((DATE(publication_date)));
 
 create index post_url_index
     on post (url);

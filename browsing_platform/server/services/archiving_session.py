@@ -62,6 +62,24 @@ class ArchivingSessionTransform(BaseModel):
     properties_to_censor: Optional[list[str]] = None
 
 
+def get_archiving_session_structures(session_id: int) -> tuple[bool, Optional[dict]]:
+    """Returns (True, structures) if the session exists, (False, None) if not found."""
+    row = db.execute_query(
+        "SELECT structures FROM archive_session WHERE id = %(id)s",
+        {"id": session_id},
+        return_type="single_row"
+    )
+    if row is None:
+        return False, None
+    structures = row["structures"]
+    if isinstance(structures, str):
+        try:
+            structures = json.loads(structures)
+        except json.JSONDecodeError:
+            structures = None
+    return True, structures
+
+
 def get_archiving_session_by_id(session_id: int) -> Optional[ArchiveSession]:
     session = db.execute_query(
         """SELECT *

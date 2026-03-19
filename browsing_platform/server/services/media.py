@@ -1,13 +1,45 @@
-from typing import Optional
+import json
+from typing import Any, Optional
 
 from browsing_platform.server.services.annotation import Annotation
 from extractors.entity_types import Post, Media
 from utils import db
 
 
-def get_media_by_id(media_id: int) -> Optional[Media]:
+def media_exists(media_id: int) -> bool:
+    return db.execute_query(
+        "SELECT id FROM media WHERE id = %(id)s",
+        {"id": media_id},
+        return_type="single_row"
+    ) is not None
+
+
+def get_media_data_by_id(media_id: int) -> tuple[bool, Any]:
+    """Returns (True, data) if the media exists, (False, None) if not found."""
     row = db.execute_query(
-        """SELECT * FROM media WHERE id = %(id)s""",
+        "SELECT data FROM media WHERE id = %(id)s",
+        {"id": media_id},
+        return_type="single_row"
+    )
+    if row is None:
+        return False, None
+    data = row["data"]
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            data = None
+    return True, data
+
+
+_MEDIA_COLS = "id, id_on_platform, url, post_id, local_url, media_type, data, notes, annotation, thumbnail_path, thumbnail_status, create_date"
+_MEDIA_COLS_NO_DATA = "id, id_on_platform, url, post_id, local_url, media_type, NULL AS data, notes, annotation, thumbnail_path, thumbnail_status, create_date"
+
+
+def get_media_by_id(media_id: int, include_data: bool = True) -> Optional[Media]:
+    cols = _MEDIA_COLS if include_data else _MEDIA_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM media WHERE id = %(id)s",
         {"id": media_id},
         return_type="single_row"
     )
@@ -16,13 +48,14 @@ def get_media_by_id(media_id: int) -> Optional[Media]:
     return Media(**row)
 
 
-def get_media_by_posts(posts: list[Post]) -> list[Media]:
+def get_media_by_posts(posts: list[Post], include_data: bool = True) -> list[Media]:
     if not posts or len(posts) == 0:
         return []
+    cols = _MEDIA_COLS if include_data else _MEDIA_COLS_NO_DATA
     query_args = {f"post_id_{i}": f"{post.id}" for i, post in enumerate(posts)}
     query_in_clause = ', '.join([f"%(post_id_{i})s" for i in range(len(posts))])
     media = db.execute_query(
-        f"""SELECT * FROM media WHERE post_id IN ({query_in_clause})""",  # nosec B608 - query_in_clause contains only %(key)s placeholders, not user input
+        f"""SELECT {cols} FROM media WHERE post_id IN ({query_in_clause})""",  # nosec B608 - query_in_clause contains only %(key)s placeholders, not user input
         query_args,
         return_type="rows"
     )

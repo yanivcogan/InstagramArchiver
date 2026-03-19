@@ -1,13 +1,45 @@
-from typing import Optional
+import json
+from typing import Any, Optional
 
 from browsing_platform.server.services.annotation import Annotation
 from extractors.entity_types import Account
 from utils import db
 
 
-def get_account_by_id(account_id: int) -> Optional[Account]:
+def account_exists(account_id: int) -> bool:
+    return db.execute_query(
+        "SELECT id FROM account WHERE id = %(id)s",
+        {"id": account_id},
+        return_type="single_row"
+    ) is not None
+
+
+def get_account_data_by_id(account_id: int) -> tuple[bool, Any]:
+    """Returns (True, data) if the account exists, (False, None) if not found."""
+    row = db.execute_query(
+        "SELECT data FROM account WHERE id = %(id)s",
+        {"id": account_id},
+        return_type="single_row"
+    )
+    if row is None:
+        return False, None
+    data = row["data"]
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            data = None
+    return True, data
+
+
+_ACCOUNT_COLS = "id, id_on_platform, url, identifiers, display_name, bio, data, notes, url_parts, create_date"
+_ACCOUNT_COLS_NO_DATA = "id, id_on_platform, url, identifiers, display_name, bio, NULL AS data, notes, url_parts, create_date"
+
+
+def get_account_by_id(account_id: int, include_data: bool = True) -> Optional[Account]:
+    cols = _ACCOUNT_COLS if include_data else _ACCOUNT_COLS_NO_DATA
     account = db.execute_query(
-        """SELECT * FROM account WHERE id = %(id)s""",
+        f"SELECT {cols} FROM account WHERE id = %(id)s",
         {"id": account_id},
         return_type="single_row"
     )
