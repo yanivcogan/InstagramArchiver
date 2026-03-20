@@ -1,3 +1,6 @@
+import time
+
+
 def run(cnx):
     cur = cnx.cursor()
     try:
@@ -12,10 +15,15 @@ def run(cnx):
         """)
         (count,) = cur.fetchone()
         if count == 0:
+            print("    post_publication_date_date: creating ...", flush=True)
+            t = time.perf_counter()
             cur.execute("""
                 CREATE INDEX post_publication_date_date
                 ON post ((DATE(publication_date)))
             """)
+            print(f"    post_publication_date_date: done ({time.perf_counter() - t:.1f}s)")
+        else:
+            print("    post_publication_date_date: already exists, skipping")
 
         # Functional index on DATE(archiving_timestamp) for archive_session.
         cur.execute("""
@@ -26,10 +34,15 @@ def run(cnx):
         """)
         (count,) = cur.fetchone()
         if count == 0:
+            print("    archive_session_archiving_date: creating ...", flush=True)
+            t = time.perf_counter()
             cur.execute("""
                 CREATE INDEX archive_session_archiving_date
                 ON archive_session ((DATE(archiving_timestamp)))
             """)
+            print(f"    archive_session_archiving_date: done ({time.perf_counter() - t:.1f}s)")
+        else:
+            print("    archive_session_archiving_date: already exists, skipping")
 
         cnx.commit()
     finally:

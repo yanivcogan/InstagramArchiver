@@ -12,6 +12,8 @@ Also:
   - Adds UNIQUE(canonical_id, archive_session_id) to account_relation_archive
 """
 
+import time
+
 
 def _table_exists(cur, table_name: str) -> bool:
     cur.execute(
@@ -72,8 +74,10 @@ def run(cnx):
     # -------------------------------------------------------------------------
     for table in ("post_engagement_tag", "post_engagement_archive", "post_engagement"):
         if _table_exists(cur, table):
+            print(f"    Dropping table '{table}' ...", flush=True)
+            t = time.perf_counter()
             cur.execute(f"DROP TABLE {table}")
-            print(f"    Dropped table '{table}'")
+            print(f"    Dropped table '{table}' ({time.perf_counter() - t:.1f}s)")
         else:
             print(f"    Table '{table}' does not exist, skipping")
 
@@ -81,6 +85,8 @@ def run(cnx):
     # 2. Create comment table
     # -------------------------------------------------------------------------
     if not _table_exists(cur, "comment"):
+        print("    Creating table 'comment' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("""
             CREATE TABLE comment (
                 id                            int auto_increment primary key,
@@ -104,7 +110,7 @@ def run(cnx):
         cur.execute("CREATE INDEX comment_id_on_platform_index ON comment (id_on_platform)")
         cur.execute("CREATE INDEX comment_post_id_index ON comment (post_id)")
         cur.execute("CREATE INDEX comment_account_id_index ON comment (account_id)")
-        print("    Created table 'comment'")
+        print(f"    Created table 'comment' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    Table 'comment' already exists, skipping")
 
@@ -112,6 +118,8 @@ def run(cnx):
     # 3. Create comment_archive table
     # -------------------------------------------------------------------------
     if not _table_exists(cur, "comment_archive"):
+        print("    Creating table 'comment_archive' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("""
             CREATE TABLE comment_archive (
                 id                            int auto_increment primary key,
@@ -141,7 +149,7 @@ def run(cnx):
         cur.execute("CREATE INDEX comment_archive_session_id_index ON comment_archive (archive_session_id)")
         cur.execute("CREATE INDEX comment_archive_id_on_platform_index ON comment_archive (id_on_platform)")
         cur.execute("CREATE INDEX comment_archive_post_id_on_platform_index ON comment_archive (post_id_on_platform)")
-        print("    Created table 'comment_archive'")
+        print(f"    Created table 'comment_archive' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    Table 'comment_archive' already exists, skipping")
 
@@ -149,6 +157,8 @@ def run(cnx):
     # 4. Create post_like table
     # -------------------------------------------------------------------------
     if not _table_exists(cur, "post_like"):
+        print("    Creating table 'post_like' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("""
             CREATE TABLE post_like (
                 id             int auto_increment primary key,
@@ -168,7 +178,7 @@ def run(cnx):
         cur.execute("CREATE INDEX post_like_id_on_platform_index ON post_like (id_on_platform)")
         cur.execute("CREATE INDEX post_like_post_id_index ON post_like (post_id)")
         cur.execute("CREATE INDEX post_like_account_id_index ON post_like (account_id)")
-        print("    Created table 'post_like'")
+        print(f"    Created table 'post_like' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    Table 'post_like' already exists, skipping")
 
@@ -176,6 +186,8 @@ def run(cnx):
     # 5. Create post_like_archive table
     # -------------------------------------------------------------------------
     if not _table_exists(cur, "post_like_archive"):
+        print("    Creating table 'post_like_archive' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("""
             CREATE TABLE post_like_archive (
                 id                     int auto_increment primary key,
@@ -201,7 +213,7 @@ def run(cnx):
         cur.execute("CREATE INDEX post_like_archive_session_id_index ON post_like_archive (archive_session_id)")
         cur.execute("CREATE INDEX post_like_archive_id_on_platform_index ON post_like_archive (id_on_platform)")
         cur.execute("CREATE INDEX post_like_archive_post_id_on_platform_index ON post_like_archive (post_id_on_platform)")
-        print("    Created table 'post_like_archive'")
+        print(f"    Created table 'post_like_archive' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    Table 'post_like_archive' already exists, skipping")
 
@@ -209,6 +221,8 @@ def run(cnx):
     # 6. Create tagged_account table
     # -------------------------------------------------------------------------
     if not _table_exists(cur, "tagged_account"):
+        print("    Creating table 'tagged_account' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("""
             CREATE TABLE tagged_account (
                 id                int auto_increment primary key,
@@ -234,7 +248,7 @@ def run(cnx):
         cur.execute("CREATE INDEX tagged_account_tagged_account_id_index ON tagged_account (tagged_account_id)")
         cur.execute("CREATE INDEX tagged_account_post_id_index ON tagged_account (post_id)")
         cur.execute("CREATE INDEX tagged_account_media_id_index ON tagged_account (media_id)")
-        print("    Created table 'tagged_account'")
+        print(f"    Created table 'tagged_account' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    Table 'tagged_account' already exists, skipping")
 
@@ -242,6 +256,8 @@ def run(cnx):
     # 7. Create tagged_account_archive table
     # -------------------------------------------------------------------------
     if not _table_exists(cur, "tagged_account_archive"):
+        print("    Creating table 'tagged_account_archive' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("""
             CREATE TABLE tagged_account_archive (
                 id                             int auto_increment primary key,
@@ -271,7 +287,7 @@ def run(cnx):
         cur.execute("CREATE INDEX tagged_account_archive_session_id_index ON tagged_account_archive (archive_session_id)")
         cur.execute("CREATE INDEX tagged_account_archive_id_on_platform_index ON tagged_account_archive (id_on_platform)")
         cur.execute("CREATE INDEX tagged_account_archive_tagged_id_on_platform_index ON tagged_account_archive (tagged_account_id_on_platform)")
-        print("    Created table 'tagged_account_archive'")
+        print(f"    Created table 'tagged_account_archive' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    Table 'tagged_account_archive' already exists, skipping")
 
@@ -279,16 +295,20 @@ def run(cnx):
     # 8. Alter account_relation: add id_on_platform and data columns
     # -------------------------------------------------------------------------
     if not _column_exists(cur, "account_relation", "id_on_platform"):
+        print("    account_relation: adding column 'id_on_platform' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("ALTER TABLE account_relation ADD COLUMN id_on_platform varchar(200) null")
         if not _index_exists(cur, "account_relation", "account_relation_id_on_platform_index"):
             cur.execute("CREATE INDEX account_relation_id_on_platform_index ON account_relation (id_on_platform)")
-        print("    account_relation: added column 'id_on_platform'")
+        print(f"    account_relation: added column 'id_on_platform' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    account_relation: column 'id_on_platform' already exists, skipping")
 
     if not _column_exists(cur, "account_relation", "data"):
+        print("    account_relation: adding column 'data' ...", flush=True)
+        t = time.perf_counter()
         cur.execute("ALTER TABLE account_relation ADD COLUMN data json null")
-        print("    account_relation: added column 'data'")
+        print(f"    account_relation: added column 'data' ({time.perf_counter() - t:.1f}s)")
     else:
         print("    account_relation: column 'data' already exists, skipping")
 
@@ -296,14 +316,18 @@ def run(cnx):
     # 9. Alter account_relation_archive: make URL columns nullable
     # -------------------------------------------------------------------------
     if not _column_is_nullable(cur, "account_relation_archive", "followed_account_url"):
+        print("    account_relation_archive: making 'followed_account_url' nullable ...", flush=True)
+        t = time.perf_counter()
         cur.execute("ALTER TABLE account_relation_archive MODIFY followed_account_url varchar(200) null")
-        print("    account_relation_archive: made 'followed_account_url' nullable")
+        print(f"    account_relation_archive: made 'followed_account_url' nullable ({time.perf_counter() - t:.1f}s)")
     else:
         print("    account_relation_archive: 'followed_account_url' already nullable, skipping")
 
     if not _column_is_nullable(cur, "account_relation_archive", "follower_account_url"):
+        print("    account_relation_archive: making 'follower_account_url' nullable ...", flush=True)
+        t = time.perf_counter()
         cur.execute("ALTER TABLE account_relation_archive MODIFY follower_account_url varchar(200) null")
-        print("    account_relation_archive: made 'follower_account_url' nullable")
+        print(f"    account_relation_archive: made 'follower_account_url' nullable ({time.perf_counter() - t:.1f}s)")
     else:
         print("    account_relation_archive: 'follower_account_url' already nullable, skipping")
 
@@ -311,11 +335,13 @@ def run(cnx):
     # 10. Add UNIQUE constraint to account_relation_archive
     # -------------------------------------------------------------------------
     if not _constraint_exists(cur, "account_relation_archive", "uq_account_relation_archive_canonical_session"):
+        print("    account_relation_archive: adding UNIQUE constraint ...", flush=True)
+        t = time.perf_counter()
         cur.execute(
             "ALTER TABLE account_relation_archive ADD CONSTRAINT uq_account_relation_archive_canonical_session "
             "UNIQUE (canonical_id, archive_session_id)"
         )
-        print("    account_relation_archive: added UNIQUE constraint")
+        print(f"    account_relation_archive: added UNIQUE constraint ({time.perf_counter() - t:.1f}s)")
     else:
         print("    account_relation_archive: UNIQUE constraint already exists, skipping")
 

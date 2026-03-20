@@ -33,3 +33,4 @@ all.zip
 output.log
 /browsing_platform/client/dist
 gitleaks.exe
+logs_db_loader/*

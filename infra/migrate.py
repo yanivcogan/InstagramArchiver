@@ -3,7 +3,7 @@
 Database migration runner.
 
 Usage:
-    uv run db_loaders/migrate.py
+    uv run infra/migrate.py
 
 Pending migrations are listed and you are prompted to choose a starting
 version.  Migrations before the chosen version are recorded as applied
@@ -27,10 +27,34 @@ version number.  Migrations are never re-applied.
 
 import importlib.util
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+class _Tee:
+    """Write to both a file and the original stream."""
+
+    def __init__(self, stream, path: Path):
+        self._stream = stream
+        self._file = path.open("a", encoding="utf-8", buffering=1)
+
+    def write(self, data):
+        self._stream.write(data)
+        self._file.write(data)
+
+    def flush(self):
+        self._stream.flush()
+        self._file.flush()
+
+    def fileno(self):
+        return self._stream.fileno()
+
+    def close(self):
+        self._file.close()
 
 from utils import db as db_utils  # noqa: E402
 
@@ -177,17 +201,20 @@ def run_pending_migrations():
                 skipped += 1
                 continue
 
-            print(f"  Applying V{version:03d}: {description} ...", end=" ", flush=True)
+            print(f"  Applying V{version:03d}: {description} ...", flush=True)
+            t_start = time.perf_counter()
             try:
                 if path.suffix == ".sql":
                     _apply_sql(cnx, path)
                 else:
                     _apply_python(cnx, path)
                 _record_version(cnx, version, description)
-                print("done.")
+                elapsed = time.perf_counter() - t_start
+                print(f"  V{version:03d} done ({elapsed:.1f}s).")
                 applied_count += 1
             except Exception as e:
-                print(f"FAILED.\n  Error: {e}")
+                elapsed = time.perf_counter() - t_start
+                print(f"  V{version:03d} FAILED after {elapsed:.1f}s.\n  Error: {e}")
                 print("  Stopping. Fix the migration and re-run.")
                 sys.exit(1)
 
@@ -209,4 +236,16 @@ if __name__ == "__main__":
     if sys.argv[1:]:
         print("Usage: uv run db_loaders/migrate.py")
         sys.exit(1)
-    run_pending_migrations()
+
+    log_dir = ROOT / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_path = log_dir / f"migrate_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    tee = _Tee(sys.stdout, log_path)
+    sys.stdout = tee
+    print(f"Logging to {log_path}", flush=True)
+
+    try:
+        run_pending_migrations()
+    finally:
+        sys.stdout = tee._stream
+        tee.close()
