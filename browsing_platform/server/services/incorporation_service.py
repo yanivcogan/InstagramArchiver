@@ -46,8 +46,8 @@ class IncorporationManager:
             if self._running:
                 raise RuntimeError("An incorporation job is already running")
             job_id = db.execute_query(
-                "INSERT INTO incorporation_job (status, triggered_by_user_id, triggered_by_ip) "
-                "VALUES ('running', %(user_id)s, %(ip)s)",
+                "INSERT INTO incorporation_job (status, triggered_by_user_id, triggered_by_ip, started_at) "
+                "VALUES ('running', %(user_id)s, %(ip)s, NOW())",
                 {"user_id": triggered_by_user_id, "ip": triggered_by_ip},
                 return_type="id",
             )
