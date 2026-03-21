@@ -103,6 +103,7 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     existing_media.id_on_platform = reconcile_primitives(existing_media.id_on_platform, new_media.id_on_platform)
     existing_media.url = reconcile_primitives(existing_media.url, new_media.url)
     existing_media.post_url = reconcile_primitives(existing_media.post_url, new_media.post_url)
+    existing_media.local_url = reconcile_primitives(existing_media.local_url, new_media.local_url)
     existing_media.media_type = reconcile_primitives(existing_media.media_type, new_media.media_type)
     existing_media.data = reconcile_dicts(existing_media.data, new_media.data)
     return existing_media
