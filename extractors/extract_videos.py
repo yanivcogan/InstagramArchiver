@@ -12,7 +12,7 @@ from urllib import parse as urllib_parse
 
 import ijson
 import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from extractors.models import VideoVersion
 from extractors.structures_extraction import StructureType, structures_from_har
@@ -35,13 +35,18 @@ class MediaTrack(BaseModel):
 
 
 class Video(BaseModel):
-    xpv_asset_id: int
+    xpv_asset_id: str
     fetched_tracks: Optional[dict[str, MediaTrack]]
     full_asset: Optional[str] = None
     local_files: Optional[list[Path]] = None
 
+    @field_validator('xpv_asset_id', mode='before')
+    @classmethod
+    def coerce_to_str(cls, v):
+        return str(v) if v is not None else v
 
-def extract_xpv_asset_id(url) -> Optional[int]:
+
+def extract_xpv_asset_id(url) -> Optional[str]:
     # Parse query string
     parsed_url = urllib_parse.urlparse(url)
     query_params = urllib_parse.parse_qs(parsed_url.query)
@@ -50,7 +55,7 @@ def extract_xpv_asset_id(url) -> Optional[int]:
     efg_encoded = query_params.get('efg')
     if not efg_encoded:
         try:
-            return int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16)
+            return str(int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16))
         except Exception:
             return None
 
@@ -58,14 +63,14 @@ def extract_xpv_asset_id(url) -> Optional[int]:
     try:
         efg_json = base64.urlsafe_b64decode(efg_encoded[0] + '==')  # Add padding if missing
         efg_data = json.loads(efg_json.decode('utf-8'))
-        xpv_asset_id =efg_data.get('xpv_asset_id')
+        xpv_asset_id = efg_data.get('xpv_asset_id')
         if not xpv_asset_id:
             raise ValueError("xpv_asset_id not found in efg data")
-        return xpv_asset_id
+        return str(xpv_asset_id)
     except Exception as e:
         print(f"Error decoding efg: {e}")
         try:
-            return int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16)
+            return str(int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16))
         except Exception:
             return None
 
@@ -378,7 +383,7 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
                         for carousel_item in item.carousel_media:
                             if carousel_item.video_versions:
                                 pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
-    videos: dict[int, Video] = dict()
+    videos: dict[str, Video] = dict()
     for pk, video_versions in pk_video_versions_dict.items():
         if video_versions:
             try:
