@@ -121,7 +121,16 @@ def _run_incorporation(job_id: int):
         extract_entities(cancel_check=cancel, emit=emit)
 
         emit("Part D — generating thumbnails")
-        asyncio.run(generate_missing_thumbnails(cancel_check=cancel, emit=emit))
+        # Use a manually managed loop instead of asyncio.run() to avoid blocking
+        # on shutdown_default_executor(). asyncio.run() waits for ALL executor
+        # threads to finish before returning — including any cv2 threads that
+        # survived an asyncio.wait_for timeout and are still running. Those
+        # zombie threads would hang the pipeline indefinitely.
+        _loop = asyncio.new_event_loop()
+        try:
+            _loop.run_until_complete(generate_missing_thumbnails(cancel_check=cancel, emit=emit))
+        finally:
+            _loop.close()
 
         emit("Incorporation complete.")
         incorporation_ws.broadcast({"type": "done", "status": "completed"})
