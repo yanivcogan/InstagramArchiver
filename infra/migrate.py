@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT))
 
 from utils import db as db_utils  # noqa: E402
 
-MIGRATIONS_DIR = ROOT / "migrations"
+MIGRATIONS_DIR = ROOT / "infra" / "migrations"
 
 _CREATE_MIGRATION_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_migration (

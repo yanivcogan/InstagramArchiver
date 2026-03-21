@@ -38,6 +38,8 @@ The extraction logic lives in `extractors/` — HAR files contain raw Instagram 
 
 MySQL schema defined in `infra/create_db.sql`. Key entities: `accounts`, `posts`, `media`, `media_parts`, `archiving_sessions`.
 
+Incremental migrations live in `infra/migrations/` and follow the `V{NNN}__{description}.sql|py` naming convention. Run them with `uv run infra/migrate.py`.
+
 ### Utilities (`utils/`)
 
 - `db.py` — MySQL connection helper
