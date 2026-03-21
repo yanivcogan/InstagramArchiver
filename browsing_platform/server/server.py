@@ -176,7 +176,7 @@ async def serve_spa(request: Request, full_path: str):
         logger.info(f"SPA catch-all: API route not found -> {full_path}")
         return Response('{"detail":"Not Found"}', status_code=404, media_type="application/json")
 
-    build_dir = os.path.abspath("browsing_platform/client/build")
+    build_dir = os.path.abspath("browsing_platform/client/dist")
     file_path = os.path.abspath(os.path.join(build_dir, full_path))
 
     # Prevent path traversal: reject any resolved path outside the build directory.
