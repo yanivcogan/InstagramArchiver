@@ -1,6 +1,5 @@
 import base64
 import json
-import time  # PROFILING
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -145,26 +144,23 @@ def extract_data_from_har(
 ) -> ExtractedHarData:
     archive_dir = har_path.parent
 
-    _t = time.time(); structures, har_video_maps, har_photo_maps = _scan_har_once(har_path); _dt = time.time() - _t  # PROFILING
-    print(f"[PROF] extract_data_from_har: _scan_har_once={_dt:.3f}s ({len(structures)} structures, {len(har_video_maps)} video maps, {len(har_photo_maps)} photo maps)")  # PROFILING
+    structures, har_video_maps, har_photo_maps = _scan_har_once(har_path)
 
-    _t = time.time(); videos = acquire_videos(  # PROFILING
+    videos = acquire_videos(
         har_path,
         archive_dir / "videos",
         structures=structures,
         config=video_acquisition_config,
         har_video_maps=har_video_maps,
-    ); _dt = time.time() - _t  # PROFILING
-    print(f"[PROF] extract_data_from_har: acquire_videos={_dt:.3f}s ({len(videos)} videos)")  # PROFILING
+    )
 
-    _t = time.time(); photos = acquire_photos(  # PROFILING
+    photos = acquire_photos(
         har_path,
         archive_dir / "photos",
         structures=structures,
         config=photo_acquisition_config,
         har_photo_maps=har_photo_maps,
-    ); _dt = time.time() - _t  # PROFILING
-    print(f"[PROF] extract_data_from_har: acquire_photos={_dt:.3f}s ({len(photos)} photos)")  # PROFILING
+    )
 
     return ExtractedHarData(
         structures=structures,
