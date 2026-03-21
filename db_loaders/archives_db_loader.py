@@ -265,10 +265,12 @@ ENTITY_EXTRACTION_ALGORITHM_VERSION = 3
 
 def strip_media_contents(data: ExtractedHarData) -> None:
     for v in data.videos:
-        for t in v.fetched_tracks:
-            v.fetched_tracks[t].segments = []
+        if v and v.fetched_tracks:
+            for t in v.fetched_tracks:
+                v.fetched_tracks[t].segments = []
     for p in data.photos:
-        p.fetched_assets = None
+        if p:
+            p.fetched_assets = None
 
 
 def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[[], bool]] = None, emit: Optional[Callable[[str], None]] = None):
