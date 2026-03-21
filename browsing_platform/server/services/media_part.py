@@ -13,7 +13,6 @@ class MediaPart(EntityBase):
     timestamp_range_start: Optional[float] = None
     timestamp_range_end: Optional[float] = None
     crop_area: Optional[list[float]] = None
-    notes: Optional[str] = None
 
     @field_validator('crop_area', mode='before')
     def parse_data(cls, v, _):
@@ -39,14 +38,13 @@ def get_media_part_by_id(media_part_id: int) -> Optional[MediaPart]:
 
 def insert_media_part(media_part: MediaPart) -> int:
     insert_result = db.execute_query(
-        """INSERT INTO media_part (media_id, timestamp_range_start, timestamp_range_end, crop_area, notes)
-           VALUES (%(media_id)s, %(timestamp_range_start)s, %(timestamp_range_end)s, %(crop_area)s, %(notes)s)""",
+        """INSERT INTO media_part (media_id, timestamp_range_start, timestamp_range_end, crop_area)
+           VALUES (%(media_id)s, %(timestamp_range_start)s, %(timestamp_range_end)s, %(crop_area)s)""",
         {
             "media_id": media_part.media_id,
             "timestamp_range_start": media_part.timestamp_range_start,
             "timestamp_range_end": media_part.timestamp_range_end,
             "crop_area": json.dumps(media_part.crop_area) if media_part.crop_area is not None else None,
-            "notes": media_part.notes
         },
         return_type="id"
     )
@@ -59,8 +57,7 @@ def update_media_part(media_part: MediaPart) -> None:
            SET media_id = %(media_id)s,
                timestamp_range_start = %(timestamp_range_start)s,
                timestamp_range_end = %(timestamp_range_end)s,
-               crop_area = %(crop_area)s,
-               notes = %(notes)s
+               crop_area = %(crop_area)s
            WHERE id = %(id)s""",
         {
             "id": media_part.id,
@@ -68,7 +65,6 @@ def update_media_part(media_part: MediaPart) -> None:
             "timestamp_range_start": media_part.timestamp_range_start,
             "timestamp_range_end": media_part.timestamp_range_end,
             "crop_area": json.dumps(media_part.crop_area) if media_part.crop_area is not None else None,
-            "notes": media_part.notes
         },
         "none"
     )
@@ -96,22 +92,17 @@ def get_media_part_by_media(media: list[Media]) -> list[MediaPart]:
     return [MediaPart(**m) for m in media_parts]
 
 def annotate_media_part(media_part_id: int, annotation: Annotation) -> None:
-    # Set notes field
-    db.execute_query(
-        """UPDATE media_part SET notes = %(notes)s WHERE id = %(id)s""",
-        {"id": media_part_id, "notes": annotation.notes},
-        return_type="none"
-    )
-    # Clear associated tags
-    db.execute_query(
-        """DELETE FROM media_part_tag WHERE media_part_id = %(id)s""",
-        {"id": media_part_id},
-        return_type="none"
-    )
-    # Add new tags
-    for tag_id in annotation.tags:
+    with db.transaction_batch():
+        # Clear associated tags
         db.execute_query(
-            """INSERT INTO media_part_tag (media_part_id, tag_id) VALUES (%(media_part_id)s, %(tag_id)s)""",
-            {"media_part_id": media_part_id, "tag_id": tag_id},
+            """DELETE FROM media_part_tag WHERE media_part_id = %(id)s""",
+            {"id": media_part_id},
             return_type="none"
         )
+        # Add new tags with per-assignment notes
+        for tag in (annotation.tags or []):
+            db.execute_query(
+                """INSERT INTO media_part_tag (media_part_id, tag_id, notes) VALUES (%(media_part_id)s, %(tag_id)s, %(notes)s)""",
+                {"media_part_id": media_part_id, "tag_id": tag.id, "notes": tag.notes},
+                return_type="none"
+            )

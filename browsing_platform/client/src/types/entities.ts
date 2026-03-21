@@ -5,7 +5,6 @@ export interface IEntityBase {
     created_at?: string; // ISO date string
     updated_at?: string;
     canonical_id?: number;
-    notes?: string;
     tags?: ITagWithType[];
 }
 
@@ -47,7 +46,6 @@ export interface IMediaPart extends IEntityBase {
     timestamp_range_start?: number;
     timestamp_range_end?: number;
     crop_area?: number[];
-    notes?: string;
 }
 
 export interface IComment extends IEntityBase {
@@ -164,7 +162,6 @@ export interface IArchiveSession {
     attachments?: ISessionAttachments;
     extract_algorithm_version?: number;
     archiving_timestamp?: string;
-    notes?: string;
     extraction_error?: string;
     source_type: 'AA_xlsx' | 'local_har' | 'local_wacz';
     incorporation_status?: 'pending' | 'parse_failed' | 'parsed' | 'extract_failed' | 'done';

@@ -205,14 +205,6 @@ export default function MediaPart({media, mediaPart: mediaPartProp, refetchMedia
                         }
                     </Stack>
                 }
-                <TextField
-                    label={"notes"}
-                    value={mediaPart.notes || ""}
-                    onChange={(e) => setMediaPart(curr => ({...curr, notes: e.target.value}))}
-                    fullWidth
-                    multiline
-                    disabled={!editing || awaitingSave}
-                />
             </Stack>
         </CardContent>
         <CardActions>

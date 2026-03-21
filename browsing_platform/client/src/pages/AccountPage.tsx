@@ -1,8 +1,9 @@
 import React, {useEffect, useState} from 'react';
 import {useParams, useSearchParams} from "react-router";
-import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
+import {Box, Button, CircularProgress, Collapse, Divider, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
-import {fetchAccount, fetchArchivingSessionsAccount} from "../services/DataFetcher";
+import {fetchAccount, fetchArchivingSessionsAccount, fetchRelatedTagStats} from "../services/DataFetcher";
+import {ITagStat} from "../types/tags";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
@@ -30,6 +31,9 @@ export default function AccountPage() {
     const [loadingData, setLoadingData] = useState(id !== null);
     const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(false);
+    const [tagStats, setTagStats] = useState<ITagStat[] | null>(null);
+    const [tagStatsExpanded, setTagStatsExpanded] = useState(false);
+    const [loadingTagStats, setLoadingTagStats] = useState(false);
 
     useEffect(() => {
         if (id === null) return;
@@ -54,6 +58,21 @@ export default function AccountPage() {
             setLoadingSessions(false);
         });
     }, [id]);
+
+    const loadTagStats = () => {
+        if (!id || loadingTagStats || tagStats !== null) return;
+        setLoadingTagStats(true);
+        fetchRelatedTagStats(id).then(stats => {
+            setTagStats(stats);
+            setLoadingTagStats(false);
+        });
+    };
+
+    const handleTagStatsToggle = () => {
+        const next = !tagStatsExpanded;
+        setTagStatsExpanded(next);
+        if (next) loadTagStats();
+    };
 
     const renderData = () => {
         if (loadingData) {
@@ -105,6 +124,37 @@ export default function AccountPage() {
             <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
                 {renderData()}
                 <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>
+                {!disableAnnotator && id && (
+                    <Stack gap={1}>
+                        <Button variant="text" size="small" onClick={handleTagStatsToggle} sx={{alignSelf: 'flex-start'}}>
+                            {tagStatsExpanded ? "▾" : "▸"} Related Accounts — Tag Distribution
+                        </Button>
+                        <Collapse in={tagStatsExpanded} unmountOnExit>
+                            {loadingTagStats ? <CircularProgress size={20}/> : (
+                                tagStats && tagStats.length > 0 ? (
+                                    <Table size="small" sx={{maxWidth: 480}}>
+                                        <TableHead>
+                                            <TableRow>
+                                                <TableCell>Tag</TableCell>
+                                                <TableCell>Type</TableCell>
+                                                <TableCell align="right">Count</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {tagStats.map(s => (
+                                                <TableRow key={s.tag_id}>
+                                                    <TableCell>{s.tag_name}</TableCell>
+                                                    <TableCell>{s.tag_type_name}</TableCell>
+                                                    <TableCell align="right">×{s.count}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                ) : <Typography variant="body2" color="text.secondary">No tag data for related accounts.</Typography>
+                            )}
+                        </Collapse>
+                    </Stack>
+                )}
             </Stack>
         </div>
     </div>

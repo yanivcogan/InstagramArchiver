@@ -10,7 +10,7 @@ import {
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
-import {ITagWithType} from "../types/tags";
+import {ITagStat, ITagWithType} from "../types/tags";
 import {getShareTokenFromHref} from "./linkSharing";
 
 interface FlattenedEntitiesTransform {
@@ -158,11 +158,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
-        notes: {
-            label: 'Notes',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
         data: {
             label: 'Account Data (Slow)',
             type: 'text',
@@ -180,11 +175,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         },
         caption: {
             label: 'Caption',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
-        notes: {
-            label: 'Notes',
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
@@ -209,11 +199,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
-        notes: {
-            label: 'Notes',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
         data: {
             label: 'Media Data (Slow)',
             type: 'text',
@@ -227,11 +212,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         },
         archived_url: {
             label: 'Archived URL',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
-        notes: {
-            label: 'Notes',
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
@@ -249,6 +229,8 @@ export interface ISearchQuery {
     advanced_filters: JsonLogicFunction | null;
     page_number: number;
     page_size: number;
+    tag_ids?: number[];
+    tag_filter_mode?: "any" | "all";
 }
 
 export interface SearchResult {
@@ -265,4 +247,8 @@ export const searchData = async (
     options: { signal: AbortSignal }
 ): Promise<SearchResult[]> => {
     return await server.post("search/", query, HTTP_METHODS.post, {abortSignal: options.signal});
+}
+
+export const fetchRelatedTagStats = async (accountId: number): Promise<ITagStat[]> => {
+    return await server.get(`account/${accountId}/related_tag_stats/`);
 }

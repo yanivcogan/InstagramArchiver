@@ -1,7 +1,8 @@
+import json
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from utils import db
 
@@ -18,16 +19,28 @@ class ITagWithType(ITag):
     tag_type_name: Optional[str] = None
     tag_type_description: Optional[str] = None
     tag_type_notes: Optional[str] = None
+    assignment_notes: Optional[str] = None
+    tag_type_entity_affinity: Optional[list] = None
+
+    @field_validator('tag_type_entity_affinity', mode='before')
+    def parse_entity_affinity(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        return v
 
 
 
 def auto_complete_tags(query: str) -> list[ITagWithType]:
     matching_rows = db.execute_query(
-        """SELECT 
+        """SELECT
                 tag.*,
                 tag_type.name AS tag_type_name,
                 tag_type.description AS tag_type_description,
-                tag_type.notes AS tag_type_notes
+                tag_type.notes AS tag_type_notes,
+                tag_type.entity_affinity AS tag_type_entity_affinity
             FROM tag
             LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id
             WHERE tag.name LIKE %(query)s
@@ -59,9 +72,11 @@ def get_tags_by_entity_ids(entity:str , ids: list[int]) -> dict[int, list[ITagWi
         f"""SELECT
                 t.*,
                 te.{id_column} AS entity_id,
+                te.notes AS assignment_notes,
                 tag_type.name AS tag_type_name,
                 tag_type.description AS tag_type_description,
-                tag_type.notes AS tag_type_notes
+                tag_type.notes AS tag_type_notes,
+                tag_type.entity_affinity AS tag_type_entity_affinity
             FROM {table_name} AS te
             LEFT JOIN tag AS t ON te.tag_id = t.id
             LEFT JOIN tag_type ON t.tag_type_id = tag_type.id

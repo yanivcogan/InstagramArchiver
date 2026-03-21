@@ -1,7 +1,5 @@
 -- Migration 001: Tag System Enhancements
--- Run against an existing evidenceplatform database.
 
-USE evidenceplatform;
 
 -- 1.1 Drop temporal_constraint from tag_hierarchy
 ALTER TABLE tag_hierarchy DROP COLUMN temporal_constraint;

@@ -17,12 +17,10 @@ truncate table post;
 truncate table post_archive;
 truncate table post_like;
 truncate table post_like_archive;
-truncate table post_tag;
+
 truncate table tag;
 truncate table tag_hierarchy;
 truncate table tag_type;
-truncate table tagged_account;
-truncate table tagged_account_archive;
 -- Reset AUTO_INCREMENT for all truncated tables
 alter table account auto_increment = 1;
 alter table account_relation auto_increment = 1;
@@ -42,15 +40,19 @@ alter table post_archive auto_increment = 1;
 alter table post_like auto_increment = 1;
 alter table post_like_archive auto_increment = 1;
 alter table post_tag auto_increment = 1;
+alter table tagged_account auto_increment = 1;
+alter table tagged_account_archive auto_increment = 1;
+
+truncate table post_tag;
+truncate table tagged_account;
+truncate table tagged_account_archive;
 alter table tag auto_increment = 1;
 alter table tag_hierarchy auto_increment = 1;
 alter table tag_type auto_increment = 1;
-alter table tagged_account auto_increment = 1;
-alter table tagged_account_archive auto_increment = 1;
 
 UPDATE archive_session SET extraction_error = NULL, structures = NULL, extract_algorithm_version = NULL WHERE TRUE;
 UPDATE archive_session SET incorporation_status = 'pending' WHERE TRUE;
 
-DELETE FROM archive_session WHERE id > 100;
+DELETE FROM archive_session WHERE TRUE;
 
 SET FOREIGN_KEY_CHECKS = 1;

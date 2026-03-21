@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from starlette.middleware.base import BaseHTTPMiddleware
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share, upload, incorporate
+    permissions, tags, annotate, share, upload, incorporate, tag_management
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
@@ -165,6 +165,7 @@ for r in [
     share.router,
     upload.router,
     incorporate.router,
+    tag_management.router,
 ]:
     app.include_router(r, prefix="/api")
 

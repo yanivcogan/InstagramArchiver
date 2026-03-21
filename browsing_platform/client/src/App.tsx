@@ -22,6 +22,7 @@ import SessionPage from "./pages/SessionPage";
 import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/Upload";
 import IncorporatePage from "./pages/Incorporate";
+import TagManagementPage from "./pages/TagManagementPage";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
@@ -66,6 +67,7 @@ export default function App() {
                     <Route path="/search" element={<SearchPage/>}/>
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>
+                    <Route path="/tags" element={<TagManagementPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
                 <ToastContainer

@@ -3,6 +3,10 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 
-class Annotation(BaseModel):
+class TagWithNotes(BaseModel):
+    id: int
     notes: Optional[str] = None
-    tags: Optional[List[int]] = None
+
+
+class Annotation(BaseModel):
+    tags: Optional[List[TagWithNotes]] = None
