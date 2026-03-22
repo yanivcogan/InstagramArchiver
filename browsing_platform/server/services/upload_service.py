@@ -238,7 +238,10 @@ def commit_archive(archive_name: str, uploader_info: dict):
     # after verify passes — the staging copy is complete and checksummed.
     if dst.exists():
         shutil.rmtree(dst)
-    os.rename(src, dst)
+    # shutil.move handles cross-device moves (e.g. staging on main disk, archives on
+    # a separately mounted data disk) by falling back to copy+delete when os.rename
+    # raises EXDEV (errno 18 "Invalid cross-device link").
+    shutil.move(str(src), str(dst))
 
     # --- Checksum record ---
     checksum_doc = {
