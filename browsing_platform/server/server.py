@@ -124,6 +124,9 @@ app.mount(
 
 class StaticFilesAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # BaseHTTPMiddleware cannot handle WebSocket upgrades — pass them straight through.
+        if request.scope.get("type") == "websocket":
+            return await call_next(request)
         start_time = time.time()
         if request.url.path.startswith("/archives") or request.url.path.startswith("/thumbnails"):
             # Prefer per-file token 'ft' which is bound to the file path and cannot be reused for other files.
