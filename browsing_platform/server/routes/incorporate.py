@@ -97,6 +97,7 @@ def history(_=Depends(auth_admin_access)):
 
 @router.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
+    print(f"DEBUG ws_endpoint reached, token={token!r}")  # remove me
     # Auth: dev bypass or validate admin token
     is_dev = os.getenv("BROWSING_PLATFORM_DEV") == "1"
     if not is_dev:
