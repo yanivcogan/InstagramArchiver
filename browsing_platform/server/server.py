@@ -194,7 +194,6 @@ for r in [
 async def serve_spa(request: Request, full_path: str):
     # Don't intercept broken API routes - let them 404 properly
     if full_path.startswith("api/"):
-        print(f"DEBUG SPA catch-all hit: {full_path}")  # remove me
         logger.info(f"SPA catch-all: API route not found -> {full_path}")
         return Response('{"detail":"Not Found"}', status_code=404, media_type="application/json")
 
