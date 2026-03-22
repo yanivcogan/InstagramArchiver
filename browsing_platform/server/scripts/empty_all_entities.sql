@@ -1,3 +1,5 @@
+SET FOREIGN_KEY_CHECKS = 0;
+
 truncate table account;
 truncate table account_relation;
 truncate table account_relation_archive;
@@ -48,3 +50,7 @@ alter table tagged_account_archive auto_increment = 1;
 
 UPDATE archive_session SET extraction_error = NULL, structures = NULL, extract_algorithm_version = NULL WHERE TRUE;
 UPDATE archive_session SET incorporation_status = 'pending' WHERE TRUE;
+
+DELETE FROM archive_session WHERE id > 100;
+
+SET FOREIGN_KEY_CHECKS = 1;

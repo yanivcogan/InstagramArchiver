@@ -778,12 +778,13 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
     if existing_media is not None:
         db.execute_query(
             """UPDATE media
-               SET url            = %(url)s,
-                   id_on_platform = %(id_on_platform)s,
-                   post_id        = %(post_id)s,
-                   local_url      = %(local_url)s,
-                   media_type     = %(media_type)s,
-                   data           = %(data)s
+               SET url              = %(url)s,
+                   id_on_platform   = %(id_on_platform)s,
+                   post_id          = %(post_id)s,
+                   local_url        = %(local_url)s,
+                   media_type       = %(media_type)s,
+                   data             = %(data)s,
+                   thumbnail_status = IF(local_url <=> %(local_url)s, thumbnail_status, %(thumbnail_status)s)
                WHERE id = %(id)s""",
             {
                 "id": media.id,
@@ -793,6 +794,7 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                 "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
+                "thumbnail_status": initial_thumbnail_status(media),
             },
             return_type="none"
         )
