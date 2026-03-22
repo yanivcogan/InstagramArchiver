@@ -123,13 +123,18 @@ class StaticFilesAuthMiddleware(BaseHTTPMiddleware):
             try:
                 # Use the request path (including leading slash) as the file_path binding.
                 payload = decrypt_file_token(file_token, request.url.path)
+                print(f"DEBUG token ok, login_token={payload.login_token!r}")  # remove me
             except FileTokenError as e:
+                print(f"DEBUG token decrypt FAILED path={request.url.path!r} error={e!r}")  # remove me
                 logger.warning(f"File token validation failed for {request.url.path}: {e}")
                 return Response("Unauthorized", status_code=401)
             # access is allowed if the user supplied a valid login token or a share token
             # share tokens can be used to access static media even if the entities the media is attached to is beyond the share scope
             # this is fine because a user can not generate an encrypted payload containing their share token for arbitrary files without knowing the server secret
-            if not check_token(payload.login_token).valid and not get_link_permissions(payload.login_token).view:
+            token_valid = check_token(payload.login_token).valid
+            share_valid = get_link_permissions(payload.login_token).view
+            print(f"DEBUG token_valid={token_valid} share_valid={share_valid}")  # remove me
+            if not token_valid and not share_valid:
                 logger.warning(f"Invalid embedded login token for {request.url.path}")
                 return Response("Unauthorized", status_code=401)
         response = await call_next(request)
