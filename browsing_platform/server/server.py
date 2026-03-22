@@ -36,7 +36,17 @@ if is_production and not os.getenv("FILE_TOKEN_SECRET"):
         "All file requests will return 401. Refusing to start."
     )
 
+# SERVER_HOST must be set in production — without it local_files_root is None,
+# which causes all media/thumbnail URLs to be built as /None/thumbnails/... or
+# /None/archives/... making them 404.
+if is_production and not os.getenv("SERVER_HOST"):
+    raise RuntimeError(
+        "FATAL: SERVER_HOST is not set in production environment. "
+        "All media URLs will be broken. Refusing to start."
+    )
+
 print(f"DEBUG (remove me): FILE_TOKEN_SECRET={os.getenv('FILE_TOKEN_SECRET')}")
+print(f"DEBUG (remove me): SERVER_HOST={os.getenv('SERVER_HOST')}")
 
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
