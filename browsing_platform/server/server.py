@@ -28,6 +28,16 @@ if is_production and os.getenv("BROWSING_PLATFORM_DEV") == "1":
         "This would bypass all authentication. Refusing to start."
     )
 
+# Security check: FILE_TOKEN_SECRET must be set in production (without it all
+# file requests return 401 silently rather than failing loudly at startup)
+if is_production and not os.getenv("FILE_TOKEN_SECRET"):
+    raise RuntimeError(
+        "FATAL: FILE_TOKEN_SECRET is not set in production environment. "
+        "All file requests will return 401. Refusing to start."
+    )
+
+print(f"DEBUG (remove me): FILE_TOKEN_SECRET={os.getenv('FILE_TOKEN_SECRET')}")
+
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
 
