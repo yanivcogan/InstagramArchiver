@@ -7,7 +7,7 @@
 - Node.js with `pnpm` package manager
 - MySQL database
 
-### Environment Configuration
+### DEV Environment Configuration
 
 The application requires a `.env` file in the project root. A sample configuration file is provided at `.env.sample`.
 
@@ -25,14 +25,12 @@ The application requires a `.env` file in the project root. A sample configurati
 
 3. Configure your MySQL database credentials in the `.env` file.
 
-**Important:** Never commit your `.env` file to version control. It contains sensitive secrets.
 
 ### Loading Data
 
 The loader expects data to be in the `archives` folder, organized in timestamped folders (e.g., `era_20250505_170837`) containing HAR files and other data files. 482GB currently on 20th Jan 26.
 
-On 4th Feb I have extracted files from FTK
-
+We did use gdrive but not anymore as have a live file upload
 use (see in secrets directory)
 ```bash
 rclone copy gdrive-personal: \
@@ -41,28 +39,20 @@ rclone copy gdrive-personal: \
   -P
 ```
 
-Use Dbeaver or something to do a database dump just in case (on dev first)
+Use Dbeaver or something to do a database dump 
 
 To load new data into the database:
 ```bash
 # this expects data to be in archives folder eg folders like eran_2025_1234
-# took a few minutes on dev
-# then 95 minutes on prod (8GB)
+# on prod 64GB of RAM was useful to go fast.. maybe 6 hours.
+tmux
 uv run db_loaders/archives_db_loader.py full
 
 # to read from a separate drive - careful to have archives in the remote folder.
-# took 6 hours to do the FTK run on dev
 uv run db_loaders/archives_db_loader.py full --archives-dir /mnt/u/archives
 
 # on prod takes 24mins with 32GB RAM
 uv run db_loaders/archives_db_loader.py full --limit 100
-
-# keep going if ssh disconnects
-# took overnight to run on prod with 32GB RAM... maybe 14 hours.
-nohup uv run db_loaders/archives_db_loader.py full &
-
-# use tmux instead of nohup perhaps
-
 ```
 
 This script processes archives in 4 stages:
@@ -156,8 +146,6 @@ REACT_APP_SERVER_ENDPOINT=https://your-production-domain.com/
 GENERATE_SOURCEMAP=false
 ```
 
-**Common mistake:** If you deployed and the frontend shows "Failed to fetch" or "ERR_CONNECTION_REFUSED", it means the frontend was built with the wrong API endpoint (likely `localhost:4444`). Rebuild with the correct production URL.
-
 ### Deploying Updates
 
 #### 1. Pull Latest Code
@@ -184,42 +172,12 @@ cat .env.production
 # Should show: REACT_APP_SERVER_ENDPOINT=https://your-production-domain.com/
 
 # Build for production (uses .env.production automatically)
+# should put artifacts in the dist folder (build folder should be empty)
 pnpm build
 
 cd ../..
 ```
 
-#### 3. Apply Database Migrations
-
-TODO - make migrations
-
-```bash
-# If there are any schema changes, apply them here
-# Example:
-# mysql -u YOUR_DB_USER -pYOUR_DB_PASS evidenceplatform < migrations/001_add_new_table.sql
-```
-
-#### 4. Restart Services
-```bash
-# Stop the application (adjust based on your process manager)
-# Example with systemd:
-sudo systemctl stop evidenceplatform
-
-# Or if using a process manager like PM2:
-# pm2 stop evidenceplatform
-
-# Restart the application
-sudo systemctl start evidenceplatform
-# Or: pm2 start evidenceplatform
-```
-
-## Security Notes
-
-### Environment Files
-- The `.env` file is automatically ignored by git (see `.gitignore`)
-- Never commit secrets or credentials to version control
-- Use different secrets for development, staging, and production
-- Store production secrets in a secure vault system
 
 ### Development Mode
 When `BROWSING_PLATFORM_DEV=1` is set:
