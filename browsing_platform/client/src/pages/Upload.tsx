@@ -68,6 +68,14 @@ interface ArchiveState {
     expanded: boolean;
 }
 
+/** Byte offsets of a file's data within the assembled tar stream. */
+interface TarFileInfo {
+    relativePath: string;
+    file: File;
+    dataStart: number; // first byte of file content in the tar
+    dataEnd: number;   // first byte after file content (non-padded)
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -138,20 +146,120 @@ async function apiDelete(path: string): Promise<void> {
     });
 }
 
-// Semaphore-style upload pool for concurrency limiting
-class UploadPool {
-    private active = 0;
-    private queue: (() => void)[] = [];
-    constructor(private max: number) {}
-    async run<T>(task: () => Promise<T>): Promise<T> {
-        await this._acquire();
-        try { return await task(); } finally { this._release(); }
+// ---------------------------------------------------------------------------
+// Tar helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a single 512-byte POSIX ustar header block.
+ * typeFlag: '0' = regular file, 'L' = GNU long-name extension entry.
+ */
+function makeTarHeader(name: string, size: number, typeFlag = '0'): Uint8Array {
+    const enc = new TextEncoder();
+    const buf = new Uint8Array(512);
+
+    const setStr = (off: number, maxLen: number, s: string) => {
+        const b = enc.encode(s);
+        buf.set(b.slice(0, maxLen), off);
+    };
+    const setOctal = (off: number, len: number, n: number) =>
+        setStr(off, len, n.toString(8).padStart(len - 1, '0') + '\0');
+
+    setStr(0, 100, name);
+    setStr(100, 8, '0000644\0');   // mode
+    setStr(108, 8, '0000000\0');   // uid
+    setStr(116, 8, '0000000\0');   // gid
+    setOctal(124, 12, size);       // file size
+    setOctal(136, 12, Math.floor(Date.now() / 1000)); // mtime
+    buf.fill(32, 148, 156);        // checksum field = spaces (required before computing)
+    buf[156] = typeFlag.charCodeAt(0);
+    setStr(257, 6, 'ustar\0');     // magic
+    setStr(263, 2, '00');          // version
+
+    // Compute and write checksum: sum of all 512 bytes (spaces in checksum field)
+    let cs = 0;
+    for (let i = 0; i < 512; i++) cs += buf[i];
+    setStr(148, 8, cs.toString(8).padStart(6, '0') + '\0 ');
+
+    return buf;
+}
+
+/**
+ * Return the BlobParts that make up one complete tar entry (header(s) + data + padding)
+ * and the byte count of headers preceding the data (used to calculate data offsets).
+ */
+function tarEntryParts(
+    name: string,
+    data: BlobPart,
+    size: number,
+): { blobParts: BlobPart[]; preDataBytes: number } {
+    const enc = new TextEncoder();
+    const blobParts: BlobPart[] = [];
+    let preDataBytes = 0;
+
+    const nameBytes = enc.encode(name);
+    if (nameBytes.length > 100) {
+        // GNU long-name extension: precede with a ././@LongLink entry
+        const longNameNulled = enc.encode(name + '\0');
+        const longPad = (512 - (longNameNulled.length % 512)) % 512;
+        const longData = new Uint8Array(longNameNulled.length + longPad);
+        longData.set(longNameNulled);
+        blobParts.push(makeTarHeader('././@LongLink', longNameNulled.length, 'L'));
+        blobParts.push(longData);
+        preDataBytes += 512 + longData.length;
     }
-    private _acquire(): Promise<void> {
-        if (this.active < this.max) { this.active++; return Promise.resolve(); }
-        return new Promise(r => this.queue.push(() => { this.active++; r(); }));
+
+    // Main header (name truncated to 100 chars; GNU long-name header above carries the full name)
+    blobParts.push(makeTarHeader(name.slice(0, 100), size));
+    preDataBytes += 512;
+
+    blobParts.push(data);
+
+    const pad = (512 - (size % 512)) % 512;
+    if (pad > 0) blobParts.push(new Uint8Array(pad));
+
+    return { blobParts, preDataBytes };
+}
+
+/**
+ * Assemble a tar Blob from a manifest + file list.
+ *
+ * Files are referenced by their existing File handles — no data is copied into
+ * a new buffer. The browser reads file bytes on-demand as TUS slices the Blob
+ * into chunks, so memory overhead is only the tar headers (~512 bytes per file).
+ *
+ * Returns the Blob and, for each file, its data byte offsets within the stream
+ * (used to back-calculate per-file upload progress from the TUS byte counter).
+ */
+function buildTarBlob(
+    files: ReadonlyArray<{ relativePath: string; file: File }>,
+    manifest: Record<string, string>,
+): { blob: Blob; fileInfos: TarFileInfo[] } {
+    const allParts: BlobPart[] = [];
+    const fileInfos: TarFileInfo[] = [];
+    let offset = 0;
+
+    const addEntry = (name: string, data: BlobPart, size: number): number => {
+        const { blobParts, preDataBytes } = tarEntryParts(name, data, size);
+        const dataStart = offset + preDataBytes;
+        allParts.push(...blobParts);
+        const pad = (512 - (size % 512)) % 512;
+        offset += preDataBytes + size + pad;
+        return dataStart;
+    };
+
+    // _manifest.json is the first entry so the server can read it after extraction
+    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+    addEntry('_manifest.json', manifestBytes, manifestBytes.length);
+
+    for (const f of files) {
+        const dataStart = addEntry(f.relativePath, f.file, f.file.size);
+        fileInfos.push({ relativePath: f.relativePath, file: f.file, dataStart, dataEnd: dataStart + f.file.size });
     }
-    private _release() { this.active--; this.queue.shift()?.(); }
+
+    allParts.push(new Uint8Array(1024)); // end-of-archive marker
+
+    return { blob: new Blob(allParts), fileInfos };
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -215,15 +323,6 @@ export default function UploadPage() {
     // State helpers (always use functional updates to avoid stale closures)
     // -----------------------------------------------------------------------
 
-    const setFileStatus = (archiveName: string, filePath: string, update: Partial<FileState>) =>
-        setArchives(prev => prev.map(a =>
-            a.name !== archiveName ? a : (() => {
-                const files = a.files.map(f => f.relativePath === filePath ? { ...f, ...update } : f);
-                const uploadedBytes = files.reduce((s, f) => s + f.uploadedBytes, 0);
-                return { ...a, files, uploadedBytes };
-            })()
-        ));
-
     const setArchiveStatus = (archiveName: string, update: Partial<ArchiveState>) =>
         setArchives(prev => prev.map(a => a.name !== archiveName ? a : { ...a, ...update }));
 
@@ -268,7 +367,6 @@ export default function UploadPage() {
                 return;
             }
 
-            // Collect all files per archive
             const archiveList: ArchiveState[] = [];
             for (const archiveEntry of dirEntries) {
                 const children = await readAllDirEntries(archiveEntry.createReader());
@@ -293,10 +391,7 @@ export default function UploadPage() {
                 });
             }
 
-            // Preflight conflict check
-            const preflight = await apiPost('upload/preflight', {
-                archives: archiveList.map(a => a.name),
-            });
+            const preflight = await apiPost('upload/preflight', { archives: archiveList.map(a => a.name) });
             const conflicts: Record<string, boolean> = preflight.conflicts ?? {};
 
             setArchives(archiveList.map(a => ({
@@ -325,13 +420,106 @@ export default function UploadPage() {
     };
 
     // -----------------------------------------------------------------------
-    // Upload
+    // Upload — tar-based
     // -----------------------------------------------------------------------
+
+    /**
+     * Upload one archive as a single tar stream.
+     *
+     * Flow:
+     *   1. Hash every file sequentially (Web Crypto, updates per-file status).
+     *   2. Build tar Blob from File references — zero extra memory, files are not copied.
+     *   3. Upload via a single TUS session; per-file progress is derived from the
+     *      tar byte offset reported by TUS.
+     */
+    const uploadArchiveAsTar = (archive: ArchiveState): Promise<void> =>
+        new Promise(async (resolve, reject) => {
+            // Step 1 — hash all files upfront (needed to build _manifest.json in the tar)
+            const manifest: Record<string, string> = {};
+            for (const f of archive.files) {
+                if (cancelledRef.current) return reject(new Error('cancelled'));
+                setArchives(prev => prev.map(a =>
+                    a.name !== archive.name ? a : {
+                        ...a,
+                        files: a.files.map(af =>
+                            af.relativePath === f.relativePath ? { ...af, status: 'hashing' } : af
+                        ),
+                    }
+                ));
+                manifest[f.relativePath] = await computeSha256(f.file);
+            }
+
+            if (cancelledRef.current) return reject(new Error('cancelled'));
+
+            // Step 2 — build tar Blob (near-instant; files referenced, not copied)
+            const { blob: tarBlob, fileInfos } = buildTarBlob(archive.files, manifest);
+
+            // Build a lookup map for O(1) access inside the progress callback
+            const infoByPath = new Map(fileInfos.map(fi => [fi.relativePath, fi]));
+
+            // Mark all files as uploading before TUS starts
+            setArchives(prev => prev.map(a =>
+                a.name !== archive.name ? a : {
+                    ...a,
+                    files: a.files.map(af => ({ ...af, status: 'uploading', uploadedBytes: 0 })),
+                }
+            ));
+
+            // Step 3 — single TUS upload
+            const upload = new TusUpload(tarBlob, {
+                endpoint: `${config.serverPath}api/upload/tus/`,
+                chunkSize: 5 * 1024 * 1024,
+                retryDelays: [0, 1000, 3000, 5000, 10000],
+                metadata: { archiveName: archive.name, uploadMode: 'tar' },
+                headers: authHeaders(),
+                onProgress: (uploadedTarBytes: number) => {
+                    // Derive per-file progress from tar byte position — single batched state update
+                    setArchives(prev => prev.map(a => {
+                        if (a.name !== archive.name) return a;
+                        const files = a.files.map(af => {
+                            const fi = infoByPath.get(af.relativePath);
+                            if (!fi) return af;
+                            const uploaded = Math.min(Math.max(0, uploadedTarBytes - fi.dataStart), fi.file.size);
+                            const status = uploaded >= fi.file.size ? 'done'
+                                : uploaded > 0 ? 'uploading' : 'pending';
+                            return { ...af, uploadedBytes: uploaded, status };
+                        });
+                        const uploadedBytes = files.reduce((s, af) => s + af.uploadedBytes, 0);
+                        return { ...a, files, uploadedBytes };
+                    }));
+                },
+                onSuccess: () => {
+                    // Ensure all files are marked done (covers rounding edge cases)
+                    setArchives(prev => prev.map(a =>
+                        a.name !== archive.name ? a : {
+                            ...a,
+                            uploadedBytes: a.totalBytes,
+                            files: a.files.map(af => ({ ...af, status: 'done', uploadedBytes: af.file.size })),
+                        }
+                    ));
+                    activeUploadsRef.current.delete(archive.name);
+                    resolve();
+                },
+                onError: (err) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    setArchives(prev => prev.map(a =>
+                        a.name !== archive.name ? a : {
+                            ...a,
+                            files: a.files.map(af => ({ ...af, status: 'error', error: msg })),
+                        }
+                    ));
+                    activeUploadsRef.current.delete(archive.name);
+                    reject(err);
+                },
+            });
+
+            activeUploadsRef.current.set(archive.name, upload);
+            upload.start();
+        });
 
     const startUpload = async () => {
         cancelledRef.current = false;
 
-        // Start elapsed timer
         uploadStartTimeRef.current = Date.now();
         speedSamplesRef.current = [];
         setElapsedSeconds(0);
@@ -342,8 +530,6 @@ export default function UploadPage() {
 
         setPhase('uploading');
 
-        const pool = new UploadPool(3); // 3 concurrent file uploads across all archives
-
         const archivesToUpload = archives.filter(a => a.resolution !== 'skip' || !a.hasConflict);
 
         // Mark skipped archives
@@ -351,70 +537,23 @@ export default function UploadPage() {
             (a.hasConflict && a.resolution === 'skip') ? { ...a, status: 'skipped' } : a
         ));
 
-        const uploadFile = (archiveName: string, fileEntry: FileState): Promise<void> =>
-            pool.run(async () => {
-                if (cancelledRef.current) throw new Error('cancelled');
-
-                // Hash the file before uploading so the server can verify integrity
-                setFileStatus(archiveName, fileEntry.relativePath, { status: 'hashing' });
-                const fileHash = await computeSha256(fileEntry.file);
-
-                if (cancelledRef.current) throw new Error('cancelled');
-
-                return new Promise<void>((resolve, reject) => {
-                const upload = new TusUpload(fileEntry.file, {
-                    endpoint: `${config.serverPath}api/upload/tus/`,
-                    chunkSize: 5 * 1024 * 1024,
-                    retryDelays: [0, 1000, 3000, 5000, 10000],
-                    metadata: { archiveName, relativePath: fileEntry.relativePath, fileHash },
-                    headers: authHeaders(),
-                    onProgress: (uploaded) => {
-                        setFileStatus(archiveName, fileEntry.relativePath, {
-                            uploadedBytes: uploaded,
-                            status: 'uploading',
-                        });
-                    },
-                    onSuccess: () => {
-                        setFileStatus(archiveName, fileEntry.relativePath, { status: 'done' });
-                        activeUploadsRef.current.delete(`${archiveName}:${fileEntry.relativePath}`);
-                        resolve();
-                    },
-                    onError: (err) => {
-                        const msg = err instanceof Error ? err.message : String(err);
-                        setFileStatus(archiveName, fileEntry.relativePath, { status: 'error', error: msg });
-                        activeUploadsRef.current.delete(`${archiveName}:${fileEntry.relativePath}`);
-                        reject(err);
-                    },
-                });
-
-                activeUploadsRef.current.set(`${archiveName}:${fileEntry.relativePath}`, upload);
-                upload.start();
-                }); // end new Promise
-            }); // end pool.run async
-
         const processArchive = async (archive: ArchiveState) => {
             if (cancelledRef.current) return;
             setArchiveStatus(archive.name, { status: 'uploading' });
 
-            // If overwriting an existing archive, clean up any leftover staging first
             if (archive.hasConflict && archive.resolution === 'overwrite') {
                 await apiDelete(`upload/staging/${archive.name}`).catch(() => {});
             }
 
-            // Upload all files (pool limits total concurrency)
-            const results = await Promise.allSettled(
-                archive.files.map(f => uploadFile(archive.name, f))
-            );
-
-            if (cancelledRef.current) return;
-
-            const anyError = results.some(r => r.status === 'rejected');
-            if (anyError) {
-                setArchiveStatus(archive.name, { status: 'failed' });
+            try {
+                await uploadArchiveAsTar(archive);
+            } catch {
+                if (!cancelledRef.current) setArchiveStatus(archive.name, { status: 'failed' });
                 return;
             }
 
-            // Verify checksums
+            if (cancelledRef.current) return;
+
             setArchiveStatus(archive.name, { status: 'verifying' });
             try {
                 const verifyResult: VerifyResult = await apiPost(`upload/verify/${archive.name}`);
@@ -432,7 +571,6 @@ export default function UploadPage() {
             }
         };
 
-        // All archives run concurrently (file-level concurrency is governed by the pool)
         await Promise.allSettled(archivesToUpload.map(processArchive));
 
         if (elapsedIntervalRef.current) {
@@ -440,9 +578,7 @@ export default function UploadPage() {
             elapsedIntervalRef.current = null;
         }
 
-        if (!cancelledRef.current) {
-            setPhase('done');
-        }
+        if (!cancelledRef.current) setPhase('done');
     };
 
     // -----------------------------------------------------------------------
@@ -459,13 +595,11 @@ export default function UploadPage() {
             elapsedIntervalRef.current = null;
         }
 
-        // Abort all active TUS uploads
         for (const upload of activeUploadsRef.current.values()) {
             Promise.resolve(upload.abort(true)).catch(() => {});
         }
         activeUploadsRef.current.clear();
 
-        // Clean up staging directories for archives that were in progress
         const inProgress = archives.filter(a => a.status === 'uploading' || a.status === 'verifying');
         await Promise.allSettled(
             inProgress.map(a => apiDelete(`upload/staging/${a.name}`).catch(() => {}))
@@ -774,7 +908,6 @@ export default function UploadPage() {
                                 </AccordionSummary>
 
                                 <AccordionDetails sx={{ p: 0 }}>
-                                    {/* Collapse all / Expand all */}
                                     <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ px: 2, pb: 1 }}>
                                         <Button
                                             size="small"
