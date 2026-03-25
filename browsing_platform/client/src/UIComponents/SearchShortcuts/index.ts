@@ -1,6 +1,5 @@
 import {T_Search_Mode} from '../../services/DataFetcher';
-import {SearchShortcutsProps} from './AccountSearchShortcuts';
-import AccountSearchShortcuts from './AccountSearchShortcuts';
+import AccountSearchShortcuts, {SearchShortcutsProps} from './AccountSearchShortcuts';
 import {createDateRangeShortcut} from './DateRangeShortcut';
 import MediaSearchShortcuts from './MediaSearchShortcuts';
 import React from 'react';

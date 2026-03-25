@@ -1,6 +1,19 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {useMatch, useParams, useSearchParams} from "react-router";
-import {Box, Button, CircularProgress, Collapse, Divider, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography,} from "@mui/material";
+import {
+    Box,
+    Button,
+    CircularProgress,
+    Collapse,
+    Divider,
+    Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableRow,
+    Typography,
+} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchAccount, fetchArchivingSessionsAccount, fetchRelatedTagStats} from "../services/DataFetcher";
 import {ITagStat} from "../types/tags";

@@ -1,16 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {toast} from "material-react-toastify";
 import TextField from '@mui/material/TextField';
-import {
-    CircularProgress,
-    Fab,
-    FormControlLabel,
-    IconButton,
-    Stack,
-    Switch,
-    Tooltip,
-    Typography,
-} from "@mui/material";
+import {CircularProgress, Fab, FormControlLabel, IconButton, Stack, Switch, Tooltip, Typography,} from "@mui/material";
 import {ContentCopy, Share} from "@mui/icons-material";
 import server from "../../services/server";
 import InputAdornment from "@mui/material/InputAdornment";
