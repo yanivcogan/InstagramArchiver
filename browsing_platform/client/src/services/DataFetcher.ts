@@ -204,6 +204,16 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             label: 'Publication Date',
             type: 'date',
         },
+        media_type: {
+            label: 'Media Type',
+            type: 'select',
+            fieldSettings: {
+                listValues: [
+                    {value: 'video', title: 'Video'},
+                    {value: 'image', title: 'Photo'},
+                ],
+            },
+        },
         annotation: {
             label: 'AI Generated Caption',
             type: 'text',

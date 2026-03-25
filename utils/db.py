@@ -103,20 +103,24 @@ def batch_insert(table: str, columns: list, rows: list) -> list:
         cursor.close()
 
 
-def execute_query(query, args, return_type: Literal["single_row", "rows", "id", "none", "debug"] = "rows"):
+def execute_query(query, args, return_type: Literal["single_row", "rows", "id", "none", "debug"] = "rows", timeout_ms: int | None = None):
     if getattr(_local, "connection", None) is not None:
         # Reuse the open transaction connection on this thread.
-        return _execute_query_on_connection(_local.connection, query, args, return_type, commit=False)
+        return _execute_query_on_connection(_local.connection, query, args, return_type, commit=False, timeout_ms=timeout_ms)
 
     cnx = cnx_pool.get_connection()
     try:
-        return _execute_query_on_connection(cnx, query, args, return_type, commit=True)
+        return _execute_query_on_connection(cnx, query, args, return_type, commit=True, timeout_ms=timeout_ms)
     finally:
         cnx.close()
 
 
-def _execute_query_on_connection(cnx, query, args, return_type, commit=True):
+def _execute_query_on_connection(cnx, query, args, return_type, commit=True, timeout_ms: int | None = None):
     """Internal function to execute query on a given connection."""
+    if timeout_ms is not None:
+        stripped = query.lstrip()
+        if stripped[:6].upper() == "SELECT":
+            query = stripped[:6] + f" /*+ MAX_EXECUTION_TIME({int(timeout_ms)}) */" + stripped[6:]
     cursor = cnx.cursor(buffered=True)
     try:
         cursor.execute(query, args)
@@ -135,6 +139,8 @@ def _execute_query_on_connection(cnx, query, args, return_type, commit=True):
             return True
         return None
     except mysql.connector.Error as err:
+        if err.errno == 3024:
+            raise TimeoutError(f"Query timed out after {timeout_ms}ms") from err
         logger.error("DB query failed: %s\nQuery: %s\nArgs: %s", err, query, json.dumps(args, default=str))
         raise DbError(str(err)) from err
     finally:

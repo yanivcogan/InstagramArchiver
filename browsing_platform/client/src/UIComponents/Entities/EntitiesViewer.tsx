@@ -20,8 +20,13 @@ export default function EntitiesViewer({entities, viewerConfig, highlightComment
             (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
         ), [entities.posts]);
 
+    const sortedAccounts = useMemo(() =>
+        [...(entities.accounts ?? [])].sort(
+            (a, b) => (b.posts?.length ?? 0) - (a.posts?.length ?? 0)
+        ), [entities.accounts]);
+
     return <Stack gap={1}>
-        {entities.accounts.map((account: IAccountAndAssociatedEntities, index: number) =>
+        {sortedAccounts.map((account: IAccountAndAssociatedEntities, index: number) =>
             <Account
                 account={account}
                 key={index}
