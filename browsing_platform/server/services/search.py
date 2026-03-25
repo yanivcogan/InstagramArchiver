@@ -87,7 +87,8 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
            LIMIT %(limit)s OFFSET %(offset)s""",
-        query_args
+        query_args,
+        timeout_ms=10_000
     )
     if not rows:
         return []
@@ -216,6 +217,10 @@ def build_tag_filter_join(entity: str, tag_ids: list[int], tag_filter_mode: str)
     return sql, args
 
 
+def _looks_like_url(s: str) -> bool:
+    return '://' in s or s.startswith('www.')
+
+
 def search_accounts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
@@ -249,7 +254,8 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY {order_by}
            LIMIT %(limit)s OFFSET %(offset)s""",
-        query_args
+        query_args,
+        timeout_ms=10_000
     )
     if not rows:
         return []
@@ -261,7 +267,7 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
             FROM (
                 SELECT account_id, thumbnail_path, local_url,
                        COUNT(*) OVER (PARTITION BY account_id) AS media_count,
-                       ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY id DESC) AS rn
+                       ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY publication_date DESC) AS rn
                 FROM media
                 WHERE account_id IN ({thumb_in})
                   AND local_url IS NOT NULL
@@ -277,7 +283,7 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
         if thumb:
             account_thumbnails.setdefault(aid, []).append(thumb)
-    return [SearchResult(
+    results = [SearchResult(
         page="account",
         id=row["id"],
         title=row["url"] + (f" ({row['display_name']})" if row["display_name"] else ""),
@@ -285,6 +291,8 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         thumbnails=account_thumbnails.get(row["id"]),
         metadata={"media_count": account_media_count.get(row["id"], 0)},
     ) for row in rows]
+    results = apply_search_results_transform(results, search_results_transform)
+    return results
 
 
 def search_posts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
@@ -293,9 +301,14 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         "offset": (query.page_number - 1) * query.page_size,
     }
     where_clauses = []
+    is_url_search = bool(query.search_term and _looks_like_url(query.search_term.strip()))
     if query.search_term:
-        query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        if is_url_search:
+            query_args["url_pattern"] = query.search_term.strip() + '%'
+            where_clauses.append("url LIKE %(url_pattern)s")
+        else:
+            query_args["search_term"] = default_fulltext_query(query.search_term)
+            where_clauses.append("MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
@@ -307,7 +320,7 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
     inner_where = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
     order_by = (
         "MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
-        if query.search_term else "publication_date DESC"
+        if (query.search_term and not is_url_search) else "publication_date DESC"
     )
     rows = db.execute_query(  # nosec B608 - inner_where, order_by, tag_filter_join built from safe clauses only
         f"""SELECT p.id, p.url, p.id_on_platform, p.caption, p.publication_date,
@@ -321,7 +334,8 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
                LIMIT %(limit)s OFFSET %(offset)s
            ) p
            LEFT JOIN account a ON p.account_id = a.id""",
-        query_args
+        query_args,
+        timeout_ms=10_000
     )
     if not rows:
         return []
@@ -377,10 +391,10 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args.update(tag_filter_args)
     inner_where = ' AND '.join(where_clauses)
     rows = db.execute_query(  # nosec B608 - inner_where and tag_filter_join built from safe clauses only
-        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.publication_date,
+        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.media_type, m.publication_date,
                    a.display_name AS account_display_name, a.url AS account_url
            FROM (
-               SELECT media.id, media.thumbnail_path, media.local_url, media.publication_date, media.account_id
+               SELECT media.id, media.thumbnail_path, media.local_url, media.publication_date, media.account_id, media.media_type
                FROM media
                {tag_filter_join}
                WHERE {inner_where}
@@ -388,7 +402,8 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
                LIMIT %(limit)s OFFSET %(offset)s
            ) m
            LEFT JOIN account a ON m.account_id = a.id""",
-        query_args
+        query_args,
+        timeout_ms=10_000
     )
     results = [
         SearchResult(
@@ -396,11 +411,15 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
             id=row["id"],
             title=row["account_url"] or "",
             details="",
-            thumbnails=[thumb] if (thumb := get_media_thumbnail_path(row["thumbnail_path"], row["local_url"])) else None,
+            thumbnails=[thumb for thumb in [
+                get_media_thumbnail_path(row["thumbnail_path"], row["local_url"]),
+                row["local_url"],
+            ] if thumb],
             metadata={
                 "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
                 "account_display_name": row["account_display_name"],
                 "account_url": row["account_url"],
+                "media_type": row["media_type"],
             }
         )
         for row in rows
@@ -544,13 +563,19 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
     def parse_logic(logic_rec: dict, args_rec: dict, table_rec: str) -> str:
         if not isinstance(logic_rec, dict):
             raise ValueError("Logic must be a dict")
+
+        def bind_value(key: str, v: Any, c_def: SearchableColumn) -> None:
+            if c_def.data_type == "date" and isinstance(v, str):
+                v = v[:10]  # strip time component from ISO-8601 strings e.g. "2024-01-15T00:00:00.000Z"
+            args_rec[key] = v
+
         for op, val in logic_rec.items():
             if op == "==":
                 col, v = val
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
                 arg_key = next_key(col, "eq")
-                args_rec[arg_key] = v
+                bind_value(arg_key, v, col_def)
                 if col_def.data_type == "date":
                     return f"DATE(`{col}`) = DATE(%({arg_key})s)"
                 else:
@@ -567,7 +592,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
                 arg_key = next_key(col, "neq")
-                args_rec[arg_key] = v
+                bind_value(arg_key, v, col_def)
                 return f"`{col}` != %({arg_key})s"
             elif op == ">":
                 if len(val) == 2:
@@ -575,7 +600,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
                     arg_key = next_key(col, "gt")
-                    args_rec[arg_key] = v
+                    bind_value(arg_key, v, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) > DATE(%({arg_key})s)"
                     return f"`{col}` > %({arg_key})s"
@@ -585,8 +610,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key1 = next_key(col, "gt")
                     arg_key2 = next_key(col, "lt")
-                    args_rec[arg_key1] = v1
-                    args_rec[arg_key2] = v2
+                    bind_value(arg_key1, v1, col_def)
+                    bind_value(arg_key2, v2, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) > DATE(%({arg_key1})s) AND DATE(`{col}`) < DATE(%({arg_key2})s)"
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
@@ -596,7 +621,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
                     arg_key = next_key(col, "lt")
-                    args_rec[arg_key] = v
+                    bind_value(arg_key, v, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) < DATE(%({arg_key})s)"
                     return f"`{col}` < %({arg_key})s"
@@ -606,8 +631,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key1 = next_key(col, "gt")
                     arg_key2 = next_key(col, "lt")
-                    args_rec[arg_key1] = v1
-                    args_rec[arg_key2] = v2
+                    bind_value(arg_key1, v1, col_def)
+                    bind_value(arg_key2, v2, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) > DATE(%({arg_key1})s) AND DATE(`{col}`) < DATE(%({arg_key2})s)"
                     return f"`{col}` > %({arg_key1})s AND `{col}` < %({arg_key2})s"
@@ -617,7 +642,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
                     arg_key = next_key(col, "lte")
-                    args_rec[arg_key] = v
+                    bind_value(arg_key, v, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) <= DATE(%({arg_key})s)"
                     return f"`{col}` <= %({arg_key})s"
@@ -627,8 +652,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key1 = next_key(col, "gte")
                     arg_key2 = next_key(col, "lte")
-                    args_rec[arg_key1] = v1
-                    args_rec[arg_key2] = v2
+                    bind_value(arg_key1, v1, col_def)
+                    bind_value(arg_key2, v2, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) >= DATE(%({arg_key1})s) AND DATE(`{col}`) <= DATE(%({arg_key2})s)"
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"
@@ -638,7 +663,7 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col_def = sanitize_column(col, table_rec)
                     col = col_def.column_name
                     arg_key = next_key(col, "gte")
-                    args_rec[arg_key] = v
+                    bind_value(arg_key, v, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) >= DATE(%({arg_key})s)"
                     return f"`{col}` >= %({arg_key})s"
@@ -648,8 +673,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                     col = col_def.column_name
                     arg_key1 = next_key(col, "gte")
                     arg_key2 = next_key(col, "lte")
-                    args_rec[arg_key1] = v1
-                    args_rec[arg_key2] = v2
+                    bind_value(arg_key1, v1, col_def)
+                    bind_value(arg_key2, v2, col_def)
                     if col_def.data_type == "date":
                         return f"DATE(`{col}`) >= DATE(%({arg_key1})s) AND DATE(`{col}`) <= DATE(%({arg_key2})s)"
                     return f"`{col}` >= %({arg_key1})s AND `{col}` <= %({arg_key2})s"

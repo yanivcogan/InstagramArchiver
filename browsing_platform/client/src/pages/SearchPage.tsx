@@ -331,26 +331,6 @@ export default function SearchPage() {
                         </Tooltip>
                     </Stack>
                 </Box>
-                {/* Tag filter bar — hidden for archive_sessions (no tag tables) */}
-                {query.search_mode !== "archive_sessions" && (
-                    <Box>
-                        <TagFilterBar
-                            tagIds={query.tag_ids || []}
-                            tagFilterMode={query.tag_filter_mode || "any"}
-                            selectedTagObjects={tagFilterObjects}
-                            onChange={(tagIds, mode, tagObjects) => {
-                                setTagFilterObjects(tagObjects);
-                                encodeQueryToParams({
-                                    ...query,
-                                    search_term: typedSearchTerm || "",
-                                    tag_ids: tagIds,
-                                    tag_filter_mode: mode,
-                                    page_number: 1,
-                                });
-                            }}
-                        />
-                    </Box>
-                )}
                 {/* Search shortcuts — always-visible, mode-specific quick controls */}
                 {SearchShortcuts && (
                     <Box>
@@ -366,6 +346,26 @@ export default function SearchPage() {
                                 performSearch();
                             }
                         }}>
+                            {/* Tag filter bar — hidden for archive_sessions (no tag tables) */}
+                            {query.search_mode !== "archive_sessions" && (
+                                <Box>
+                                    <TagFilterBar
+                                        tagIds={query.tag_ids || []}
+                                        tagFilterMode={query.tag_filter_mode || "any"}
+                                        selectedTagObjects={tagFilterObjects}
+                                        onChange={(tagIds, mode, tagObjects) => {
+                                            setTagFilterObjects(tagObjects);
+                                            encodeQueryToParams({
+                                                ...query,
+                                                search_term: typedSearchTerm || "",
+                                                tag_ids: tagIds,
+                                                tag_filter_mode: mode,
+                                                page_number: 1,
+                                            });
+                                        }}
+                                    />
+                                </Box>
+                            )}
                             <Query
                                 {...InitialConfig}
                                 fields={ADVANCED_FILTERS_CONFIG[query.search_mode]}

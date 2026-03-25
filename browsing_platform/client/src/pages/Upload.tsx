@@ -2,6 +2,9 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {Upload as TusUpload} from 'tus-js-client';
 import cookie from 'js-cookie';
 import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
     Alert,
     Box,
     Button,
@@ -13,6 +16,7 @@ import {
     FormControlLabel,
     IconButton,
     LinearProgress,
+    Pagination,
     Radio,
     RadioGroup,
     Stack,
@@ -26,7 +30,10 @@ import ErrorIcon from '@mui/icons-material/Error';
 import WarningIcon from '@mui/icons-material/Warning';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
+import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import config from '../services/config';
 
@@ -59,6 +66,14 @@ interface ArchiveState {
     status: 'pending' | 'uploading' | 'verifying' | 'done' | 'failed' | 'skipped';
     verifyResult?: VerifyResult;
     expanded: boolean;
+}
+
+/** Byte offsets of a file's data within the assembled tar stream. */
+interface TarFileInfo {
+    relativePath: string;
+    file: File;
+    dataStart: number; // first byte of file content in the tar
+    dataEnd: number;   // first byte after file content (non-padded)
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +117,13 @@ function formatBytes(bytes: number): string {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function formatDuration(s: number): string {
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ${s % 60}s`;
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 function authHeaders(): Record<string, string> {
     const token = cookie.get('token');
     return token ? { Authorization: `token:${token}` } : {};
@@ -124,21 +146,123 @@ async function apiDelete(path: string): Promise<void> {
     });
 }
 
-// Semaphore-style upload pool for concurrency limiting
-class UploadPool {
-    private active = 0;
-    private queue: (() => void)[] = [];
-    constructor(private max: number) {}
-    async run<T>(task: () => Promise<T>): Promise<T> {
-        await this._acquire();
-        try { return await task(); } finally { this._release(); }
-    }
-    private _acquire(): Promise<void> {
-        if (this.active < this.max) { this.active++; return Promise.resolve(); }
-        return new Promise(r => this.queue.push(() => { this.active++; r(); }));
-    }
-    private _release() { this.active--; this.queue.shift()?.(); }
+// ---------------------------------------------------------------------------
+// Tar helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a single 512-byte POSIX ustar header block.
+ * typeFlag: '0' = regular file, 'L' = GNU long-name extension entry.
+ */
+function makeTarHeader(name: string, size: number, typeFlag = '0'): Uint8Array {
+    const enc = new TextEncoder();
+    const buf = new Uint8Array(512);
+
+    const setStr = (off: number, maxLen: number, s: string) => {
+        const b = enc.encode(s);
+        buf.set(b.slice(0, maxLen), off);
+    };
+    const setOctal = (off: number, len: number, n: number) =>
+        setStr(off, len, n.toString(8).padStart(len - 1, '0') + '\0');
+
+    setStr(0, 100, name);
+    setStr(100, 8, '0000644\0');   // mode
+    setStr(108, 8, '0000000\0');   // uid
+    setStr(116, 8, '0000000\0');   // gid
+    setOctal(124, 12, size);       // file size
+    setOctal(136, 12, Math.floor(Date.now() / 1000)); // mtime
+    buf.fill(32, 148, 156);        // checksum field = spaces (required before computing)
+    buf[156] = typeFlag.charCodeAt(0);
+    setStr(257, 6, 'ustar\0');     // magic
+    setStr(263, 2, '00');          // version
+
+    // Compute and write checksum: sum of all 512 bytes (spaces in checksum field)
+    let cs = 0;
+    for (let i = 0; i < 512; i++) cs += buf[i];
+    setStr(148, 8, cs.toString(8).padStart(6, '0') + '\0 ');
+
+    return buf;
 }
+
+/**
+ * Return the BlobParts that make up one complete tar entry (header(s) + data + padding)
+ * and the byte count of headers preceding the data (used to calculate data offsets).
+ */
+function tarEntryParts(
+    name: string,
+    data: BlobPart,
+    size: number,
+): { blobParts: BlobPart[]; preDataBytes: number } {
+    const enc = new TextEncoder();
+    const blobParts: BlobPart[] = [];
+    let preDataBytes = 0;
+
+    const nameBytes = enc.encode(name);
+    if (nameBytes.length > 100) {
+        // GNU long-name extension: precede with a ././@LongLink entry
+        const longNameNulled = enc.encode(name + '\0');
+        const longPad = (512 - (longNameNulled.length % 512)) % 512;
+        const longData = new Uint8Array(longNameNulled.length + longPad);
+        longData.set(longNameNulled);
+        blobParts.push(makeTarHeader('././@LongLink', longNameNulled.length, 'L'));
+        blobParts.push(longData);
+        preDataBytes += 512 + longData.length;
+    }
+
+    // Main header (name truncated to 100 chars; GNU long-name header above carries the full name)
+    blobParts.push(makeTarHeader(name.slice(0, 100), size));
+    preDataBytes += 512;
+
+    blobParts.push(data);
+
+    const pad = (512 - (size % 512)) % 512;
+    if (pad > 0) blobParts.push(new Uint8Array(pad));
+
+    return { blobParts, preDataBytes };
+}
+
+/**
+ * Assemble a tar Blob from a manifest + file list.
+ *
+ * Files are referenced by their existing File handles — no data is copied into
+ * a new buffer. The browser reads file bytes on-demand as TUS slices the Blob
+ * into chunks, so memory overhead is only the tar headers (~512 bytes per file).
+ *
+ * Returns the Blob and, for each file, its data byte offsets within the stream
+ * (used to back-calculate per-file upload progress from the TUS byte counter).
+ */
+function buildTarBlob(
+    files: ReadonlyArray<{ relativePath: string; file: File }>,
+    manifest: Record<string, string>,
+): { blob: Blob; fileInfos: TarFileInfo[] } {
+    const allParts: BlobPart[] = [];
+    const fileInfos: TarFileInfo[] = [];
+    let offset = 0;
+
+    const addEntry = (name: string, data: BlobPart, size: number): number => {
+        const { blobParts, preDataBytes } = tarEntryParts(name, data, size);
+        const dataStart = offset + preDataBytes;
+        allParts.push(...blobParts);
+        const pad = (512 - (size % 512)) % 512;
+        offset += preDataBytes + size + pad;
+        return dataStart;
+    };
+
+    // _manifest.json is the first entry so the server can read it after extraction
+    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+    addEntry('_manifest.json', manifestBytes, manifestBytes.length);
+
+    for (const f of files) {
+        const dataStart = addEntry(f.relativePath, f.file, f.file.size);
+        fileInfos.push({ relativePath: f.relativePath, file: f.file, dataStart, dataEnd: dataStart + f.file.size });
+    }
+
+    allParts.push(new Uint8Array(1024)); // end-of-archive marker
+
+    return { blob: new Blob(allParts), fileInfos };
+}
+
+const ITEMS_PER_PAGE = 10;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -148,10 +272,19 @@ export default function UploadPage() {
     const [phase, setPhase] = useState<Phase>('idle');
     const [archives, setArchives] = useState<ArchiveState[]>([]);
     const [scanError, setScanError] = useState<string | null>(null);
+    const [hideSkipped, setHideSkipped] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [isDragActive, setIsDragActive] = useState(false);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
     // Refs shared with async upload callbacks
     const activeUploadsRef = useRef<Map<string, TusUpload>>(new Map());
     const cancelledRef = useRef(false);
+    const dragCounterRef = useRef(0);
+    const pageContainerRef = useRef<HTMLDivElement>(null);
+    const uploadStartTimeRef = useRef<number>(0);
+    const speedSamplesRef = useRef<{ time: number; bytes: number }[]>([]);
+    const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const isUploading = phase === 'uploading';
 
@@ -173,36 +306,50 @@ export default function UploadPage() {
                 }
                 activeUploadsRef.current.clear();
             }
+            if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current);
         };
     }, []);
+
+    // Collect speed samples during upload (sliding 60s window)
+    useEffect(() => {
+        if (phase !== 'uploading') return;
+        const totalUploaded = archives.reduce((s, a) => s + a.uploadedBytes, 0);
+        const now = Date.now();
+        speedSamplesRef.current.push({ time: now, bytes: totalUploaded });
+        speedSamplesRef.current = speedSamplesRef.current.filter(s => s.time >= now - 60_000);
+    }, [archives, phase]);
 
     // -----------------------------------------------------------------------
     // State helpers (always use functional updates to avoid stale closures)
     // -----------------------------------------------------------------------
 
-    const setFileStatus = (archiveName: string, filePath: string, update: Partial<FileState>) =>
-        setArchives(prev => prev.map(a =>
-            a.name !== archiveName ? a : (() => {
-                const files = a.files.map(f => f.relativePath === filePath ? { ...f, ...update } : f);
-                const uploadedBytes = files.reduce((s, f) => s + f.uploadedBytes, 0);
-                return { ...a, files, uploadedBytes };
-            })()
-        ));
-
     const setArchiveStatus = (archiveName: string, update: Partial<ArchiveState>) =>
         setArchives(prev => prev.map(a => a.name !== archiveName ? a : { ...a, ...update }));
 
     // -----------------------------------------------------------------------
-    // Drop handling
+    // Drop handling (full-page)
     // -----------------------------------------------------------------------
 
-    const handleDragOver = useCallback((e: React.DragEvent) => {
+    const handlePageDragEnter = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        dragCounterRef.current += 1;
+        if (dragCounterRef.current === 1) setIsDragActive(true);
+    }, []);
+
+    const handlePageDragLeave = useCallback(() => {
+        dragCounterRef.current -= 1;
+        if (dragCounterRef.current === 0) setIsDragActive(false);
+    }, []);
+
+    const handlePageDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
     }, []);
 
-    const handleDrop = useCallback(async (e: React.DragEvent) => {
+    const handlePageDrop = useCallback(async (e: React.DragEvent) => {
         e.preventDefault();
+        dragCounterRef.current = 0;
+        setIsDragActive(false);
         if (phase !== 'idle') return;
 
         setScanError(null);
@@ -220,7 +367,6 @@ export default function UploadPage() {
                 return;
             }
 
-            // Collect all files per archive
             const archiveList: ArchiveState[] = [];
             for (const archiveEntry of dirEntries) {
                 const children = await readAllDirEntries(archiveEntry.createReader());
@@ -245,10 +391,7 @@ export default function UploadPage() {
                 });
             }
 
-            // Preflight conflict check
-            const preflight = await apiPost('upload/preflight', {
-                archives: archiveList.map(a => a.name),
-            });
+            const preflight = await apiPost('upload/preflight', { archives: archiveList.map(a => a.name) });
             const conflicts: Record<string, boolean> = preflight.conflicts ?? {};
 
             setArchives(archiveList.map(a => ({
@@ -256,6 +399,8 @@ export default function UploadPage() {
                 hasConflict: !!conflicts[a.name],
                 resolution: conflicts[a.name] ? 'skip' : 'overwrite',
             })));
+            setHideSkipped(false);
+            setCurrentPage(1);
             setPhase('setup');
         } catch (err) {
             setScanError(`Failed to scan folders: ${err instanceof Error ? err.message : String(err)}`);
@@ -275,14 +420,115 @@ export default function UploadPage() {
     };
 
     // -----------------------------------------------------------------------
-    // Upload
+    // Upload — tar-based
     // -----------------------------------------------------------------------
+
+    /**
+     * Upload one archive as a single tar stream.
+     *
+     * Flow:
+     *   1. Hash every file sequentially (Web Crypto, updates per-file status).
+     *   2. Build tar Blob from File references — zero extra memory, files are not copied.
+     *   3. Upload via a single TUS session; per-file progress is derived from the
+     *      tar byte offset reported by TUS.
+     */
+    const uploadArchiveAsTar = (archive: ArchiveState): Promise<void> =>
+        new Promise(async (resolve, reject) => {
+            // Step 1 — hash all files upfront (needed to build _manifest.json in the tar)
+            const manifest: Record<string, string> = {};
+            for (const f of archive.files) {
+                if (cancelledRef.current) return reject(new Error('cancelled'));
+                setArchives(prev => prev.map(a =>
+                    a.name !== archive.name ? a : {
+                        ...a,
+                        files: a.files.map(af =>
+                            af.relativePath === f.relativePath ? { ...af, status: 'hashing' } : af
+                        ),
+                    }
+                ));
+                manifest[f.relativePath] = await computeSha256(f.file);
+            }
+
+            if (cancelledRef.current) return reject(new Error('cancelled'));
+
+            // Step 2 — build tar Blob (near-instant; files referenced, not copied)
+            const { blob: tarBlob, fileInfos } = buildTarBlob(archive.files, manifest);
+
+            // Build a lookup map for O(1) access inside the progress callback
+            const infoByPath = new Map(fileInfos.map(fi => [fi.relativePath, fi]));
+
+            // Mark all files as uploading before TUS starts
+            setArchives(prev => prev.map(a =>
+                a.name !== archive.name ? a : {
+                    ...a,
+                    files: a.files.map(af => ({ ...af, status: 'uploading', uploadedBytes: 0 })),
+                }
+            ));
+
+            // Step 3 — single TUS upload
+            const upload = new TusUpload(tarBlob, {
+                endpoint: `${config.serverPath}api/upload/tus/`,
+                chunkSize: 5 * 1024 * 1024,
+                retryDelays: [0, 1000, 3000, 5000, 10000],
+                metadata: { archiveName: archive.name, uploadMode: 'tar' },
+                headers: authHeaders(),
+                onProgress: (uploadedTarBytes: number) => {
+                    // Derive per-file progress from tar byte position — single batched state update
+                    setArchives(prev => prev.map(a => {
+                        if (a.name !== archive.name) return a;
+                        const files = a.files.map(af => {
+                            const fi = infoByPath.get(af.relativePath);
+                            if (!fi) return af;
+                            const uploaded = Math.min(Math.max(0, uploadedTarBytes - fi.dataStart), fi.file.size);
+                            const status = uploaded >= fi.file.size ? 'done'
+                                : uploaded > 0 ? 'uploading' : 'pending';
+                            return { ...af, uploadedBytes: uploaded, status };
+                        });
+                        const uploadedBytes = files.reduce((s, af) => s + af.uploadedBytes, 0);
+                        return { ...a, files, uploadedBytes };
+                    }));
+                },
+                onSuccess: () => {
+                    // Ensure all files are marked done (covers rounding edge cases)
+                    setArchives(prev => prev.map(a =>
+                        a.name !== archive.name ? a : {
+                            ...a,
+                            uploadedBytes: a.totalBytes,
+                            files: a.files.map(af => ({ ...af, status: 'done', uploadedBytes: af.file.size })),
+                        }
+                    ));
+                    activeUploadsRef.current.delete(archive.name);
+                    resolve();
+                },
+                onError: (err) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    setArchives(prev => prev.map(a =>
+                        a.name !== archive.name ? a : {
+                            ...a,
+                            files: a.files.map(af => ({ ...af, status: 'error', error: msg })),
+                        }
+                    ));
+                    activeUploadsRef.current.delete(archive.name);
+                    reject(err);
+                },
+            });
+
+            activeUploadsRef.current.set(archive.name, upload);
+            upload.start();
+        });
 
     const startUpload = async () => {
         cancelledRef.current = false;
-        setPhase('uploading');
 
-        const pool = new UploadPool(3); // 3 concurrent file uploads across all archives
+        uploadStartTimeRef.current = Date.now();
+        speedSamplesRef.current = [];
+        setElapsedSeconds(0);
+        elapsedIntervalRef.current = setInterval(() =>
+            setElapsedSeconds(Math.floor((Date.now() - uploadStartTimeRef.current) / 1000)),
+            1000
+        );
+
+        setPhase('uploading');
 
         const archivesToUpload = archives.filter(a => a.resolution !== 'skip' || !a.hasConflict);
 
@@ -291,70 +537,23 @@ export default function UploadPage() {
             (a.hasConflict && a.resolution === 'skip') ? { ...a, status: 'skipped' } : a
         ));
 
-        const uploadFile = (archiveName: string, fileEntry: FileState): Promise<void> =>
-            pool.run(async () => {
-                if (cancelledRef.current) throw new Error('cancelled');
-
-                // Hash the file before uploading so the server can verify integrity
-                setFileStatus(archiveName, fileEntry.relativePath, { status: 'hashing' });
-                const fileHash = await computeSha256(fileEntry.file);
-
-                if (cancelledRef.current) throw new Error('cancelled');
-
-                return new Promise<void>((resolve, reject) => {
-                const upload = new TusUpload(fileEntry.file, {
-                    endpoint: `${config.serverPath}api/upload/tus/`,
-                    chunkSize: 5 * 1024 * 1024,
-                    retryDelays: [0, 1000, 3000, 5000, 10000],
-                    metadata: { archiveName, relativePath: fileEntry.relativePath, fileHash },
-                    headers: authHeaders(),
-                    onProgress: (uploaded) => {
-                        setFileStatus(archiveName, fileEntry.relativePath, {
-                            uploadedBytes: uploaded,
-                            status: 'uploading',
-                        });
-                    },
-                    onSuccess: () => {
-                        setFileStatus(archiveName, fileEntry.relativePath, { status: 'done' });
-                        activeUploadsRef.current.delete(`${archiveName}:${fileEntry.relativePath}`);
-                        resolve();
-                    },
-                    onError: (err) => {
-                        const msg = err instanceof Error ? err.message : String(err);
-                        setFileStatus(archiveName, fileEntry.relativePath, { status: 'error', error: msg });
-                        activeUploadsRef.current.delete(`${archiveName}:${fileEntry.relativePath}`);
-                        reject(err);
-                    },
-                });
-
-                activeUploadsRef.current.set(`${archiveName}:${fileEntry.relativePath}`, upload);
-                upload.start();
-                }); // end new Promise
-            }); // end pool.run async
-
         const processArchive = async (archive: ArchiveState) => {
             if (cancelledRef.current) return;
             setArchiveStatus(archive.name, { status: 'uploading' });
 
-            // If overwriting an existing archive, clean up any leftover staging first
             if (archive.hasConflict && archive.resolution === 'overwrite') {
                 await apiDelete(`upload/staging/${archive.name}`).catch(() => {});
             }
 
-            // Upload all files (pool limits total concurrency)
-            const results = await Promise.allSettled(
-                archive.files.map(f => uploadFile(archive.name, f))
-            );
-
-            if (cancelledRef.current) return;
-
-            const anyError = results.some(r => r.status === 'rejected');
-            if (anyError) {
-                setArchiveStatus(archive.name, { status: 'failed' });
+            try {
+                await uploadArchiveAsTar(archive);
+            } catch {
+                if (!cancelledRef.current) setArchiveStatus(archive.name, { status: 'failed' });
                 return;
             }
 
-            // Verify checksums
+            if (cancelledRef.current) return;
+
             setArchiveStatus(archive.name, { status: 'verifying' });
             try {
                 const verifyResult: VerifyResult = await apiPost(`upload/verify/${archive.name}`);
@@ -372,12 +571,14 @@ export default function UploadPage() {
             }
         };
 
-        // All archives run concurrently (file-level concurrency is governed by the pool)
         await Promise.allSettled(archivesToUpload.map(processArchive));
 
-        if (!cancelledRef.current) {
-            setPhase('done');
+        if (elapsedIntervalRef.current) {
+            clearInterval(elapsedIntervalRef.current);
+            elapsedIntervalRef.current = null;
         }
+
+        if (!cancelledRef.current) setPhase('done');
     };
 
     // -----------------------------------------------------------------------
@@ -386,14 +587,19 @@ export default function UploadPage() {
 
     const cancel = async () => {
         cancelledRef.current = true;
+        dragCounterRef.current = 0;
+        setIsDragActive(false);
 
-        // Abort all active TUS uploads
+        if (elapsedIntervalRef.current) {
+            clearInterval(elapsedIntervalRef.current);
+            elapsedIntervalRef.current = null;
+        }
+
         for (const upload of activeUploadsRef.current.values()) {
             Promise.resolve(upload.abort(true)).catch(() => {});
         }
         activeUploadsRef.current.clear();
 
-        // Clean up staging directories for archives that were in progress
         const inProgress = archives.filter(a => a.status === 'uploading' || a.status === 'verifying');
         await Promise.allSettled(
             inProgress.map(a => apiDelete(`upload/staging/${a.name}`).catch(() => {}))
@@ -408,6 +614,7 @@ export default function UploadPage() {
     // -----------------------------------------------------------------------
 
     const retryFailed = () => {
+        dragCounterRef.current = 0;
         setArchives(prev => prev.map(a =>
             a.status === 'failed' ? {
                 ...a,
@@ -417,8 +624,35 @@ export default function UploadPage() {
                 verifyResult: undefined,
             } : a
         ));
+        setCurrentPage(1);
         setPhase('setup');
     };
+
+    // -----------------------------------------------------------------------
+    // Derived values for upload phase
+    // -----------------------------------------------------------------------
+
+    const totalBytesToUpload = archives
+        .filter(a => a.status !== 'skipped')
+        .reduce((s, a) => s + a.totalBytes, 0);
+    const totalBytesUploaded = archives
+        .filter(a => a.status !== 'skipped')
+        .reduce((s, a) => s + a.uploadedBytes, 0);
+    const overallPct = totalBytesToUpload > 0
+        ? Math.round((totalBytesUploaded / totalBytesToUpload) * 100)
+        : 0;
+
+    const samples = speedSamplesRef.current;
+    let speedBytesPerSec = 0;
+    let etaSeconds: number | null = null;
+    if (samples.length >= 2) {
+        const dt = (samples[samples.length - 1].time - samples[0].time) / 1000;
+        if (dt > 0) {
+            speedBytesPerSec = (samples[samples.length - 1].bytes - samples[0].bytes) / dt;
+            const remaining = totalBytesToUpload - totalBytesUploaded;
+            etaSeconds = speedBytesPerSec > 0 ? Math.ceil(remaining / speedBytesPerSec) : null;
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Render helpers
@@ -448,239 +682,408 @@ export default function UploadPage() {
     };
 
     // -----------------------------------------------------------------------
+    // Pagination helpers
+    // -----------------------------------------------------------------------
+
+    const hasAnySkipped = archives.some(a => a.hasConflict && a.resolution === 'skip');
+
+    const visibleSetupArchives = hideSkipped
+        ? archives.filter(a => !(a.hasConflict && a.resolution === 'skip'))
+        : archives;
+
+    const setupPageItems = visibleSetupArchives.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    );
+
+    const uploadingPageItems = archives.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    );
+
+    const donePageItems = archives.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    );
+
+    const renderPagination = (totalCount: number) =>
+        totalCount > ITEMS_PER_PAGE ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
+                <Pagination
+                    count={Math.ceil(totalCount / ITEMS_PER_PAGE)}
+                    page={currentPage}
+                    onChange={(_, p) => setCurrentPage(p)}
+                    color="primary"
+                />
+            </Box>
+        ) : null;
+
+    // -----------------------------------------------------------------------
     // Render
     // -----------------------------------------------------------------------
 
     return (
-        <>
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
             <TopNavBar>
                 <Typography variant="h6" sx={{ color: 'white' }}>Upload Archives</Typography>
             </TopNavBar>
 
-            <Box sx={{ maxWidth: 900, mx: 'auto', p: 3 }}>
+            {/* Scroll container — also the full-page drag target */}
+            <Box
+                ref={pageContainerRef}
+                onDragEnter={handlePageDragEnter}
+                onDragLeave={handlePageDragLeave}
+                onDragOver={handlePageDragOver}
+                onDrop={handlePageDrop}
+                sx={{ flex: 1, overflow: 'auto', position: 'relative' }}
+            >
+                <Box sx={{ maxWidth: 900, mx: 'auto', p: 3 }}>
 
-                {/* ── IDLE ── */}
-                {phase === 'idle' && (
-                    <Box
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop}
-                        sx={{
-                            border: '2px dashed',
-                            borderColor: 'divider',
-                            borderRadius: 2,
-                            p: 8,
-                            textAlign: 'center',
-                            cursor: 'copy',
-                            transition: 'border-color 0.2s',
-                            '&:hover': { borderColor: 'primary.main' },
-                        }}
-                    >
-                        <CloudUploadIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                        <Typography variant="h6" gutterBottom>Drop archive folders here</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                            You can drop multiple archive folders at once.
-                        </Typography>
-                        {scanError && <Alert severity="error" sx={{ mt: 2 }}>{scanError}</Alert>}
-                    </Box>
-                )}
+                    {/* ── IDLE ── */}
+                    {phase === 'idle' && (
+                        <Box
+                            sx={{
+                                border: '2px dashed',
+                                borderColor: 'divider',
+                                borderRadius: 2,
+                                p: 8,
+                                textAlign: 'center',
+                                cursor: 'copy',
+                                transition: 'border-color 0.2s',
+                                '&:hover': { borderColor: 'primary.main' },
+                            }}
+                        >
+                            <CloudUploadIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                            <Typography variant="h6" gutterBottom>Drop archive folders here</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                                You can drop multiple archive folders at once.
+                            </Typography>
+                            {scanError && <Alert severity="error" sx={{ mt: 2 }}>{scanError}</Alert>}
+                        </Box>
+                    )}
 
-                {/* ── SCANNING ── */}
-                {phase === 'scanning' && (
-                    <Stack alignItems="center" gap={2} sx={{ py: 8 }}>
-                        <CircularProgress />
-                        <Typography>Scanning folder structure…</Typography>
-                    </Stack>
-                )}
-
-                {/* ── SETUP ── */}
-                {phase === 'setup' && (
-                    <Stack gap={2}>
-                        <Typography variant="h6">
-                            {archives.length} archive{archives.length !== 1 ? 's' : ''} detected
-                        </Typography>
-
-                        {archives.some(a => a.hasConflict) && (
-                            <Alert
-                                severity="warning"
-                                action={
-                                    <FormControlLabel
-                                        control={<Switch checked={!bulkAllSkip} onChange={toggleBulkResolution} />}
-                                        label={bulkAllSkip ? 'Skip all conflicts' : 'Overwrite all conflicts'}
-                                        sx={{ mr: 0 }}
-                                    />
-                                }
-                            >
-                                Some archives already exist in the destination.
-                            </Alert>
-                        )}
-
-                        {archives.map(archive => (
-                            <Card key={archive.name} variant="outlined">
-                                <CardContent>
-                                    <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-                                        <Stack gap={0.5}>
-                                            <Typography variant="subtitle1" fontWeight="bold">{archive.name}</Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {archive.files.length} files · {formatBytes(archive.totalBytes)}
-                                            </Typography>
-                                        </Stack>
-                                        {archive.hasConflict ? (
-                                            <Stack direction="row" alignItems="center" gap={1}>
-                                                <Chip label="Already exists" color="warning" size="small" icon={<WarningIcon />} />
-                                                <RadioGroup
-                                                    row
-                                                    value={archive.resolution}
-                                                    onChange={(_, v) => setArchiveStatus(archive.name, { resolution: v as 'skip' | 'overwrite' })}
-                                                >
-                                                    <FormControlLabel value="skip" control={<Radio size="small" />} label="Skip" />
-                                                    <FormControlLabel value="overwrite" control={<Radio size="small" />} label="Overwrite" />
-                                                </RadioGroup>
-                                            </Stack>
-                                        ) :  <Chip label="New archive" color="primary" size="small" icon={<CreateNewFolderIcon />} />}
-                                    </Stack>
-                                </CardContent>
-                            </Card>
-                        ))}
-
-                        <Stack direction="row" gap={2}>
-                            <Button variant="contained" size="large" onClick={startUpload}>
-                                Start Upload
-                            </Button>
-                            <Button variant="outlined" onClick={() => { setArchives([]); setPhase('idle'); }}>
-                                Cancel
-                            </Button>
+                    {/* ── SCANNING ── */}
+                    {phase === 'scanning' && (
+                        <Stack alignItems="center" gap={2} sx={{ py: 8 }}>
+                            <CircularProgress />
+                            <Typography>Scanning folder structure…</Typography>
                         </Stack>
-                    </Stack>
-                )}
+                    )}
 
-                {/* ── UPLOADING ── */}
-                {phase === 'uploading' && (
-                    <Stack gap={2}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="h6">Uploading…</Typography>
-                            <Button color="error" variant="outlined" onClick={cancel}>Cancel</Button>
-                        </Stack>
-
-                        {archives.map(archive => (
-                            <Card key={archive.name} variant="outlined">
-                                <CardContent>
-                                    <Stack direction="row" alignItems="center" gap={1} mb={1}>
-                                        <Typography variant="subtitle1" fontWeight="bold" sx={{ flex: 1 }}>
-                                            {archive.name}
-                                        </Typography>
-                                        {statusChip(archive.status)}
-                                        {(archive.status === 'uploading' || archive.status === 'verifying') && (
-                                            <CircularProgress size={16} />
-                                        )}
-                                        <Tooltip title={archive.expanded ? 'Hide files' : 'Show files'}>
-                                            <IconButton size="small" onClick={() => setArchiveStatus(archive.name, { expanded: !archive.expanded })}>
-                                                {archive.expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Stack>
-
-                                    {archive.status !== 'skipped' && (
-                                        <>
-                                            <LinearProgress
-                                                variant="determinate"
-                                                value={pct(archive)}
-                                                sx={{ mb: 0.5 }}
-                                            />
-                                            <Typography variant="caption" color="text.secondary">
-                                                {formatBytes(archive.uploadedBytes)} / {formatBytes(archive.totalBytes)} ({pct(archive)}%)
-                                            </Typography>
-                                        </>
-                                    )}
-
-                                    {archive.status === 'failed' && archive.verifyResult && (
-                                        <Alert severity="error" sx={{ mt: 1 }}>
-                                            Checksum verification failed for{' '}
-                                            {archive.verifyResult.results.filter(r => r.status !== 'pass').length} file(s).
-                                        </Alert>
-                                    )}
-
-                                    <Collapse in={archive.expanded}>
-                                        <Stack gap={0.5} mt={1}>
-                                            {archive.files.map(f => (
-                                                <Stack key={f.relativePath} direction="row" alignItems="center" gap={1}>
-                                                    {f.status === 'done' && <CheckCircleIcon fontSize="small" color="success" />}
-                                                    {f.status === 'error' && <ErrorIcon fontSize="small" color="error" />}
-                                                    {(f.status === 'uploading' || f.status === 'hashing' || f.status === 'pending') && (
-                                                        <Box sx={{ width: 20, display: 'flex', justifyContent: 'center' }}>
-                                                            {(f.status === 'uploading' || f.status === 'hashing')
-                                                                ? <CircularProgress size={14} />
-                                                                : <Box sx={{ width: 14, height: 14 }} />}
-                                                        </Box>
-                                                    )}
-                                                    <Typography variant="caption" sx={{ flex: 1, fontFamily: 'monospace' }}>
-                                                        {f.relativePath}
-                                                    </Typography>
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        {f.status === 'hashing'
-                                                            ? 'Hashing…'
-                                                            : `${formatBytes(f.uploadedBytes)} / ${formatBytes(f.file.size)}`}
-                                                    </Typography>
-                                                </Stack>
-                                            ))}
-                                        </Stack>
-                                    </Collapse>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </Stack>
-                )}
-
-                {/* ── DONE ── */}
-                {phase === 'done' && (() => {
-                    const { done, failed, skipped } = doneSummary();
-                    return (
+                    {/* ── SETUP ── */}
+                    {phase === 'setup' && (
                         <Stack gap={2}>
-                            <Typography variant="h6">Upload complete</Typography>
-                            <Stack direction="row" gap={1}>
-                                {done > 0 && <Chip label={`${done} uploaded`} color="success" icon={<CheckCircleIcon />} />}
-                                {failed > 0 && <Chip label={`${failed} failed`} color="error" icon={<ErrorIcon />} />}
-                                {skipped > 0 && <Chip label={`${skipped} skipped`} color="default" />}
+                            {/* Header */}
+                            <Stack direction="row" alignItems="baseline" gap={1}>
+                                <Typography variant="h6">
+                                    {archives.length} archive{archives.length !== 1 ? 's' : ''} detected
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    ({archives.reduce((s, a) => s + a.files.length, 0)} files,{' '}
+                                    {formatBytes(archives.reduce((s, a) => s + a.totalBytes, 0))} total)
+                                </Typography>
                             </Stack>
 
-                            {archives.map(archive => (
+                            {/* Action buttons — always at top */}
+                            <Stack direction="row" gap={2}>
+                                <Button variant="contained" size="large" onClick={startUpload}>
+                                    Start Upload
+                                </Button>
+                                <Button variant="outlined" onClick={() => { setArchives([]); setPhase('idle'); }}>
+                                    Cancel
+                                </Button>
+                            </Stack>
+
+                            {/* Conflict alert */}
+                            {archives.some(a => a.hasConflict) && (
+                                <Alert
+                                    severity="warning"
+                                    action={
+                                        <FormControlLabel
+                                            control={
+                                                <Tooltip title={bulkAllSkip
+                                                    ? 'Existing archives will be skipped'
+                                                    : 'Existing archives will be overridden'
+                                                }>
+                                                    <Switch checked={!bulkAllSkip} onChange={toggleBulkResolution} />
+                                                </Tooltip>
+                                            }
+                                            label="Re-upload existing archives"
+                                            sx={{ mr: 0 }}
+                                        />
+                                    }
+                                >
+                                    Some archives already exist in the destination.
+                                </Alert>
+                            )}
+
+                            {/* Hide skipped button */}
+                            {archives.some(a => a.hasConflict) && (
+                                <Box>
+                                    <Button
+                                        size="small"
+                                        variant="outlined"
+                                        startIcon={<VisibilityOffIcon />}
+                                        disabled={!hasAnySkipped}
+                                        onClick={() => { setHideSkipped(p => !p); setCurrentPage(1); }}
+                                    >
+                                        {hideSkipped ? 'Show skipped' : 'Hide skipped'}
+                                    </Button>
+                                </Box>
+                            )}
+
+                            {/* Archive cards (paginated) */}
+                            {setupPageItems.map(archive => (
                                 <Card key={archive.name} variant="outlined">
                                     <CardContent>
-                                        <Stack direction="row" alignItems="center" gap={1}>
-                                            <Typography variant="subtitle1" fontWeight="bold" sx={{ flex: 1 }}>
-                                                {archive.name}
-                                            </Typography>
-                                            {statusChip(archive.status)}
+                                        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                                            <Stack gap={0.5}>
+                                                <Typography variant="subtitle1" fontWeight="bold">{archive.name}</Typography>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {archive.files.length} files · {formatBytes(archive.totalBytes)}
+                                                </Typography>
+                                            </Stack>
+                                            {archive.hasConflict ? (
+                                                <Stack direction="row" alignItems="center" gap={1}>
+                                                    <Chip label="Already exists" color="warning" size="small" icon={<WarningIcon />} />
+                                                    <RadioGroup
+                                                        row
+                                                        value={archive.resolution}
+                                                        onChange={(_, v) => setArchiveStatus(archive.name, { resolution: v as 'skip' | 'overwrite' })}
+                                                    >
+                                                        <FormControlLabel value="skip" control={<Radio size="small" />} label="Skip" />
+                                                        <FormControlLabel value="overwrite" control={<Radio size="small" />} label="Overwrite" />
+                                                    </RadioGroup>
+                                                </Stack>
+                                            ) : <Chip label="New archive" color="primary" size="small" icon={<CreateNewFolderIcon />} />}
                                         </Stack>
-                                        {archive.verifyResult?.status === 'fail' && (
-                                            <Alert severity="error" sx={{ mt: 1 }}>
-                                                <Typography variant="body2" fontWeight="bold">Failed files:</Typography>
-                                                {archive.verifyResult.results
-                                                    .filter(r => r.status !== 'pass')
-                                                    .map(r => (
-                                                        <Typography key={r.path} variant="caption" component="div" fontFamily="monospace">
-                                                            {r.path} — {r.status}
-                                                        </Typography>
-                                                    ))}
-                                            </Alert>
-                                        )}
                                     </CardContent>
                                 </Card>
                             ))}
 
-                            <Stack direction="row" gap={2}>
-                                <Button variant="outlined" onClick={() => { setArchives([]); setPhase('idle'); }}>
-                                    Upload more
-                                </Button>
-                                {failed > 0 && (
-                                    <Button variant="contained" color="warning" onClick={retryFailed}>
-                                        Retry failed
-                                    </Button>
-                                )}
-                            </Stack>
+                            {renderPagination(visibleSetupArchives.length)}
                         </Stack>
-                    );
-                })()}
+                    )}
+
+                    {/* ── UPLOADING ── */}
+                    {phase === 'uploading' && (
+                        <Stack gap={2}>
+                            {/* Cancel — always visible above accordion */}
+                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                <Typography variant="h6">Uploading…</Typography>
+                                <Button color="error" variant="outlined" onClick={cancel}>Cancel</Button>
+                            </Stack>
+
+                            <Accordion defaultExpanded={false} disableGutters>
+                                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                                    <Stack sx={{ width: '100%', pr: 1 }} gap={0.5}>
+                                        <Tooltip title={speedBytesPerSec > 0
+                                            ? `${formatBytes(Math.round(speedBytesPerSec))}/s`
+                                            : 'Calculating speed…'
+                                        }>
+                                            <span>
+                                                <LinearProgress
+                                                    variant="determinate"
+                                                    value={overallPct}
+                                                    sx={{ height: 8, borderRadius: 1 }}
+                                                />
+                                            </span>
+                                        </Tooltip>
+                                        <Stack direction="row" justifyContent="space-between">
+                                            <Typography variant="caption" color="text.secondary">
+                                                {formatBytes(totalBytesUploaded)} / {formatBytes(totalBytesToUpload)} ({overallPct}%)
+                                            </Typography>
+                                            <Stack direction="row" gap={2}>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    Elapsed: {formatDuration(elapsedSeconds)}
+                                                </Typography>
+                                                {etaSeconds !== null && (
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        ETA: {formatDuration(etaSeconds)}
+                                                    </Typography>
+                                                )}
+                                            </Stack>
+                                        </Stack>
+                                    </Stack>
+                                </AccordionSummary>
+
+                                <AccordionDetails sx={{ p: 0 }}>
+                                    <Stack direction="row" justifyContent="flex-end" gap={1} sx={{ px: 2, pb: 1 }}>
+                                        <Button
+                                            size="small"
+                                            startIcon={<UnfoldLessIcon />}
+                                            onClick={() => setArchives(prev => prev.map(a => ({ ...a, expanded: false })))}
+                                        >
+                                            Collapse all
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            startIcon={<UnfoldMoreIcon />}
+                                            onClick={() => setArchives(prev => prev.map(a => ({ ...a, expanded: true })))}
+                                        >
+                                            Expand all
+                                        </Button>
+                                    </Stack>
+
+                                    <Stack gap={1} sx={{ px: 2, pb: 1 }}>
+                                        {uploadingPageItems.map(archive => (
+                                            <Card key={archive.name} variant="outlined">
+                                                <CardContent>
+                                                    <Stack direction="row" alignItems="center" gap={1} mb={1}>
+                                                        <Typography variant="subtitle1" fontWeight="bold" sx={{ flex: 1 }}>
+                                                            {archive.name}
+                                                        </Typography>
+                                                        {statusChip(archive.status)}
+                                                        {(archive.status === 'uploading' || archive.status === 'verifying') && (
+                                                            <CircularProgress size={16} />
+                                                        )}
+                                                        <Tooltip title={archive.expanded ? 'Hide files' : 'Show files'}>
+                                                            <IconButton size="small" onClick={() => setArchiveStatus(archive.name, { expanded: !archive.expanded })}>
+                                                                {archive.expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Stack>
+
+                                                    {archive.status !== 'skipped' && (
+                                                        <>
+                                                            <LinearProgress
+                                                                variant="determinate"
+                                                                value={pct(archive)}
+                                                                sx={{ mb: 0.5 }}
+                                                            />
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                {formatBytes(archive.uploadedBytes)} / {formatBytes(archive.totalBytes)} ({pct(archive)}%)
+                                                            </Typography>
+                                                        </>
+                                                    )}
+
+                                                    {archive.status === 'failed' && archive.verifyResult && (
+                                                        <Alert severity="error" sx={{ mt: 1 }}>
+                                                            Checksum verification failed for{' '}
+                                                            {archive.verifyResult.results.filter(r => r.status !== 'pass').length} file(s).
+                                                        </Alert>
+                                                    )}
+
+                                                    <Collapse in={archive.expanded}>
+                                                        <Stack gap={0.5} mt={1}>
+                                                            {archive.files.map(f => (
+                                                                <Stack key={f.relativePath} direction="row" alignItems="center" gap={1}>
+                                                                    {f.status === 'done' && <CheckCircleIcon fontSize="small" color="success" />}
+                                                                    {f.status === 'error' && <ErrorIcon fontSize="small" color="error" />}
+                                                                    {(f.status === 'uploading' || f.status === 'hashing' || f.status === 'pending') && (
+                                                                        <Box sx={{ width: 20, display: 'flex', justifyContent: 'center' }}>
+                                                                            {(f.status === 'uploading' || f.status === 'hashing')
+                                                                                ? <CircularProgress size={14} />
+                                                                                : <Box sx={{ width: 14, height: 14 }} />}
+                                                                        </Box>
+                                                                    )}
+                                                                    <Typography variant="caption" sx={{ flex: 1, fontFamily: 'monospace' }}>
+                                                                        {f.relativePath}
+                                                                    </Typography>
+                                                                    <Typography variant="caption" color="text.secondary">
+                                                                        {f.status === 'hashing'
+                                                                            ? 'Hashing…'
+                                                                            : `${formatBytes(f.uploadedBytes)} / ${formatBytes(f.file.size)}`}
+                                                                    </Typography>
+                                                                </Stack>
+                                                            ))}
+                                                        </Stack>
+                                                    </Collapse>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
+                                    </Stack>
+
+                                    {renderPagination(archives.length)}
+                                </AccordionDetails>
+                            </Accordion>
+                        </Stack>
+                    )}
+
+                    {/* ── DONE ── */}
+                    {phase === 'done' && (() => {
+                        const { done, failed, skipped } = doneSummary();
+                        const totalTransferred = archives
+                            .filter(a => a.status === 'done')
+                            .reduce((s, a) => s + a.totalBytes, 0);
+                        return (
+                            <Stack gap={2}>
+                                <Typography variant="h6">Upload complete</Typography>
+                                <Stack direction="row" gap={1}>
+                                    {done > 0 && <Chip label={`${done} uploaded`} color="success" icon={<CheckCircleIcon />} />}
+                                    {failed > 0 && <Chip label={`${failed} failed`} color="error" icon={<ErrorIcon />} />}
+                                    {skipped > 0 && <Chip label={`${skipped} skipped`} color="default" />}
+                                </Stack>
+                                {totalTransferred > 0 && (
+                                    <Typography variant="body2" color="text.secondary">
+                                        Total data transferred: {formatBytes(totalTransferred)}
+                                    </Typography>
+                                )}
+
+                                {donePageItems.map(archive => (
+                                    <Card key={archive.name} variant="outlined">
+                                        <CardContent>
+                                            <Stack direction="row" alignItems="center" gap={1}>
+                                                <Typography variant="subtitle1" fontWeight="bold" sx={{ flex: 1 }}>
+                                                    {archive.name}
+                                                </Typography>
+                                                {statusChip(archive.status)}
+                                            </Stack>
+                                            {archive.verifyResult?.status === 'fail' && (
+                                                <Alert severity="error" sx={{ mt: 1 }}>
+                                                    <Typography variant="body2" fontWeight="bold">Failed files:</Typography>
+                                                    {archive.verifyResult.results
+                                                        .filter(r => r.status !== 'pass')
+                                                        .map(r => (
+                                                            <Typography key={r.path} variant="caption" component="div" fontFamily="monospace">
+                                                                {r.path} — {r.status}
+                                                            </Typography>
+                                                        ))}
+                                                </Alert>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                ))}
+
+                                {renderPagination(archives.length)}
+
+                                <Stack direction="row" gap={2}>
+                                    <Button variant="outlined" onClick={() => { setArchives([]); setPhase('idle'); }}>
+                                        Upload more
+                                    </Button>
+                                    {failed > 0 && (
+                                        <Button variant="contained" color="warning" onClick={retryFailed}>
+                                            Retry failed
+                                        </Button>
+                                    )}
+                                </Stack>
+                            </Stack>
+                        );
+                    })()}
+                </Box>
+
+                {/* Full-page drag overlay */}
+                {isDragActive && phase === 'idle' && (
+                    <Box sx={{
+                        position: 'absolute',
+                        inset: 0,
+                        border: '4px dashed',
+                        borderColor: 'primary.main',
+                        borderRadius: 2,
+                        bgcolor: 'rgba(25, 118, 210, 0.08)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 10,
+                        pointerEvents: 'none',
+                    }}>
+                        <Stack alignItems="center" gap={2}>
+                            <CloudUploadIcon sx={{ fontSize: 80, color: 'primary.main' }} />
+                            <Typography variant="h5" color="primary">Drop archive folders here</Typography>
+                        </Stack>
+                    </Box>
+                )}
             </Box>
-        </>
+        </Box>
     );
 }

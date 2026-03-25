@@ -5,6 +5,8 @@ import os
 import re
 import shutil
 import socket
+import sys
+import tarfile as _tarfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,7 +53,7 @@ def check_conflicts(archive_names: list[str]) -> dict[str, bool]:
     return {name: (Path("archives") / name).exists() for name in archive_names}
 
 
-def create_upload(archive_name: str, relative_path: str, upload_length: int, file_hash: Optional[str]) -> str:
+def create_upload(archive_name: str, relative_path: str, upload_length: int, file_hash: Optional[str], upload_mode: str = "") -> str:
     """Create a new TUS upload session. Returns the file_id.
 
     file_hash: hex-encoded SHA-256 of the complete file, computed by the client
@@ -75,6 +77,7 @@ def create_upload(archive_name: str, relative_path: str, upload_length: int, fil
         "upload_length": upload_length,
         "file_hash": file_hash,  # SHA-256 declared by client; None if not provided
         "offset": 0,
+        "upload_mode": upload_mode,  # "tar" for tar uploads, "" for individual files
     }
     (state_dir / f"{file_id}.json").write_text(json.dumps(state), encoding="utf-8")
     return file_id
@@ -131,10 +134,97 @@ def delete_upload(file_id: str):
     state_file.unlink()
 
 
+def _extract_and_verify_tar(archive_name: str) -> dict:
+    """Extract _upload.tar in staging, verify contents against embedded _manifest.json."""
+    staging = get_staging_dir()
+    archive_dir = staging / archive_name
+    tar_path = archive_dir / "_upload.tar"
+
+    if not tar_path.exists():
+        return {"status": "fail", "results": [{"path": "_upload.tar", "status": "missing"}]}
+
+    try:
+        with _tarfile.open(tar_path, "r:") as tf:
+            members = tf.getmembers()
+            # Validate all paths before extracting anything
+            for member in members:
+                if member.name == "_manifest.json":
+                    continue  # internal manifest file — always permitted
+                if not member.isreg():
+                    return {
+                        "status": "fail",
+                        "results": [{"path": member.name, "status": "not_a_regular_file"}],
+                    }
+                if not validate_file_path(member.name):
+                    return {
+                        "status": "fail",
+                        "results": [{"path": member.name, "status": "invalid_path"}],
+                    }
+            # Extract safely
+            if sys.version_info >= (3, 12):
+                tf.extractall(archive_dir, filter="data")
+            else:
+                tf.extractall(archive_dir)
+    except _tarfile.TarError as exc:
+        return {"status": "fail", "results": [{"path": "_upload.tar", "status": f"tar_error: {exc}"}]}
+
+    # Remove the tar file now that extraction is complete
+    tar_path.unlink()
+
+    # Read manifest
+    manifest_path = archive_dir / "_manifest.json"
+    if not manifest_path.exists():
+        # Extraction succeeded but no hash manifest — treat as no_checksum_file
+        return {"status": "no_checksum_file", "results": []}
+
+    try:
+        manifest: dict[str, str] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"status": "fail", "results": [{"path": "_manifest.json", "status": f"parse_error: {exc}"}]}
+
+    # Verify each extracted file against its declared hash
+    results = []
+    all_pass = True
+
+    for rel_path, expected_hash in manifest.items():
+        try:
+            file_path = _safe_staging_file_path(archive_name, rel_path)
+        except ValueError:
+            results.append({"path": rel_path, "status": "invalid_path"})
+            all_pass = False
+            continue
+
+        if not file_path.exists():
+            results.append({"path": rel_path, "status": "missing"})
+            all_pass = False
+            continue
+
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha256.update(chunk)
+
+        actual = sha256.hexdigest()
+        ok = actual == expected_hash.lower()
+        results.append({"path": rel_path, "status": "pass" if ok else "fail"})
+        if not ok:
+            all_pass = False
+            logger.warning(
+                f"Hash mismatch for {archive_name}/{rel_path}: "
+                f"expected={expected_hash} actual={actual}"
+            )
+
+    if not results:
+        return {"status": "no_checksum_file", "results": []}
+
+    return {"status": "pass" if all_pass else "fail", "results": results}
+
+
 def verify_archive(archive_name: str) -> dict:
     """Verify every uploaded file in the archive against its client-declared SHA-256.
 
-    The hash is read from each TUS state JSON (stored at upload-creation time).
+    For tar uploads: extracts the tar, then verifies against the embedded _manifest.json.
+    For individual-file uploads: reads hashes from each TUS state JSON.
     Files uploaded without a declared hash are treated as passing (no-op check).
     """
     staging = get_staging_dir()
@@ -143,6 +233,16 @@ def verify_archive(archive_name: str) -> dict:
     if not state_dir.exists():
         return {"status": "no_uploads", "results": []}
 
+    # Detect tar upload: any TUS state file with upload_mode == "tar"
+    for state_file in state_dir.glob("*.json"):
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            if state.get("upload_mode") == "tar":
+                return _extract_and_verify_tar(archive_name)
+        except Exception:
+            pass
+
+    # --- Individual-file path (original behaviour) ---
     results = []
     all_pass = True
 
@@ -214,8 +314,23 @@ def commit_archive(archive_name: str, uploader_info: dict):
     src = staging / archive_name
     dst = Path("archives") / archive_name
 
-    # Collect records from TUS state files BEFORE they are deleted
-    file_records = _collect_tus_records(archive_name)
+    # Collect per-file records for chain-of-custody.
+    # Tar uploads: _manifest.json has per-file hashes; sizes read from extracted files on disk.
+    # Individual-file uploads: TUS state files have per-file hashes and declared sizes.
+    manifest_path = src / "_manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        file_records = [
+            {
+                "relative_path": rel,
+                "sha256": h,
+                "size_bytes": (src / rel).stat().st_size if (src / rel).exists() else None,
+            }
+            for rel, h in sorted(manifest.items())
+        ]
+        manifest_path.unlink()  # superseded by the chain-of-custody checksum file below
+    else:
+        file_records = _collect_tus_records(archive_name)
     completed_at = datetime.now(timezone.utc)
     timestamp_label = completed_at.strftime("%Y%m%d_%H%M%S")
 
