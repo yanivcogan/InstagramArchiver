@@ -1,5 +1,5 @@
-import React, {useEffect, useState} from 'react';
-import {useParams, useSearchParams} from "react-router";
+import React, {useEffect, useMemo, useState} from 'react';
+import {useMatch, useParams, useSearchParams} from "react-router";
 import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchAccount, fetchArchivingSessionsAccount} from "../services/DataFetcher";
@@ -12,10 +12,18 @@ import cookie from "js-cookie";
 import {getShareTokenFromHref} from "../services/linkSharing";
 
 export default function AccountPage() {
-    const {id: idParam} = useParams();
+    const {id: idParam, platformId} = useParams();
+    const urlMatch = useMatch("/account/url/*");
+    const urlParam = urlMatch?.params["*"];
     const [searchParams] = useSearchParams();
 
-    const id = idParam === undefined ? null : parseInt(idParam);
+    const apiRef: number | string | null = useMemo(() => {
+        if (platformId) return `pk/${platformId}`;
+        if (urlParam) return `url/${urlParam}`;
+        if (idParam) return parseInt(idParam);
+        return null;
+    }, [idParam, platformId, urlParam]);
+
     const exportMode = searchParams.get("export") === "1";
     const highlightRelationId = searchParams.get('relation_id') ? parseInt(searchParams.get('relation_id')!) : undefined;
     const shareMode = !!getShareTokenFromHref();
@@ -27,15 +35,24 @@ export default function AccountPage() {
     const preloadMetadata = exportMode;
 
     const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
-    const [loadingData, setLoadingData] = useState(id !== null);
+    const [loadingData, setLoadingData] = useState(apiRef !== null);
     const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(false);
+    const [dbId, setDbId] = useState<number | null>(typeof apiRef === 'number' ? apiRef : null);
 
     useEffect(() => {
-        if (id === null) return;
+        if (apiRef === null) return;
         setLoadingData(true);
         setLoadingSessions(true);
-        fetchAccount(id, {
+        const isByDbId = typeof apiRef === 'number';
+        if (isByDbId) {
+            setDbId(apiRef);
+            fetchArchivingSessionsAccount(apiRef, {}).then(sessions => {
+                setSessions(sessions);
+                setLoadingSessions(false);
+            });
+        }
+        fetchAccount(apiRef, {
             flattened_entities_transform: {
                 strip_raw_data: !preloadMetadata,
                 retain_only_media_with_local_files: true,
@@ -45,15 +62,23 @@ export default function AccountPage() {
                 retain_only_posts_with_media: true,
                 retain_only_accounts_with_posts: false,
             }
-        }).then(data => {
-            setData(data);
+        }).then(result => {
+            setData(result);
             setLoadingData(false);
+            if (!isByDbId) {
+                const resolvedId = result.accounts?.[0]?.id ?? null;
+                setDbId(resolvedId);
+                if (resolvedId) {
+                    fetchArchivingSessionsAccount(resolvedId, {}).then(sessions => {
+                        setSessions(sessions);
+                        setLoadingSessions(false);
+                    });
+                } else {
+                    setLoadingSessions(false);
+                }
+            }
         });
-        fetchArchivingSessionsAccount(id, {}).then(sessions => {
-            setSessions(sessions);
-            setLoadingSessions(false);
-        });
-    }, [id]);
+    }, [apiRef]);
 
     const renderData = () => {
         if (loadingData) {
@@ -86,6 +111,9 @@ export default function AccountPage() {
         />
     };
 
+    const primaryAccount = data?.accounts?.[0];
+    const stableSharePath = primaryAccount?.id_on_platform ? `/account/pk/${primaryAccount.id_on_platform}` : undefined;
+
     const isLoggedIn = !!(cookie.get("token"));
     return <div className={"page-wrap"}>
         <TopNavBar hideMenuButton={hideHeader}>
@@ -94,11 +122,11 @@ export default function AccountPage() {
                     <Typography>Account Data</Typography>
                     {
                         data ?
-                            <Typography>{data.accounts?.[0].display_name || data.accounts?.[0].url}</Typography> :
+                            <Typography>{primaryAccount?.display_name || primaryAccount?.url}</Typography> :
                             <CircularProgress color={"primary"} size={"16"}/>
                     }
                 </Stack>
-                {isLoggedIn && id ? <LinkSharing entityType={"account"} entityId={id}/> : null}
+                {isLoggedIn && dbId ? <LinkSharing entityType={"account"} entityId={dbId} stableSharePath={stableSharePath}/> : null}
             </Stack>
         </TopNavBar>
         <div className={"page-content content-wrap"}>

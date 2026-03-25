@@ -4,7 +4,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
-from browsing_platform.server.services.account import account_exists, get_account_by_id, get_account_data_by_id
+from browsing_platform.server.services.account import account_exists, get_account_by_id, get_account_data_by_id, \
+    get_account_by_platform_id, get_account_by_url
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
     get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions
 from browsing_platform.server.services.permissions import auth_entity_view_access
@@ -19,6 +20,25 @@ router = APIRouter(
 
 async def _auth_account_view(req: Request, item_id: int):
     return await auth_entity_view_access(request=req, entity="account", entity_id=item_id)
+
+
+@router.get("/pk/{platform_id}/")
+@router.get("/pk/{platform_id}")
+async def get_account_by_pk(platform_id: str, req: Request) -> ExtractedEntitiesNested:
+    account = get_account_by_platform_id(platform_id, include_data=False)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account Not Found")
+    await auth_entity_view_access(request=req, entity="account", entity_id=account.id)
+    return get_enriched_account_by_id(account.id, extract_entities_transform_config(req))
+
+
+@router.get("/url/{account_url:path}")
+async def get_account_by_url_path(account_url: str, req: Request) -> ExtractedEntitiesNested:
+    account = get_account_by_url(account_url, include_data=False)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account Not Found")
+    await auth_entity_view_access(request=req, entity="account", entity_id=account.id)
+    return get_enriched_account_by_id(account.id, extract_entities_transform_config(req))
 
 
 @router.get("/data/{item_id:int}", dependencies=[Depends(_auth_account_view)])

@@ -48,6 +48,16 @@ def get_media_by_id(media_id: int, include_data: bool = True) -> Optional[Media]
     return Media(**row)
 
 
+def get_media_by_platform_id(platform_id: str, include_data: bool = True) -> Optional[Media]:
+    cols = _MEDIA_COLS if include_data else _MEDIA_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM media WHERE id_on_platform = %(pid)s LIMIT 1",
+        {"pid": platform_id},
+        return_type="single_row"
+    )
+    return Media(**row) if row else None
+
+
 def get_media_by_posts(posts: list[Post], include_data: bool = True) -> list[Media]:
     if not posts or len(posts) == 0:
         return []
