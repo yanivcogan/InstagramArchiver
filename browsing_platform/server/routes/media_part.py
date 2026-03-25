@@ -1,7 +1,7 @@
-from fastapi import HTTPException
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import HTTPException
 
 from browsing_platform.server.services.media_part import get_media_part_by_id, MediaPart, update_media_part, \
     insert_media_part, delete_media_part

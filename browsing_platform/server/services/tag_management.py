@@ -3,8 +3,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from utils import db
 from browsing_platform.server.services.tag import ITagWithType
+from utils import db
 
 
 # ── Models ────────────────────────────────────────────────────────────────────

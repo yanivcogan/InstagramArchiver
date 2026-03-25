@@ -6,11 +6,10 @@ from pydantic import BaseModel
 from browsing_platform.server.services.permissions import auth_user_access
 from browsing_platform.server.services.tag import ITagWithType
 from browsing_platform.server.services.tag_management import (
-    ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, ITagStat,
-    list_tag_types, create_tag_type, update_tag_type, delete_tag_type,
+    ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, list_tag_types, create_tag_type, update_tag_type,
+    delete_tag_type,
     list_tags, list_quick_access_tags, create_tag, update_tag, delete_tag, get_tag_usage_counts,
     list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle,
-    get_related_account_tag_stats,
 )
 
 router = APIRouter(

@@ -1,6 +1,6 @@
 import React from 'react';
 import {ITaggedAccount} from "../../types/entities";
-import {Chip, Link, Tooltip} from "@mui/material";
+import {Chip, Link} from "@mui/material";
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import {accountLabel} from "./AccountLink";
 

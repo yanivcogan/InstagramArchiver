@@ -1,5 +1,9 @@
 import React, {useMemo} from 'react';
-import {IAccountAndAssociatedEntities, IExtractedEntitiesNested, IPostAndAssociatedEntities} from "../../types/entities";
+import {
+    IAccountAndAssociatedEntities,
+    IExtractedEntitiesNested,
+    IPostAndAssociatedEntities
+} from "../../types/entities";
 import {Stack} from "@mui/material";
 import Post from "./Post";
 import Account from "./Account";

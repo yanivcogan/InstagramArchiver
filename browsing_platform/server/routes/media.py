@@ -1,7 +1,7 @@
-from fastapi import HTTPException
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import HTTPException
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.enriched_entities import get_enriched_media_by_id

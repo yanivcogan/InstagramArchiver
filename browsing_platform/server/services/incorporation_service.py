@@ -8,8 +8,8 @@ client should be passed to it; backend logging stays in the standard logger.
 """
 
 import asyncio
-import os
 import logging
+import os
 import threading
 import traceback
 from datetime import datetime, timezone

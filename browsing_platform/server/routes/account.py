@@ -1,10 +1,10 @@
-from fastapi import HTTPException
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import HTTPException
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
-from browsing_platform.server.services.account import account_exists, get_account_by_id, get_account_data_by_id, \
+from browsing_platform.server.services.account import account_exists, get_account_data_by_id, \
     get_account_by_platform_id, get_account_by_url
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
     get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions

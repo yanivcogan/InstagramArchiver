@@ -32,8 +32,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import AddIcon from "@mui/icons-material/Add";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
-import {ITagDetail, ITagHierarchyEntry, ITagType, ITagUsage} from "../types/tags";
-import {ITagWithType} from "../types/tags";
+import {ITagDetail, ITagHierarchyEntry, ITagType, ITagUsage, ITagWithType} from "../types/tags";
 import {
     addHierarchy,
     createTag,
@@ -42,9 +41,9 @@ import {
     deleteTagType,
     fetchTagChildren,
     fetchTagParents,
+    fetchTags,
     fetchTagTypes,
     fetchTagUsage,
-    fetchTags,
     removeHierarchy,
     updateTag,
     updateTagType,

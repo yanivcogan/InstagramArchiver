@@ -1,13 +1,13 @@
-from fastapi import HTTPException
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import HTTPException
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id, get_comments_by_post_ids, \
     get_likes_by_post_id
 from browsing_platform.server.services.permissions import auth_entity_view_access
-from browsing_platform.server.services.post import get_post_by_id, get_post_data_by_id, post_exists, \
+from browsing_platform.server.services.post import get_post_data_by_id, post_exists, \
     get_post_by_platform_id, get_post_by_url
 from extractors.entity_types import ExtractedEntitiesNested, Comment, Like
 

@@ -16,7 +16,6 @@ import {
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
 import {anchor_local_static_files} from "../../services/server";
-import TextField from "@mui/material/TextField";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import {deleteMediaPart, saveMediaPart} from "../../services/DataSaver";
 
