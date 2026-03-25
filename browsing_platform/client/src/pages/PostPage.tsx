@@ -32,6 +32,7 @@ export default function PostPage() {
 
     const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
     const [loadingData, setLoadingData] = useState(apiRef !== null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(false);
     const [dbId, setDbId] = useState<number | null>(typeof apiRef === 'number' ? apiRef : null);
@@ -40,13 +41,14 @@ export default function PostPage() {
         if (apiRef === null) return;
         setLoadingData(true);
         setLoadingSessions(true);
+        setFetchError(null);
         const isByDbId = typeof apiRef === 'number';
         if (isByDbId) {
             setDbId(apiRef);
             fetchArchivingSessionsPost(apiRef, {}).then(sessions => {
                 setSessions(sessions);
                 setLoadingSessions(false);
-            });
+            }).catch(() => setLoadingSessions(false));
         }
         fetchPost(apiRef, {
             flattened_entities_transform: {
@@ -67,11 +69,15 @@ export default function PostPage() {
                     fetchArchivingSessionsPost(resolvedId, {}).then(sessions => {
                         setSessions(sessions);
                         setLoadingSessions(false);
-                    });
+                    }).catch(() => setLoadingSessions(false));
                 } else {
                     setLoadingSessions(false);
                 }
             }
+        }).catch(err => {
+            setFetchError(err?.message || 'Failed to load post');
+            setLoadingData(false);
+            setLoadingSessions(false);
         });
     }, [apiRef]);
 
@@ -80,6 +86,9 @@ export default function PostPage() {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
                 <CircularProgress/>
             </Box>
+        }
+        if (fetchError) {
+            return <Typography color="text.secondary">{fetchError}</Typography>
         }
         if (!data) {
             return <div>No data</div>
@@ -123,7 +132,7 @@ export default function PostPage() {
         <div className={"page-content content-wrap"}>
             <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
                 {renderData()}
-                <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>
+                {!fetchError && <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>}
             </Stack>
         </div>
     </div>

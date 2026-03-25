@@ -37,6 +37,7 @@ export default function AccountPage() {
 
     const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
     const [loadingData, setLoadingData] = useState(apiRef !== null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
     const [loadingSessions, setLoadingSessions] = useState(false);
     const [tagStats, setTagStats] = useState<ITagStat[] | null>(null);
@@ -48,13 +49,14 @@ export default function AccountPage() {
         if (apiRef === null) return;
         setLoadingData(true);
         setLoadingSessions(true);
+        setFetchError(null);
         const isByDbId = typeof apiRef === 'number';
         if (isByDbId) {
             setDbId(apiRef);
             fetchArchivingSessionsAccount(apiRef, {}).then(sessions => {
                 setSessions(sessions);
                 setLoadingSessions(false);
-            });
+            }).catch(() => setLoadingSessions(false));
         }
         fetchAccount(apiRef, {
             flattened_entities_transform: {
@@ -76,11 +78,15 @@ export default function AccountPage() {
                     fetchArchivingSessionsAccount(resolvedId, {}).then(sessions => {
                         setSessions(sessions);
                         setLoadingSessions(false);
-                    });
+                    }).catch(() => setLoadingSessions(false));
                 } else {
                     setLoadingSessions(false);
                 }
             }
+        }).catch(err => {
+            setFetchError(err?.message || 'Failed to load account');
+            setLoadingData(false);
+            setLoadingSessions(false);
         });
     }, [apiRef]);
 
@@ -104,6 +110,9 @@ export default function AccountPage() {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
                 <CircularProgress/>
             </Box>
+        }
+        if (fetchError) {
+            return <Typography color="text.secondary">{fetchError}</Typography>
         }
         if (!data) {
             return <div>No data</div>
@@ -151,8 +160,8 @@ export default function AccountPage() {
         <div className={"page-content content-wrap"}>
             <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
                 {renderData()}
-                <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>
-                {!disableAnnotator && dbId && (
+                {!fetchError && <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>}
+                {!fetchError && !disableAnnotator && dbId && (
                     <Stack gap={1}>
                         <Button variant="text" size="small" onClick={handleTagStatsToggle} sx={{alignSelf: 'flex-start'}}>
                             {tagStatsExpanded ? "▾" : "▸"} Related Accounts — Tag Distribution

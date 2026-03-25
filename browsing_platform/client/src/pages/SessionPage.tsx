@@ -20,11 +20,13 @@ export default function SessionPage() {
 
     const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
     const [loadingData, setLoadingData] = useState(id !== null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [sessions, setSessions] = useState<IArchiveSession[] | null>(null);
 
     useEffect(() => {
         if (id === null) return;
         setLoadingData(true);
+        setFetchError(null);
         fetchArchivingSession(id, {
             flattened_entities_transform: {
                 retain_only_media_with_local_files: true,
@@ -38,6 +40,9 @@ export default function SessionPage() {
             setData(result.entities);
             setSessions([result.session]);
             setLoadingData(false);
+        }).catch(err => {
+            setFetchError(err?.message || 'Failed to load session');
+            setLoadingData(false);
         });
     }, [id]);
 
@@ -46,6 +51,9 @@ export default function SessionPage() {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
                 <CircularProgress/>
             </Box>
+        }
+        if (fetchError) {
+            return <Typography color="text.secondary">{fetchError}</Typography>
         }
         if (!data) {
             return <div>No data</div>
