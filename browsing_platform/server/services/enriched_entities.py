@@ -410,7 +410,7 @@ def get_archiving_sessions_by_account_id(
         f"""SELECT DISTINCT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
                    a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
                    a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
-                   a_s.archiving_timestamp, a_s.extraction_error,
+                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                    a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
@@ -435,7 +435,7 @@ def get_archiving_sessions_by_post_id(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
-                  a_s.archiving_timestamp, a_s.extraction_error,
+                  a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
@@ -464,7 +464,7 @@ def get_archiving_sessions_by_media_id(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
-                  a_s.archiving_timestamp, a_s.extraction_error,
+                  a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN media_archive AS m_a ON a_s.id = m_a.archive_session_id

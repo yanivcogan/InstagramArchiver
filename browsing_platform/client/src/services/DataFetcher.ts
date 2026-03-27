@@ -225,6 +225,11 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
+        notes: {
+            label: 'Notes',
+            type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
+        },
         structures: {
             label: 'Full Accounts / Posts Data (Slow)',
             type: 'text',

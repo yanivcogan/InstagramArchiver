@@ -86,6 +86,7 @@ create table archive_session
     metadata                  json                                                                                           null,
     extract_algorithm_version int                                                                                            null,
     archiving_timestamp       datetime                                                                                       null,
+    notes                     text                                                                                           null,
     extraction_error          varchar(500)                                                                                   null,
     source_type               enum ('AA_xlsx', 'local_har', 'local_wacz')                                                    not null,
     incorporation_status      enum ('pending', 'parse_failed', 'parsed', 'extract_failed', 'done') default 'pending'         not null,
@@ -186,7 +187,7 @@ create index idx_incorporation_queue
     on archive_session (source_type, incorporation_status);
 
 create fulltext index idx_search_fulltext
-    on archive_session (archived_url, archived_url_parts);
+    on archive_session (archived_url, archived_url_parts, notes);
 
 create index archive_session_archiving_date
     on archive_session ((DATE(archiving_timestamp)));

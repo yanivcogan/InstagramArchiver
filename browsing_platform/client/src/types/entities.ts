@@ -163,6 +163,7 @@ export interface IArchiveSession {
     attachments?: ISessionAttachments;
     extract_algorithm_version?: number;
     archiving_timestamp?: string;
+    notes?: string;
     extraction_error?: string;
     source_type: 'AA_xlsx' | 'local_har' | 'local_wacz';
     incorporation_status?: 'pending' | 'parse_failed' | 'parsed' | 'extract_failed' | 'done';

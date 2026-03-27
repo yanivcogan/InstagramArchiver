@@ -76,13 +76,13 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     where_clauses = []
     if query.search_term:
         query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
+        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT id, archived_url, archiving_timestamp
+        f"""SELECT id, archived_url, notes, archiving_timestamp
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
@@ -122,7 +122,7 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
             page="archive",
             id=row["id"],
             title=row["archived_url"] or f"Archive Session {row['id']}",
-            details="",
+            details=row["notes"] or "",
             thumbnails=session_thumbnails.get(row["id"]),
             metadata={
                 "archiving_timestamp": row["archiving_timestamp"].isoformat() if row["archiving_timestamp"] else None,
@@ -492,6 +492,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("metadata", "text"),
         ("extract_algorithm_version", "number"),
         ("archiving_timestamp", "date"),
+        ("notes", "text"),
         ("extraction_error", "text"),
         ("incorporation_status", "text"),
         ("source_type", "text"),
