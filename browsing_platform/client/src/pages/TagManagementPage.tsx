@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {Link} from 'react-router';
 import {
     Box,
     Button,
@@ -56,16 +57,34 @@ const ENTITY_AFFINITY_OPTIONS = ["account", "post", "media", "media_part"];
 
 /* ── Shared helpers ─────────────────────────────────────────────────────────── */
 
-function UsageSummary({usage}: {usage: ITagUsage | null}) {
-    if (!usage) return null;
+function UsageSummary({usage, tagId}: {usage: ITagUsage | null; tagId: number}) {
+    if (!usage) return <CircularProgress size={10}/>;
     const total = usage.accounts + usage.posts + usage.media + usage.media_parts;
     if (total === 0) return <Typography variant="caption" color="text.secondary">Unused</Typography>;
-    const parts = [];
-    if (usage.accounts) parts.push(`${usage.accounts} acct`);
-    if (usage.posts) parts.push(`${usage.posts} post`);
-    if (usage.media) parts.push(`${usage.media} media`);
-    if (usage.media_parts) parts.push(`${usage.media_parts} part`);
-    return <Typography variant="caption" color="text.secondary">{parts.join(", ")}</Typography>;
+    const parts: React.ReactNode[] = [];
+    if (usage.accounts) parts.push(
+        <Link key="accounts" to={`/search?sm=accounts&t=${tagId}`} style={{fontSize: 'inherit'}}>
+            {usage.accounts} {usage.accounts === 1 ? 'account' : 'accounts'}
+        </Link>
+    );
+    if (usage.posts) parts.push(
+        <Link key="posts" to={`/search?sm=posts&t=${tagId}`} style={{fontSize: 'inherit'}}>
+            {usage.posts} {usage.posts === 1 ? 'post' : 'posts'}
+        </Link>
+    );
+    if (usage.media) parts.push(
+        <Link key="media" to={`/search?sm=media&t=${tagId}`} style={{fontSize: 'inherit'}}>
+            {usage.media} media
+        </Link>
+    );
+    if (usage.media_parts) parts.push(
+        <span key="parts">{usage.media_parts} {usage.media_parts === 1 ? 'part' : 'parts'}</span>
+    );
+    return (
+        <Typography variant="caption" color="text.secondary">
+            {parts.reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
+        </Typography>
+    );
 }
 
 /* ── Tab 1: Tag Types ───────────────────────────────────────────────────────── */
@@ -199,7 +218,7 @@ function TagsTab() {
     const [form, setForm] = useState<{name: string; description: string; tag_type_id: number | null; quick_access: boolean}>({
         name: "", description: "", tag_type_id: null, quick_access: false
     });
-    const [usageMap, setUsageMap] = useState<Record<number, ITagUsage>>({});
+    const [editUsage, setEditUsage] = useState<ITagUsage | null>(null);
 
     // Hierarchy state (only active while dialog is open for an existing tag)
     const [hierarchyParents, setHierarchyParents] = useState<ITagHierarchyEntry[]>([]);
@@ -221,12 +240,6 @@ function TagsTab() {
 
     useEffect(() => { loadTypes(); }, []);
     useEffect(() => { loadTags(); }, [selectedTypeId, search]);
-
-    const loadUsage = async (tagId: number) => {
-        if (usageMap[tagId]) return;
-        const u = await fetchTagUsage(tagId);
-        setUsageMap(m => ({...m, [tagId]: u}));
-    };
 
     const loadHierarchy = async (tagId: number) => {
         setHierarchyLoading(true);
@@ -253,7 +266,11 @@ function TagsTab() {
         setHierarchyChildren([]);
         setAddParentTag(null);
         setAddChildTag(null);
-        if (t.id) loadHierarchy(t.id);
+        setEditUsage(null);
+        if (t.id) {
+            loadHierarchy(t.id);
+            fetchTagUsage(t.id).then(setEditUsage);
+        }
         setFormOpen(true);
     };
 
@@ -338,18 +355,16 @@ function TagsTab() {
                             <TableCell>Type</TableCell>
                             <TableCell>Description</TableCell>
                             <TableCell>Quick Access</TableCell>
-                            <TableCell>Usage</TableCell>
                             <TableCell/>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {tags.map(t => (
-                            <TableRow key={t.id} onMouseEnter={() => t.id && loadUsage(t.id)}>
+                            <TableRow key={t.id}>
                                 <TableCell>{t.name}</TableCell>
                                 <TableCell>{t.tag_type_name && <Chip label={t.tag_type_name} size="small"/>}</TableCell>
                                 <TableCell>{t.description}</TableCell>
                                 <TableCell>{t.quick_access ? "✓" : ""}</TableCell>
-                                <TableCell><UsageSummary usage={t.id ? usageMap[t.id] ?? null : null}/></TableCell>
                                 <TableCell>
                                     <IconButton size="small" onClick={() => openEdit(t)}><EditIcon fontSize="small"/></IconButton>
                                     <IconButton size="small" color="error" onClick={() => handleDelete(t)}><DeleteIcon fontSize="small"/></IconButton>
@@ -446,6 +461,10 @@ function TagsTab() {
                                 </Stack>
                             </Stack>
                         </>}
+
+                        <Divider/>
+                        <Typography variant="subtitle2">Usage</Typography>
+                        <UsageSummary usage={editUsage} tagId={editTarget.id}/>
                     </>}
                 </Stack>
             </DialogContent>
