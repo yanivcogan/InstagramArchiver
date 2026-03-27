@@ -1,16 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {toast} from "material-react-toastify";
 import TextField from '@mui/material/TextField';
-import {
-    CircularProgress,
-    Fab,
-    FormControlLabel,
-    IconButton,
-    Stack,
-    Switch,
-    Tooltip,
-    Typography,
-} from "@mui/material";
+import {CircularProgress, Fab, FormControlLabel, IconButton, Stack, Switch, Tooltip, Typography,} from "@mui/material";
 import {ContentCopy, Share} from "@mui/icons-material";
 import server from "../../services/server";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -22,6 +13,7 @@ type E_ENTITY_TYPES = "archiving_session" | "account" | "post" | "media" | "medi
 interface IProps {
     entityType: E_ENTITY_TYPES,
     entityId: number,
+    stableSharePath?: string,
 }
 
 interface ShareLinkInfo {
@@ -29,16 +21,18 @@ interface ShareLinkInfo {
     valid: boolean;
 }
 
-export default function LinkSharing({entityType, entityId}: IProps) {
+export default function LinkSharing({entityType, entityId, stableSharePath}: IProps) {
     const [isFetching, setIsFetching] = useState(false);
     const [isTogglingValidity, setIsTogglingValidity] = useState(false);
     const [shareLinkInfo, setShareLinkInfo] = useState<ShareLinkInfo | null>(null);
     const [generationError, setGenerationError] = useState<string | null>(null);
 
     const shareLinkFromSuffix = (suffix: string) => {
-        const url = new URL(window.location.href);
-        url.searchParams.set(SHARE_URL_PARAM, suffix);
-        return url.toString();
+        const base = stableSharePath
+            ? new URL(stableSharePath, window.location.origin)
+            : new URL(window.location.href);
+        base.searchParams.set(SHARE_URL_PARAM, suffix);
+        return base.toString();
     };
 
     useEffect(() => {

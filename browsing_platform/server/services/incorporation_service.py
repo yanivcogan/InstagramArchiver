@@ -9,6 +9,7 @@ client should be passed to it; backend logging stays in the standard logger.
 
 import asyncio
 import logging
+import os
 import threading
 import traceback
 from datetime import datetime, timezone
@@ -111,7 +112,7 @@ def _run_incorporation(job_id: int):
         emit("Starting incorporation pipeline…")
 
         emit("Part A — registering archives")
-        register_archives(cancel_check=cancel, emit=emit)
+        register_archives(limit=100 if os.getenv("BROWSING_PLATFORM_DEV") == "1" else None, cancel_check=cancel, emit=emit)
 
         emit("Part B — parsing HAR files")
         parse_archives(cancel_check=cancel, emit=emit)

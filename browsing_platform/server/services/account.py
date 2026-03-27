@@ -32,8 +32,8 @@ def get_account_data_by_id(account_id: int) -> tuple[bool, Any]:
     return True, data
 
 
-_ACCOUNT_COLS = "id, id_on_platform, url, identifiers, display_name, bio, data, notes, url_parts, create_date"
-_ACCOUNT_COLS_NO_DATA = "id, id_on_platform, url, identifiers, display_name, bio, NULL AS data, notes, url_parts, create_date"
+_ACCOUNT_COLS = "id, id_on_platform, url, identifiers, display_name, bio, data, url_parts, create_date"
+_ACCOUNT_COLS_NO_DATA = "id, id_on_platform, url, identifiers, display_name, bio, NULL AS data, url_parts, create_date"
 
 
 def get_account_by_id(account_id: int, include_data: bool = True) -> Optional[Account]:
@@ -48,23 +48,38 @@ def get_account_by_id(account_id: int, include_data: bool = True) -> Optional[Ac
     return Account(**account)
 
 
+def get_account_by_platform_id(platform_id: str, include_data: bool = True) -> Optional[Account]:
+    cols = _ACCOUNT_COLS if include_data else _ACCOUNT_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM account WHERE id_on_platform = %(pid)s LIMIT 1",
+        {"pid": platform_id},
+        return_type="single_row"
+    )
+    return Account(**row) if row else None
+
+
+def get_account_by_url(url: str, include_data: bool = True) -> Optional[Account]:
+    cols = _ACCOUNT_COLS if include_data else _ACCOUNT_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM account WHERE url = %(url)s LIMIT 1",
+        {"url": url},
+        return_type="single_row"
+    )
+    return Account(**row) if row else None
+
+
 def annotate_account(account_id: int, annotation: Annotation) -> None:
-    # Set notes field
-    db.execute_query(
-        """UPDATE account SET notes = %(notes)s WHERE id = %(id)s""",
-        {"id": account_id, "notes": annotation.notes},
-        return_type="none"
-    )
-    # Clear associated tags
-    db.execute_query(
-        """DELETE FROM account_tag WHERE account_id = %(id)s""",
-        {"id": account_id},
-        return_type="none"
-    )
-    # Add new tags
-    for tag_id in annotation.tags:
+    with db.transaction_batch():
+        # Clear associated tags
         db.execute_query(
-            """INSERT INTO account_tag (account_id, tag_id) VALUES (%(account_id)s, %(tag_id)s)""",
-            {"account_id": account_id, "tag_id": tag_id},
+            """DELETE FROM account_tag WHERE account_id = %(id)s""",
+            {"id": account_id},
             return_type="none"
         )
+        # Add new tags with per-assignment notes
+        for tag in (annotation.tags or []):
+            db.execute_query(
+                """INSERT INTO account_tag (account_id, tag_id, notes) VALUES (%(account_id)s, %(tag_id)s, %(notes)s)""",
+                {"account_id": account_id, "tag_id": tag.id, "notes": tag.notes},
+                return_type="none"
+            )

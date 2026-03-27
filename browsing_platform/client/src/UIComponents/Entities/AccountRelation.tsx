@@ -3,7 +3,7 @@ import {IAccountRelation} from "../../types/entities";
 import {Chip, IconButton, Stack} from "@mui/material";
 import LinkIcon from '@mui/icons-material/Link';
 import AccountLink from "./AccountLink";
-import {SHARE_URL_PARAM, getShareTokenFromHref} from "../../services/linkSharing";
+import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 
 interface IProps {
     relation: IAccountRelation;

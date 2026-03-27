@@ -32,8 +32,8 @@ def get_post_data_by_id(post_id: int) -> tuple[bool, Any]:
     return True, data
 
 
-_POST_COLS = "id, id_on_platform, url, account_id, publication_date, caption, data, notes, create_date"
-_POST_COLS_NO_DATA = "id, id_on_platform, url, account_id, publication_date, caption, NULL AS data, notes, create_date"
+_POST_COLS = "id, id_on_platform, url, account_id, publication_date, caption, data, create_date"
+_POST_COLS_NO_DATA = "id, id_on_platform, url, account_id, publication_date, caption, NULL AS data, create_date"
 
 
 def get_post_by_id(post_id: int, include_data: bool = True) -> Optional[Post]:
@@ -46,6 +46,26 @@ def get_post_by_id(post_id: int, include_data: bool = True) -> Optional[Post]:
     if row is None:
         return None
     return Post(**row)
+
+
+def get_post_by_platform_id(platform_id: str, include_data: bool = True) -> Optional[Post]:
+    cols = _POST_COLS if include_data else _POST_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM post WHERE id_on_platform = %(pid)s LIMIT 1",
+        {"pid": platform_id},
+        return_type="single_row"
+    )
+    return Post(**row) if row else None
+
+
+def get_post_by_url(url: str, include_data: bool = True) -> Optional[Post]:
+    cols = _POST_COLS if include_data else _POST_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM post WHERE url = %(url)s LIMIT 1",
+        {"url": url},
+        return_type="single_row"
+    )
+    return Post(**row) if row else None
 
 
 def get_posts_by_accounts(accounts: list[Account], include_data: bool = True) -> list[Post]:
@@ -62,22 +82,17 @@ def get_posts_by_accounts(accounts: list[Account], include_data: bool = True) ->
     return [Post(**p) for p in posts]
 
 def annotate_post(post_id: int, annotation: Annotation) -> None:
-    # Set notes field
-    db.execute_query(
-        """UPDATE post SET notes = %(notes)s WHERE id = %(id)s""",
-        {"id": post_id, "notes": annotation.notes},
-        return_type="none"
-    )
-    # Clear associated tags
-    db.execute_query(
-        """DELETE FROM post_tag WHERE post_id = %(id)s""",
-        {"id": post_id},
-        return_type="none"
-    )
-    # Add new tags
-    for tag_id in annotation.tags:
+    with db.transaction_batch():
+        # Clear associated tags
         db.execute_query(
-            """INSERT INTO post_tag (post_id, tag_id) VALUES (%(post_id)s, %(tag_id)s)""",
-            {"post_id": post_id, "tag_id": tag_id},
+            """DELETE FROM post_tag WHERE post_id = %(id)s""",
+            {"id": post_id},
             return_type="none"
         )
+        # Add new tags with per-assignment notes
+        for tag in (annotation.tags or []):
+            db.execute_query(
+                """INSERT INTO post_tag (post_id, tag_id, notes) VALUES (%(post_id)s, %(tag_id)s, %(notes)s)""",
+                {"post_id": post_id, "tag_id": tag.id, "notes": tag.notes},
+                return_type="none"
+            )

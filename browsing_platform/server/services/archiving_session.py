@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from typing import Literal, Optional
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+
 from pydantic import BaseModel, field_validator
 
 from browsing_platform.server.services.file_tokens import generate_file_token
@@ -27,7 +28,6 @@ class ArchiveSession(BaseModel):
     attachments: Optional[dict[str, list[str]]] = None
     extract_algorithm_version: Optional[int] = None
     archiving_timestamp: Optional[datetime] = None
-    notes: Optional[str] = None
     extraction_error: Optional[str] = None
     source_type: Literal['AA_xlsx', 'local_har', 'local_wacz'] = 'local_har'
     incorporation_status: Optional[Literal['pending', 'parse_failed', 'parsed', 'extract_failed', 'done']] = None

@@ -5,10 +5,8 @@ from fastapi import Request
 from browsing_platform.server.services.archiving_session import ArchivingSessionTransform
 from browsing_platform.server.services.enriched_entities import EntitiesTransformConfig, FlattenedEntitiesTransform, \
     NestedEntitiesTransform
-from browsing_platform.server.services.permissions import parse_token_from_header, get_auth_permissions, \
-    get_share_permissions
+from browsing_platform.server.services.permissions import parse_token_from_header
 from browsing_platform.server.services.search import SearchResultTransform
-from browsing_platform.server.services.token_manager import check_token
 
 SERVER_HOST = os.getenv("SERVER_HOST")
 

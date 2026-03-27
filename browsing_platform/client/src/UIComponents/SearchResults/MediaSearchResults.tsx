@@ -11,6 +11,8 @@ interface CellProps {
 function MediaSearchResultCell({result}: CellProps) {
     const [hovered, setHovered] = useState(false);
     const thumbnail = result.thumbnails?.[0];
+    const fullRes = result.thumbnails?.[1];
+    const isVideo = result.metadata?.media_type === 'video';
 
     const pubDate = result.metadata?.publication_date
         ? dayjs(result.metadata.publication_date).format('YYYY-MM-DD')
@@ -19,6 +21,8 @@ function MediaSearchResultCell({result}: CellProps) {
         || (result.metadata?.account_url
             ? result.metadata.account_url.replace(/\/$/, '').split('/').pop()
             : null);
+
+    const fullResSrc = fullRes ? anchor_local_static_files(fullRes) || undefined : undefined;
 
     return (
         <a href={`/${result.page}/${result.id}`} style={{textDecoration: 'none'}}>
@@ -40,6 +44,30 @@ function MediaSearchResultCell({result}: CellProps) {
                         style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}
                     />
                 )}
+                {hovered && fullResSrc && (
+                    isVideo ? (
+                        <video
+                            src={fullResSrc}
+                            autoPlay
+                            muted
+                            loop
+                            playsInline
+                            style={{
+                                position: 'absolute', inset: 0,
+                                width: '100%', height: '100%', objectFit: 'cover',
+                            }}
+                        />
+                    ) : (
+                        <img
+                            src={fullResSrc}
+                            alt=""
+                            style={{
+                                position: 'absolute', inset: 0,
+                                width: '100%', height: '100%', objectFit: 'cover',
+                            }}
+                        />
+                    )
+                )}
                 <Fade in={hovered} timeout={300}>
                     <Box
                         sx={{
@@ -51,6 +79,7 @@ function MediaSearchResultCell({result}: CellProps) {
                             backgroundColor: 'rgba(0,0,0,0.7)',
                             color: '#fff',
                             p: 1,
+                            zIndex: 1,
                         }}
                     >
                         {accountName && (

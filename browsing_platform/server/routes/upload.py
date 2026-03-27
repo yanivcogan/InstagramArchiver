@@ -85,15 +85,20 @@ def tus_create(
 
     metadata = _decode_tus_metadata(upload_metadata or "")
     archive_name = metadata.get("archiveName", "")
+    upload_mode = metadata.get("uploadMode", "")  # "tar" for tar uploads, "" for individual files
     relative_path = metadata.get("relativePath", "")
     file_hash = metadata.get("fileHash") or None  # hex SHA-256 declared by client
 
     if not upload_service.validate_archive_name(archive_name):
         raise HTTPException(status_code=400, detail="Invalid archive name")
-    if not upload_service.validate_file_path(relative_path):
+
+    if upload_mode == "tar":
+        # Server assigns the internal path for tar uploads; client does not provide one
+        relative_path = "_upload.tar"
+    elif not upload_service.validate_file_path(relative_path):
         raise HTTPException(status_code=400, detail="Invalid file path")
 
-    file_id = upload_service.create_upload(archive_name, relative_path, upload_length, file_hash)
+    file_id = upload_service.create_upload(archive_name, relative_path, upload_length, file_hash, upload_mode)
     # Build absolute URL for Location header
     base = str(request.base_url).rstrip("/")
     location = f"{base}/api/upload/tus/{file_id}"

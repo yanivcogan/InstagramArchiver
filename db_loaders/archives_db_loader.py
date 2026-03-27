@@ -17,7 +17,7 @@ HOW IT WORKS:
        - Safe to run multiple times - only registers new archives
 
     B) PARSE - Extract structures from HAR files
-       - Reads metadata.json for URL, timestamp, and notes
+       - Reads metadata.json for URL and timestamp
        - Parses archive.har files to extract social media structures
        - Identifies accounts, posts, photos, videos without downloading media
        - Saves parsed structures as JSON in the database
@@ -314,16 +314,14 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
 
             # --- Step 1: Read metadata.json ---
             logger.debug(f"Extracting metadata...")
-            # Contains target_url, notes, archiving_start_timestamp
+            # Contains target_url, archiving_start_timestamp
             metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
             archived_url = None
-            notes = None
             try:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.loads(f.read())
                 archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
-                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
                 timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
 
                 # Convert timestamp to UTC if present
@@ -398,8 +396,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         structures = %(structures)s,
                         metadata = %(metadata)s,
                         extraction_error = NULL,
-                        attachments = %(attachments)s,
-                        notes = %(notes)s
+                        attachments = %(attachments)s
                     WHERE id = %(id)s
                     ''',
                     {
@@ -410,7 +407,6 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str),
                         "archived_url": archived_url,
                         "archiving_timestamp": iso_timestamp,
-                        "notes": notes
                     },
                     'none'
                 )
@@ -423,6 +419,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                 raise Exception(f"Error saving parsed content to database for archive {entry_id}: {e}")
 
         except Exception as e:
+            traceback.print_exc()
             # Record the error in the database so this archive is skipped on future runs
             db.execute_query(
                 'UPDATE archive_session SET incorporation_status = %(s)s, extraction_error = %(extraction_error)s WHERE id = %(id)s',
@@ -433,7 +430,6 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
             if emit:
                 emit(f"Part B — error parsing {entry['external_id'] or entry['id']}: {e}")
             error_count += 1
-            traceback.print_exc()
 
     elapsed = time.time() - start_time
     logger.info(f"Part B complete: {parsed_count} archives parsed, {error_count} errors in {elapsed:.1f}s")
@@ -643,12 +639,10 @@ def add_missing_metadata():
             metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
             archived_url = None
-            notes = None
             try:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.loads(f.read())
                 archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
-                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
                 timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
                 timezone = get_localzone_name()
                 if timestamp is not None:
@@ -663,16 +657,14 @@ def add_missing_metadata():
             except Exception:
                 raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
             db.execute_query(
-                '''UPDATE archive_session SET 
+                '''UPDATE archive_session SET
                     archived_url = %(archived_url)s,
-                    archiving_timestamp = %(archiving_timestamp)s,
-                    notes = %(notes)s
+                    archiving_timestamp = %(archiving_timestamp)s
                    WHERE id = %(id)s''',
                 {
                     "id": entry['id'],
                     "archived_url": archived_url,
                     "archiving_timestamp": iso_timestamp,
-                    "notes": notes
                 },
                 return_type="none"
             )

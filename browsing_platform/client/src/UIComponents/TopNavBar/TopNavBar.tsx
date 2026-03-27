@@ -20,6 +20,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import UploadIcon from "@mui/icons-material/Upload";
 import StorageIcon from "@mui/icons-material/Storage";
 import LogoutIcon from '@mui/icons-material/Logout';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 
 interface IProps {
     children: ReactNode;
@@ -75,6 +76,10 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                     <ListItemButton onClick={() => goToPage("search")} href={"/search"}>
                         <ListItemIcon><SearchIcon/></ListItemIcon>
                         <ListItemText primary="Search"/>
+                    </ListItemButton>
+                    <ListItemButton onClick={() => goToPage("tags")} href={"/tags"}>
+                        <ListItemIcon><LocalOfferIcon/></ListItemIcon>
+                        <ListItemText primary="Tags"/>
                     </ListItemButton>
                     <ListItemButton onClick={() => goToPage("upload")} href={"/upload"}>
                         <ListItemIcon><UploadIcon/></ListItemIcon>

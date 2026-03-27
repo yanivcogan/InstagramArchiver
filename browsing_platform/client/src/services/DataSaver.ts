@@ -13,7 +13,6 @@ export const saveMediaPart = async (mediaPart: IMediaPart): Promise<void> => {
 /* Annotations */
 export const saveAnnotations = async (entity: IAnnotatableEntity, entityType: AnnotatableEntityType): Promise<void> => {
     return await server.post(`annotate/${entityType}/${entity.id}`, {
-        notes: entity.notes,
-        tags: entity.tags?.map(t => t.id),
+        tags: entity.tags?.map(t => ({id: t.id, notes: t.assignment_notes ?? null})),
     });
 }

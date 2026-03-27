@@ -1,11 +1,10 @@
-import React, {useState} from 'react';
+import React from 'react';
 import {IArchiveSession} from "../../types/entities";
 import {Box, Card, CardContent, CardHeader, Divider, IconButton, Skeleton, Stack, Typography} from "@mui/material";
 import {DataGrid} from "@mui/x-data-grid";
 import {Download, LocalMovies} from "@mui/icons-material";
 import {anchor_local_static_files} from "../../services/server";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
-import TextField from "@mui/material/TextField";
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 import LinkIcon from "@mui/icons-material/Link";
 
@@ -22,7 +21,6 @@ const isPlayableVideo = (filename?: string) => {
 }
 
 export default function ArchiveSessionMetadata({archiveSession, viewerConfig}: IProps) {
-    const [notes, setNotes] = useState(archiveSession.notes || "");
 
     const metadata = archiveSession.metadata || {};
     const rows = Object.entries(metadata).map(([key, value], idx) => ({
@@ -116,16 +114,6 @@ export default function ArchiveSessionMetadata({archiveSession, viewerConfig}: I
             <Box sx={{height: 400, width: "100%", overflowY: 'auto'}}>
                 <DataGrid rows={rows} columns={columns} hideFooterPagination hideFooter/>
             </Box>
-            {viewerConfig?.archivingSession?.annotator === "show" && (
-                <Stack gap={1}>
-                    <TextField
-                        label={"Notes"}
-                        multiline
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value)}
-                    />
-                </Stack>
-            )}
         </Stack>
     );
 }

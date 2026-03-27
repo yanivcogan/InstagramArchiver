@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
     Box,
     Button,
@@ -123,11 +123,13 @@ export default function IncorporatePage() {
         };
     }, [fetchHistory]);
 
-    // Auto-scroll log panel to bottom on new entries
+    // Auto-scroll log panel to bottom on new entries, but only if it was already
+    // scrolled to the bottom — preserve the user's position if they scrolled up.
     useEffect(() => {
-        if (logBoxRef.current) {
-            logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
-        }
+        const el = logBoxRef.current;
+        if (!el) return;
+        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+        if (isAtBottom) el.scrollTop = el.scrollHeight;
     }, [logs]);
 
     // -----------------------------------------------------------------------

@@ -15,6 +15,8 @@ import {
     Stack,
     Tooltip,
 } from "@mui/material";
+import TagFilterBar from "../UIComponents/Tags/TagFilterBar";
+import {ITagWithType} from "../types/tags";
 import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -90,12 +92,19 @@ const extractQueryFromParams = (searchParams: URLSearchParams): ISearchQuery => 
     const modeDefault = defaultPageSize(search_mode as T_Search_Mode);
     let page_size = parseInt(searchParams.get("ps") || String(modeDefault));
     page_size = isNaN(page_size) || page_size < 20 ? modeDefault : page_size;
+    const tag_ids_raw = searchParams.get("t") || "";
+    const tag_ids = tag_ids_raw
+        ? tag_ids_raw.split(",").map(Number).filter(n => !isNaN(n) && n > 0)
+        : [];
+    const tag_filter_mode = (searchParams.get("tm") === "all" ? "all" : "any") as "any" | "all";
     return {
         search_term,
         advanced_filters,
         page_number,
         page_size,
         search_mode: search_mode as T_Search_Mode,
+        tag_ids,
+        tag_filter_mode,
     };
 };
 
@@ -107,6 +116,7 @@ export default function SearchPage() {
     const query = extractQueryFromParams(searchParams);
 
     const [typedSearchTerm, setTypedSearchTerm] = useState(query.search_term || "");
+    const [tagFilterObjects, setTagFilterObjects] = useState<ITagWithType[]>([]);
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(!!query.advanced_filters);
     const [advancedFiltersTree, setAdvancedFiltersTree] = useState<ImmutableTree>(() =>
         query.advanced_filters ?
@@ -174,6 +184,12 @@ export default function SearchPage() {
         }
         if (q.search_mode && q.search_mode !== "accounts") {
             params.append("sm", q.search_mode);
+        }
+        if (q.tag_ids && q.tag_ids.length > 0) {
+            params.append("t", q.tag_ids.join(","));
+        }
+        if (q.tag_ids && q.tag_ids.length > 1 && q.tag_filter_mode && q.tag_filter_mode !== "any") {
+            params.append("tm", q.tag_filter_mode);
         }
         const newSearch = params.toString()
             .replaceAll("%28", "(")
@@ -330,6 +346,26 @@ export default function SearchPage() {
                                 performSearch();
                             }
                         }}>
+                            {/* Tag filter bar — hidden for archive_sessions (no tag tables) */}
+                            {query.search_mode !== "archive_sessions" && (
+                                <Box>
+                                    <TagFilterBar
+                                        tagIds={query.tag_ids || []}
+                                        tagFilterMode={query.tag_filter_mode || "any"}
+                                        selectedTagObjects={tagFilterObjects}
+                                        onChange={(tagIds, mode, tagObjects) => {
+                                            setTagFilterObjects(tagObjects);
+                                            encodeQueryToParams({
+                                                ...query,
+                                                search_term: typedSearchTerm || "",
+                                                tag_ids: tagIds,
+                                                tag_filter_mode: mode,
+                                                page_number: 1,
+                                            });
+                                        }}
+                                    />
+                                </Box>
+                            )}
                             <Query
                                 {...InitialConfig}
                                 fields={ADVANCED_FILTERS_CONFIG[query.search_mode]}

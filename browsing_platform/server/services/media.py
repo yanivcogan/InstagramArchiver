@@ -32,8 +32,8 @@ def get_media_data_by_id(media_id: int) -> tuple[bool, Any]:
     return True, data
 
 
-_MEDIA_COLS = "id, id_on_platform, url, post_id, local_url, media_type, data, notes, annotation, thumbnail_path, thumbnail_status, create_date"
-_MEDIA_COLS_NO_DATA = "id, id_on_platform, url, post_id, local_url, media_type, NULL AS data, notes, annotation, thumbnail_path, thumbnail_status, create_date"
+_MEDIA_COLS = "id, id_on_platform, url, post_id, local_url, media_type, data, annotation, thumbnail_path, thumbnail_status, create_date"
+_MEDIA_COLS_NO_DATA = "id, id_on_platform, url, post_id, local_url, media_type, NULL AS data, annotation, thumbnail_path, thumbnail_status, create_date"
 
 
 def get_media_by_id(media_id: int, include_data: bool = True) -> Optional[Media]:
@@ -46,6 +46,16 @@ def get_media_by_id(media_id: int, include_data: bool = True) -> Optional[Media]
     if row is None:
         return None
     return Media(**row)
+
+
+def get_media_by_platform_id(platform_id: str, include_data: bool = True) -> Optional[Media]:
+    cols = _MEDIA_COLS if include_data else _MEDIA_COLS_NO_DATA
+    row = db.execute_query(
+        f"SELECT {cols} FROM media WHERE id_on_platform = %(pid)s LIMIT 1",
+        {"pid": platform_id},
+        return_type="single_row"
+    )
+    return Media(**row) if row else None
 
 
 def get_media_by_posts(posts: list[Post], include_data: bool = True) -> list[Media]:
@@ -74,22 +84,17 @@ def get_media_thumbnail_path(thumbnail_path: str, local_url: str) -> Optional[st
 
 
 def annotate_media(media_id: int, annotation: Annotation) -> None:
-    # Set notes field
-    db.execute_query(
-        """UPDATE media SET notes = %(notes)s WHERE id = %(id)s""",
-        {"id": media_id, "notes": annotation.notes},
-        return_type="none"
-    )
-    # Clear associated tags
-    db.execute_query(
-        """DELETE FROM media_tag WHERE media_id = %(id)s""",
-        {"id": media_id},
-        return_type="none"
-    )
-    # Add new tags
-    for tag_id in annotation.tags:
+    with db.transaction_batch():
+        # Clear associated tags
         db.execute_query(
-            """INSERT INTO media_tag (media_id, tag_id) VALUES (%(media_id)s, %(tag_id)s)""",
-            {"media_id": media_id, "tag_id": tag_id},
+            """DELETE FROM media_tag WHERE media_id = %(id)s""",
+            {"id": media_id},
             return_type="none"
         )
+        # Add new tags with per-assignment notes
+        for tag in (annotation.tags or []):
+            db.execute_query(
+                """INSERT INTO media_tag (media_id, tag_id, notes) VALUES (%(media_id)s, %(tag_id)s, %(notes)s)""",
+                {"media_id": media_id, "tag_id": tag.id, "notes": tag.notes},
+                return_type="none"
+            )

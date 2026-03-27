@@ -16,7 +16,6 @@ import {
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
 import {anchor_local_static_files} from "../../services/server";
-import TextField from "@mui/material/TextField";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import {deleteMediaPart, saveMediaPart} from "../../services/DataSaver";
 
@@ -205,14 +204,6 @@ export default function MediaPart({media, mediaPart: mediaPartProp, refetchMedia
                         }
                     </Stack>
                 }
-                <TextField
-                    label={"notes"}
-                    value={mediaPart.notes || ""}
-                    onChange={(e) => setMediaPart(curr => ({...curr, notes: e.target.value}))}
-                    fullWidth
-                    multiline
-                    disabled={!editing || awaitingSave}
-                />
             </Stack>
         </CardContent>
         <CardActions>

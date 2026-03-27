@@ -10,7 +10,7 @@ import {
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
-import {ITagWithType} from "../types/tags";
+import {ITagStat, ITagWithType} from "../types/tags";
 import {getShareTokenFromHref} from "./linkSharing";
 
 interface FlattenedEntitiesTransform {
@@ -59,19 +59,19 @@ const transformConfigToQueryParams = (config: EntitiesTransformConfig): string =
     return params.toString();
 }
 
-export const fetchAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
+export const fetchAccount = async (accountId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
     return await server.get("account/" + accountId + "?" + transformConfigToQueryParams(config));
 }
 
-export const fetchPost = async (postId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
+export const fetchPost = async (postId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
     return await server.get("post/" + postId + "?" + transformConfigToQueryParams(config));
 }
 
-export const fetchMedia = async (mediaId: number, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
+export const fetchMedia = async (mediaId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
     return await server.get("media/" + mediaId + "?" + transformConfigToQueryParams(config));
 }
 
-export const fetchArchivingSession = async (archivingSessionId: number, config: EntitiesTransformConfig): Promise<IArchiveSessionWithEntities> => {
+export const fetchArchivingSession = async (archivingSessionId: number | string, config: EntitiesTransformConfig): Promise<IArchiveSessionWithEntities> => {
     return await server.get("archiving_session/" + archivingSessionId + "?" + transformConfigToQueryParams(config));
 }
 
@@ -158,11 +158,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
-        notes: {
-            label: 'Notes',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
         data: {
             label: 'Account Data (Slow)',
             type: 'text',
@@ -183,11 +178,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
-        notes: {
-            label: 'Notes',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
         data: {
             label: 'Post Data (Slow)',
             type: 'text',
@@ -204,13 +194,18 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             label: 'Publication Date',
             type: 'date',
         },
+        media_type: {
+            label: 'Media Type',
+            type: 'select',
+            fieldSettings: {
+                listValues: [
+                    {value: 'video', title: 'Video'},
+                    {value: 'image', title: 'Photo'},
+                ],
+            },
+        },
         annotation: {
             label: 'AI Generated Caption',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
-        notes: {
-            label: 'Notes',
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
@@ -230,11 +225,6 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },
-        notes: {
-            label: 'Notes',
-            type: 'text',
-            excludeOperators: disabled_operators_by_type['text'],
-        },
         structures: {
             label: 'Full Accounts / Posts Data (Slow)',
             type: 'text',
@@ -249,6 +239,8 @@ export interface ISearchQuery {
     advanced_filters: JsonLogicFunction | null;
     page_number: number;
     page_size: number;
+    tag_ids?: number[];
+    tag_filter_mode?: "any" | "all";
 }
 
 export interface SearchResult {
@@ -265,4 +257,8 @@ export const searchData = async (
     options: { signal: AbortSignal }
 ): Promise<SearchResult[]> => {
     return await server.post("search/", query, HTTP_METHODS.post, {abortSignal: options.signal});
+}
+
+export const fetchRelatedTagStats = async (accountId: number): Promise<ITagStat[]> => {
+    return await server.get(`account/${accountId}/related_tag_stats/`);
 }

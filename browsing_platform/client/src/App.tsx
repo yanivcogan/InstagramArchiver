@@ -22,6 +22,7 @@ import SessionPage from "./pages/SessionPage";
 import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/Upload";
 import IncorporatePage from "./pages/Incorporate";
+import TagManagementPage from "./pages/TagManagementPage";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
@@ -59,13 +60,19 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<Login/>}/>
                     <Route path="/login" element={<Login/>}/>
+                    <Route path="/account/pk/:platformId" element={<AccountPage/>}/>
+                    <Route path="/account/url/*" element={<AccountPage/>}/>
                     <Route path="/account/:id" element={<AccountPage/>}/>
+                    <Route path="/post/pk/:platformId" element={<PostPage/>}/>
+                    <Route path="/post/url/*" element={<PostPage/>}/>
                     <Route path="/post/:id" element={<PostPage/>}/>
+                    <Route path="/media/pk/:platformId" element={<MediaPage/>}/>
                     <Route path="/media/:id" element={<MediaPage/>}/>
                     <Route path="/archive/:id" element={<SessionPage/>}/>
                     <Route path="/search" element={<SearchPage/>}/>
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>
+                    <Route path="/tags" element={<TagManagementPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
                 <ToastContainer

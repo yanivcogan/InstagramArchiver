@@ -1,7 +1,7 @@
-from fastapi import HTTPException
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import HTTPException
 
 from browsing_platform.server.routes.account import _auth_account_view
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config, \
@@ -9,7 +9,7 @@ from browsing_platform.server.routes.fast_api_request_processor import extract_e
 from browsing_platform.server.routes.media import _auth_media_view
 from browsing_platform.server.routes.post import _auth_post_view
 from browsing_platform.server.services.archiving_session import ArchiveSessionWithEntities, ArchiveSession, \
-    get_archiving_session_by_id, get_archiving_session_structures
+    get_archiving_session_structures
 from browsing_platform.server.services.enriched_entities import get_enriched_archiving_session_by_id, \
     get_archiving_sessions_by_account_id, get_archiving_sessions_by_post_id, \
     get_archiving_sessions_by_media_id

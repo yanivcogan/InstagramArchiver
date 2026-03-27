@@ -2,7 +2,7 @@ import React from 'react';
 import {Stack} from '@mui/material';
 import {DatePicker} from '@mui/x-date-pickers/DatePicker';
 import dayjs, {Dayjs} from 'dayjs';
-import {ImmutableTree, MuiConfig, Utils} from '@react-awesome-query-builder/mui';
+import {MuiConfig, Utils} from '@react-awesome-query-builder/mui';
 import {ADVANCED_FILTERS_CONFIG, T_Search_Mode} from '../../services/DataFetcher';
 import {SearchShortcutsProps} from './AccountSearchShortcuts';
 

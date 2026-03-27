@@ -32,6 +32,15 @@ export interface IErrorResponse {
     error: string
 }
 
+export class ServerError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+        super(message);
+        this.status = status;
+        this.name = 'ServerError';
+    }
+}
+
 const get = (path: string, options?: IRequestOptions) => {
     return post(path, {}, HTTP_METHODS.get, options)
 }
@@ -61,6 +70,9 @@ const post = async (
         signal: options?.abortSignal
     });
     const resAsJson = res.status === 401 ? {error: "missing permissions"} : await res.json();
+    if (!res.ok && !resAsJson?.error) {
+        return Promise.reject(new ServerError(res.status, resAsJson?.detail || `Request failed with status ${res.status}`));
+    }
     return handleResult(resAsJson, fixedMethod, path, data, options);
 }
 
