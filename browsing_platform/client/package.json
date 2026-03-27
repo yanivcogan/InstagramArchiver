@@ -56,7 +56,7 @@
     "react-draggable": "^4.5.0",
     "react-highlight-words": "^0.20.0",
     "react-json-view": "^1.21.3",
-    "react-router": "^7.13.1",
+    "react-router": "^7.13.2",
     "react-transition-group": "^4.4.5",
     "rison": "^0.1.1",
     "rison-node": "^2.1.1",

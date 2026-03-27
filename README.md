@@ -97,6 +97,10 @@ This starts the React development server on port **3000**.
 
 The frontend will be accessible at `http://localhost:3000` and will communicate with the API at `http://localhost:4444`.
 
+#### Migrations
+
+
+
 ---
 
 ## Production Deployment
