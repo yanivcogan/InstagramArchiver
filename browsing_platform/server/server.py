@@ -30,6 +30,24 @@ if is_production and os.getenv("BROWSING_PLATFORM_DEV") == "1":
         "This would bypass all authentication. Refusing to start."
     )
 
+# Security check: FILE_TOKEN_SECRET must be set in production (without it all
+# file requests return 401 silently rather than failing loudly at startup)
+if is_production and not os.getenv("FILE_TOKEN_SECRET"):
+    raise RuntimeError(
+        "FATAL: FILE_TOKEN_SECRET is not set in production environment. "
+        "All file requests will return 401. Refusing to start."
+    )
+
+# SERVER_HOST must be set in production — without it local_files_root is None,
+# which causes all media/thumbnail URLs to be built as /None/thumbnails/... or
+# /None/archives/... making them 404.
+if is_production and not os.getenv("SERVER_HOST"):
+    raise RuntimeError(
+        "FATAL: SERVER_HOST is not set in production environment. "
+        "All media URLs will be broken. Refusing to start."
+    )
+
+
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
 
@@ -108,6 +126,9 @@ app.mount(
 
 class StaticFilesAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # BaseHTTPMiddleware cannot handle WebSocket upgrades — pass them straight through.
+        if request.scope.get("type") == "websocket":
+            return await call_next(request)
         start_time = time.time()
         if request.url.path.startswith("/archives") or request.url.path.startswith("/thumbnails"):
             # Prefer per-file token 'ft' which is bound to the file path and cannot be reused for other files.
@@ -179,7 +200,7 @@ async def serve_spa(request: Request, full_path: str):
         logger.info(f"SPA catch-all: API route not found -> {full_path}")
         return Response('{"detail":"Not Found"}', status_code=404, media_type="application/json")
 
-    build_dir = os.path.abspath("browsing_platform/client/build")
+    build_dir = os.path.abspath("browsing_platform/client/dist")
     file_path = os.path.abspath(os.path.join(build_dir, full_path))
 
     # Prevent path traversal: reject any resolved path outside the build directory.

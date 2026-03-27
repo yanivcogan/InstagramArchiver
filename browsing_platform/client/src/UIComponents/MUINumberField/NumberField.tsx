@@ -13,7 +13,7 @@ interface NumberFieldProps extends Omit<TextFieldProps, 'type' | 'onChange' | 'v
     step?: number;
 }
 
-export function NumberField({value: valueProp, onChange, min, max, step = 1, slotProps: propsSlotProps, ...rest}: NumberFieldProps) {
+export function NumberField({value: valueProp, onChange, min, max, step = 1, inputProps: propsInputProps, InputProps: propsInputComponentProps, ...rest}: NumberFieldProps) {
     const [value, setValue] = useState(
         valueProp !== undefined && valueProp !== null ? String(valueProp) : ''
     );
@@ -65,39 +65,36 @@ export function NumberField({value: valueProp, onChange, min, max, step = 1, slo
             type="text"
             value={value}
             onChange={handleInputChange}
-            slotProps={{
-                ...propsSlotProps,
-                htmlInput: {
-                    inputMode: 'decimal',
-                    pattern: '[0-9]*',
-                    min,
-                    max,
-                    step,
-                    ...(propsSlotProps?.htmlInput as object),
-                },
-                input: {
-                    ...(propsSlotProps?.input as object),
-                    endAdornment: (
-                        <InputAdornment position="end">
-                            <IconButton
-                                aria-label="decrement"
-                                onClick={() => handleStep(-1)}
-                                size="small"
-                                disabled={min !== undefined && Number(value) <= min}
-                            >
-                                <RemoveIcon fontSize="small"/>
-                            </IconButton>
-                            <IconButton
-                                aria-label="increment"
-                                onClick={() => handleStep(1)}
-                                size="small"
-                                disabled={max !== undefined && Number(value) >= max}
-                            >
-                                <AddIcon fontSize="small"/>
-                            </IconButton>
-                        </InputAdornment>
-                    ),
-                },
+            inputProps={{
+                inputMode: 'decimal',
+                pattern: '[0-9]*',
+                min,
+                max,
+                step,
+                ...propsInputProps,
+            }}
+            InputProps={{
+                ...propsInputComponentProps,
+                endAdornment: (
+                    <InputAdornment position="end">
+                        <IconButton
+                            aria-label="decrement"
+                            onClick={() => handleStep(-1)}
+                            size="small"
+                            disabled={min !== undefined && Number(value) <= min}
+                        >
+                            <RemoveIcon fontSize="small"/>
+                        </IconButton>
+                        <IconButton
+                            aria-label="increment"
+                            onClick={() => handleStep(1)}
+                            size="small"
+                            disabled={max !== undefined && Number(value) >= max}
+                        >
+                            <AddIcon fontSize="small"/>
+                        </IconButton>
+                    </InputAdornment>
+                ),
             }}
         />
     );

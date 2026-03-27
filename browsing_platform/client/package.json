@@ -23,8 +23,8 @@
     "@types/lodash": "^4.17.24",
     "@types/node": "^18.19.130",
     "@types/pubsub-js": "^1.8.6",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/rison": "^0.0.9",
     "@types/string-similarity": "^4.0.2",
     "@types/stylis": "^4.2.7",
@@ -56,7 +56,7 @@
     "react-draggable": "^4.5.0",
     "react-highlight-words": "^0.20.0",
     "react-json-view": "^1.21.3",
-    "react-router": "^7.0.0",
+    "react-router": "^7.13.2",
     "react-transition-group": "^4.4.5",
     "rison": "^0.1.1",
     "rison-node": "^2.1.1",
@@ -66,15 +66,16 @@
     "styled-jsx": "latest",
     "stylis": "^4.3.6",
     "stylis-plugin-rtl": "^2.1.1",
+    "tus-js-client": "^4.3.1",
     "typescript": "5.1.6",
     "web-vitals": "^2.1.4"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.57.0",
     "@typescript-eslint/parser": "^8.57.0",
-    "@vitejs/plugin-react": "4",
+    "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^5.9.3",
-    "vite": "6"
+    "vite": "^6.4.1"
   },
   "scripts": {
     "start": "vite",

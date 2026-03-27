@@ -11,6 +11,8 @@ migration is safe to run on databases that were built from the
 up-to-date create_db.sql.
 """
 
+import time
+
 INDEXES = [
     ("media_local_url_index",      "media", "local_url"),
     ("media_media_type_index",     "media", "media_type"),
@@ -39,6 +41,8 @@ def run(cnx):
         if _index_exists(cur, table, index_name):
             print(f"    {index_name}: already exists, skipping")
         else:
+            print(f"    {index_name}: creating ...", flush=True)
+            t = time.perf_counter()
             cur.execute(f"CREATE INDEX {index_name} ON {table} ({column})")
-            print(f"    {index_name}: created")
+            print(f"    {index_name}: created ({time.perf_counter() - t:.1f}s)")
     cur.close()

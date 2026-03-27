@@ -94,19 +94,17 @@ export default function LinkSharing({entityType, entityId, stableSharePath}: IPr
                     size="small"
                     variant="outlined"
                     disabled={!shareLinkInfo.valid}
-                    slotProps={{
-                        htmlInput: {readOnly: true},
-                        input: {
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <Tooltip title="Copy">
-                                        <IconButton size="small" onClick={copyShareLinkToClipboard} disabled={!shareLinkInfo.valid}>
-                                            <ContentCopy fontSize="small"/>
-                                        </IconButton>
-                                    </Tooltip>
-                                </InputAdornment>
-                            )
-                        }
+                    inputProps={{readOnly: true}}
+                    InputProps={{
+                        endAdornment: (
+                            <InputAdornment position="end">
+                                <Tooltip title="Copy">
+                                    <IconButton size="small" onClick={copyShareLinkToClipboard} disabled={!shareLinkInfo.valid}>
+                                        <ContentCopy fontSize="small"/>
+                                    </IconButton>
+                                </Tooltip>
+                            </InputAdornment>
+                        )
                     }}
                     sx={{
                         padding: 0,

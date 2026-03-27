@@ -13,6 +13,7 @@ of table size.
 """
 
 import json
+import time
 from typing import Optional
 
 BATCH_SIZE = 500
@@ -59,6 +60,7 @@ def _process_table(cnx, table: str, select_sql: str):
     write_cur = cnx.cursor()
     offset = 0
     total_updated = 0
+    t_start = time.perf_counter()
 
     while True:
         read_cur = cnx.cursor(dictionary=True)
@@ -72,7 +74,6 @@ def _process_table(cnx, table: str, select_sql: str):
         for row in rows:
             data = _parse_data(row["data"])
             if not data:
-                print(f"    [{table}] #{row['id']}: no parseable data, skipping")
                 continue
             new, should_update = _new_url(data, row["url"])
             if should_update and new != row["url"]:
@@ -80,16 +81,14 @@ def _process_table(cnx, table: str, select_sql: str):
                     f"UPDATE {table} SET url = %s WHERE id = %s",
                     (new, row["id"]),
                 )
-                print(f"    [{table}] #{row['id']}: {row['url']!r} → {new!r}")
                 total_updated += 1
-            else:
-                print(f"    [{table}] #{row['id']}: ok")
 
         offset += len(rows)
         if len(rows) < BATCH_SIZE:
             break
 
     write_cur.close()
+    print(f"    [{table}] done — {total_updated} updated ({time.perf_counter() - t_start:.1f}s)", flush=True)
     return total_updated
 
 

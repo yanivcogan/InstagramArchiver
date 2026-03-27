@@ -346,7 +346,17 @@ def commit_archive(archive_name: str, uploader_info: dict):
     if tus_state.exists():
         shutil.rmtree(tus_state)
 
-    os.rename(src, dst)
+    # os.rename() fails on Linux if dst already exists and is non-empty (ENOTEMPTY).
+    # This happens on overwrite uploads where the archive already exists in archives/.
+    # Delete the existing archives/<archive_name> folder before moving the new
+    # staging copy into place. Safe to do here because commit is only reached
+    # after verify passes — the staging copy is complete and checksummed.
+    if dst.exists():
+        shutil.rmtree(dst)
+    # shutil.move handles cross-device moves (e.g. staging on main disk, archives on
+    # a separately mounted data disk) by falling back to copy+delete when os.rename
+    # raises EXDEV (errno 18 "Invalid cross-device link").
+    shutil.move(str(src), str(dst))
 
     # --- Checksum record ---
     checksum_doc = {

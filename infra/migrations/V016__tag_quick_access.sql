@@ -1,2 +1,0 @@
-ALTER TABLE tag
-    ADD COLUMN quick_access TINYINT(1) NOT NULL DEFAULT 0;

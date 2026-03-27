@@ -60,6 +60,7 @@ export interface IComment extends IEntityBase {
     account_display_name?: string;
     text?: string;
     publication_date?: string;
+    parent_comment_id_on_platform?: string;
     data?: any;
 }
 

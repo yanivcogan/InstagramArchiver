@@ -13,6 +13,8 @@ Also adds these constraints to the target create_db.sql schema (new
 installations get them automatically).
 """
 
+import time
+
 CONSTRAINTS = [
     (
         "account_archive",
@@ -91,9 +93,11 @@ def run(cnx):
                 f"    Resolve duplicates manually before re-running this migration."
             )
 
+        print(f"    {table}: adding constraint '{constraint_name}' ...", flush=True)
+        t = time.perf_counter()
         cur.execute(
             f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} UNIQUE ({columns})"
         )
-        print(f"    {table}: added constraint '{constraint_name}'")
+        print(f"    {table}: added constraint '{constraint_name}' ({time.perf_counter() - t:.1f}s)")
 
     cur.close()
