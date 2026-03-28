@@ -140,12 +140,16 @@ export default function AccountPage() {
                         annotator: disableAnnotator ? "disable" : "show",
                         postsPageSize: showAllPosts ? null : 5,
                     },
+                    post: {
+                        annotator: "disable",
+                    },
                     media: {
                         style: {
                             maxWidth: '100%',
                             maxHeight: '40vh',
                             minHeight: '300px'
-                        }
+                        },
+                        annotator: "disable",
                     }
                 })
             }

@@ -99,8 +99,14 @@ export default function PostPage() {
             highlightLikeId={highlightLikeId}
             viewerConfig={
                 new EntityViewerConfig({
-                    post: {annotator: disableAnnotator ? "disable" : "show"},
+                    account: {
+                        annotator: "disable"
+                    },
+                    post: {
+                        annotator: disableAnnotator ? "disable" : "show"
+                    },
                     media: {
+                        annotator: "disable",
                         style: {
                             maxWidth: '100%',
                             maxHeight: '40vh',

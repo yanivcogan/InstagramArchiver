@@ -48,6 +48,9 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
             sx={{cursor: "pointer", position: "relative"}}
             onMouseEnter={() => setExpandDetails(true)}
             onMouseLeave={() => setExpandDetails(false)}
+            onDoubleClick={()=>{
+
+            }}
         >
             {
                 media.media_type === "video" ?

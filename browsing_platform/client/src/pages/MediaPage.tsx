@@ -91,11 +91,19 @@ export default function MediaPage() {
             entities={data}
             viewerConfig={
                 new EntityViewerConfig({
+                    account: {
+                        annotator: "disable",
+                    },
+                    post: {
+                        annotator: "disable",
+                    },
                     media: {
                         style: {maxWidth: '100%', maxHeight: '75vh'},
                         annotator: disableAnnotator ? "disable" : "show",
                     },
-                    mediaPart: {display: "display"}
+                    mediaPart: {
+                        display: "display"
+                    }
                 })
             }
         />

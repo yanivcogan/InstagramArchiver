@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {AnnotatableEntityType, IAnnotatableEntity, IMediaPart} from "../../types/entities";
 import {
     Button,
@@ -11,6 +11,7 @@ import {
     Tooltip,
     Typography
 } from "@mui/material";
+import AddIcon from '@mui/icons-material/Add';
 import {ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
 import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
@@ -27,44 +28,24 @@ interface IProps {
 export default function EntityAnnotator({entity, entityType, readonly, onSave}: IProps) {
     const [tags, setTags] = useState<ITagWithType[]>(entity.tags || []);
     const [noteModalTag, setNoteModalTag] = useState<ITagWithType | null>(null);
-    const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving'>('idle');
     const [quickAccessTags, setQuickAccessTags] = useState<ITagWithType[]>([]);
-    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const mountedRef = useRef(true);
 
     useEffect(() => {
         fetchQuickAccessTags().then(setQuickAccessTags).catch(() => {});
-        return () => {
-            mountedRef.current = false;
-            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        };
     }, []);
 
-    const scheduleSave = (newTags: ITagWithType[]) => {
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        setSaveStatus('pending');
-        saveTimerRef.current = setTimeout(async () => {
-            if (!mountedRef.current) return;
-            setSaveStatus('saving');
-            try {
-                await saveAnnotationsToServer({...entity, tags: newTags} as IAnnotatableEntity, entityType as AnnotatableEntityType);
-                if (onSave) onSave();
-            } catch {
-                toast.error("Failed to save annotations.");
-            }
-            if (mountedRef.current) setSaveStatus('idle');
-        }, 800);
+    const saveToServer = async (newTags: ITagWithType[]) => {
+        try {
+            await saveAnnotationsToServer({...entity, tags: newTags} as IAnnotatableEntity, entityType as AnnotatableEntityType);
+            if (onSave) onSave();
+        } catch {
+            toast.error("Failed to save annotations.");
+        }
     };
 
     const handleTagsChange = (newTags: ITagWithType[]) => {
         setTags(newTags);
-        scheduleSave(newTags);
-    };
-
-    const updateTagNote = (tagId: number, note: string) => {
-        const updated = tags.map(t => t.id === tagId ? {...t, assignment_notes: note} : t);
-        setTags(updated);
-        scheduleSave(updated);
+        saveToServer(newTags);
     };
 
     const handleQuickAccess = (qTag: ITagWithType) => {
@@ -72,7 +53,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
         if (!alreadyHas) {
             const newTags = [...tags, {...qTag, assignment_notes: ""}];
             setTags(newTags);
-            scheduleSave(newTags);
+            saveToServer(newTags);
         }
         // Open notes modal so the user can immediately annotate the quick-added tag
         setNoteModalTag({...qTag, assignment_notes: qTag.assignment_notes ?? ""});
@@ -118,16 +99,12 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
                         variant="outlined"
                         size="small"
                         onClick={() => handleQuickAccess(qTag)}
+                        startIcon={<AddIcon/>}
                     >
                         {qTag.name}
                     </Button>
                 </Tooltip>
             ))}
-            {saveStatus !== 'idle' && (
-                <Typography variant="caption" color="text.secondary" sx={{ml: 'auto'}}>
-                    {saveStatus === 'pending' ? 'Unsaved…' : 'Saving…'}
-                </Typography>
-            )}
         </Stack>
 
         {/* Notes modal — opens when a tag chip is clicked */}
@@ -146,15 +123,17 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             <DialogContent>
                 <TextField
                     autoFocus
+                    onFocus={(e) => {
+                        const len = e.target.value.length;
+                        e.target.setSelectionRange(len, len);
+                    }}
                     multiline
                     fullWidth
                     rows={4}
                     placeholder="Notes about this tag assignment…"
                     value={noteModalTag?.assignment_notes ?? ""}
                     onChange={(e) => {
-                        const newNote = e.target.value;
-                        setNoteModalTag(curr => curr ? {...curr, assignment_notes: newNote} : null);
-                        if (noteModalTag) updateTagNote(noteModalTag.id, newNote);
+                        setNoteModalTag(curr => curr ? {...curr, assignment_notes: e.target.value} : null);
                     }}
                     sx={{mt: 1}}
                 />
@@ -170,7 +149,14 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
                 >
                     Remove tag
                 </Button>
-                <Button onClick={() => setNoteModalTag(null)}>Close</Button>
+                <Button onClick={() => {
+                    if (noteModalTag) {
+                        const updated = tags.map(t => t.id === noteModalTag.id ? {...t, assignment_notes: noteModalTag.assignment_notes ?? ""} : t);
+                        setTags(updated);
+                        saveToServer(updated);
+                    }
+                    setNoteModalTag(null);
+                }}>Save</Button>
             </DialogActions>
         </Dialog>
     </Stack>;

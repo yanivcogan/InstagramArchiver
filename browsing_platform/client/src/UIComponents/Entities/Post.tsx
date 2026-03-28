@@ -130,6 +130,15 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                     </IconButton>
                 }
             </Stack>
+            {
+                viewerConfig?.post?.annotator !== "hide" ?
+                    <EntityAnnotator
+                        entity={post}
+                        entityType={"post"}
+                        readonly={viewerConfig?.post?.annotator === "disable"}
+                    /> :
+                    null
+            }
             <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
             <Typography variant="caption">{dateInGaza} (in Gaza)</Typography>
             {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
@@ -171,7 +180,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                     {comments.map((c, i) => (
                         <div
                             key={i}
-                            ref={c.id != null ? el => { if (el) commentRefs.current.set(c.id!, el); } : undefined}
+                            ref={c.id != null ? el => {
+                                if (el) commentRefs.current.set(c.id!, el);
+                            } : undefined}
                             style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
                         >
                             <Comment comment={c} postId={post.id} shareToken={shareToken}/>
@@ -205,7 +216,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                     {likes.map((l, i) => (
                         <div
                             key={i}
-                            ref={l.id != null ? el => { if (el) likeRefs.current.set(l.id!, el); } : undefined}
+                            ref={l.id != null ? el => {
+                                if (el) likeRefs.current.set(l.id!, el);
+                            } : undefined}
                             style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
                         >
                             <PostLike like={l} postId={post.id} shareToken={shareToken}/>
@@ -229,16 +242,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                     </Button>
                 </span>
             )}
-
-            {
-                viewerConfig?.post?.annotator !== "hide" ?
-                    <EntityAnnotator
-                        entity={post}
-                        entityType={"post"}
-                        readonly={viewerConfig?.post?.annotator === "disable"}
-                    /> :
-                    null
-            }
         </Stack>
     </Paper>
 }
