@@ -1,11 +1,9 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {AnnotatableEntityType, IAnnotatableEntity, IMediaPart} from "../../types/entities";
 import {
     Box,
     Button,
-    CircularProgress,
     Collapse,
-    Grow,
     IconButton,
     Stack,
     TextField,
@@ -14,7 +12,6 @@ import {
 } from "@mui/material";
 import {ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
-import SaveIcon from "@mui/icons-material/Save";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
 import {fetchQuickAccessTags} from "../../services/TagManagementService";
@@ -32,17 +29,44 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     const [expandedNotes, setExpandedNotes] = useState<Set<number>>(
         () => new Set((entity.tags || []).filter(t => t.assignment_notes).map(t => t.id))
     );
-    const [unsavedChanges, setUnsavedChanges] = useState(false);
-    const [awaitingSave, setAwaitingSave] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'pending' | 'saving'>('idle');
     const [quickAccessTags, setQuickAccessTags] = useState<ITagWithType[]>([]);
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const mountedRef = useRef(true);
 
     useEffect(() => {
         fetchQuickAccessTags().then(setQuickAccessTags).catch(() => {});
+        return () => {
+            mountedRef.current = false;
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        };
     }, []);
 
+    const scheduleSave = (newTags: ITagWithType[]) => {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        setSaveStatus('pending');
+        saveTimerRef.current = setTimeout(async () => {
+            if (!mountedRef.current) return;
+            setSaveStatus('saving');
+            try {
+                await saveAnnotationsToServer({...entity, tags: newTags} as IAnnotatableEntity, entityType as AnnotatableEntityType);
+                if (onSave) onSave();
+            } catch {
+                toast.error("Failed to save annotations.");
+            }
+            if (mountedRef.current) setSaveStatus('idle');
+        }, 800);
+    };
+
+    const handleTagsChange = (newTags: ITagWithType[]) => {
+        setTags(newTags);
+        scheduleSave(newTags);
+    };
+
     const updateTagNote = (tagId: number, note: string) => {
-        setTags(curr => curr.map(t => t.id === tagId ? {...t, assignment_notes: note} : t));
-        setUnsavedChanges(true);
+        const updated = tags.map(t => t.id === tagId ? {...t, assignment_notes: note} : t);
+        setTags(updated);
+        scheduleSave(updated);
     };
 
     const toggleNoteExpanded = (tagId: number) => {
@@ -53,21 +77,12 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
         });
     };
 
-    const saveAnnotations = async () => {
-        setAwaitingSave(true);
-        const updatedEntity = {...entity, tags};
-        await saveAnnotationsToServer(updatedEntity as IAnnotatableEntity, entityType as AnnotatableEntityType);
-        if (onSave) onSave();
-        toast.success("Annotations saved successfully.");
-        setAwaitingSave(false);
-        setUnsavedChanges(false);
-    };
-
     const handleQuickAccess = (qTag: ITagWithType) => {
         const alreadyHas = tags.some(t => t.id === qTag.id);
         if (!alreadyHas) {
-            setTags(curr => [...curr, {...qTag, assignment_notes: ""}]);
-            setUnsavedChanges(true);
+            const newTags = [...tags, {...qTag, assignment_notes: ""}];
+            setTags(newTags);
+            scheduleSave(newTags);
         }
         setExpandedNotes(curr => new Set([...curr, qTag.id]));
     };
@@ -102,10 +117,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     return <Stack gap={1}>
         <TagSelector
             selectedTags={tags}
-            onChange={(newTags) => {
-                setTags(newTags);
-                setUnsavedChanges(true);
-            }}
+            onChange={handleTagsChange}
         />
         {/* Per-tag notes */}
         {tags.length > 0 && (
@@ -152,16 +164,11 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
                     </Button>
                 </Tooltip>
             ))}
-            <Grow in={unsavedChanges} unmountOnExit>
-                <Button
-                    variant="contained"
-                    startIcon={awaitingSave ? <CircularProgress size={20} color={"inherit"}/> : <SaveIcon/>}
-                    onClick={saveAnnotations}
-                    color={"success"}
-                >
-                    Save Annotations
-                </Button>
-            </Grow>
+            {saveStatus !== 'idle' && (
+                <Typography variant="caption" color="text.secondary" sx={{ml: 'auto'}}>
+                    {saveStatus === 'pending' ? 'Unsaved…' : 'Saving…'}
+                </Typography>
+            )}
         </Stack>
     </Stack>;
 }
