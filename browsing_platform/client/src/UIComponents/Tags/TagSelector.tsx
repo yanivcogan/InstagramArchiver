@@ -11,9 +11,10 @@ interface IProps {
     selectedTags: ITagWithType[]
     readOnly?: boolean
     onChange: (tags: ITagWithType[]) => void
+    onChipClick?: (tag: ITagWithType) => void
 }
 
-export default function TagSelector({selectedTags, readOnly, onChange}: IProps) {
+export default function TagSelector({selectedTags, readOnly, onChange, onChipClick}: IProps) {
     const [inputValue, setInputValue] = useState('');
     const [fetchingOptions, setFetchingOptions] = useState(false);
     const [options, setOptions] = useState<ITagWithType[]>([]);
@@ -56,11 +57,18 @@ export default function TagSelector({selectedTags, readOnly, onChange}: IProps) 
                         title={
                             <Stack>
                                 <Typography variant={"caption"}>{option.tag_type_name}</Typography>
-                                <Typography variant={"body1"}>{option.description}</Typography>
+                                {option.description && <Typography variant={"body1"}>{option.description}</Typography>}
+                                {option.assignment_notes && <Typography variant={"body2"} sx={{fontStyle: 'italic'}}>{option.assignment_notes}</Typography>}
                             </Stack>
                         }
                     >
-                        <Chip variant="outlined" label={option.name} key={key} {...itemProps} />
+                        <Chip
+                            variant={option.assignment_notes ? "filled" : "outlined"}
+                            label={option.name}
+                            key={key}
+                            {...itemProps}
+                            onClick={onChipClick ? () => onChipClick(option) : undefined}
+                        />
                     </Tooltip>
                 );
             })
