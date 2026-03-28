@@ -5,7 +5,7 @@ import TextField from '@mui/material/TextField';
 import Stack from '@mui/material/Stack';
 import {lookupTags} from "../../services/DataFetcher";
 import {ITagWithType} from "../../types/tags";
-import {Tooltip, Typography} from "@mui/material";
+import {Button, Dialog, DialogActions, DialogContent, DialogTitle, Tooltip, Typography} from "@mui/material";
 
 interface IProps {
     selectedTags: ITagWithType[]
@@ -18,6 +18,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
     const [inputValue, setInputValue] = useState('');
     const [fetchingOptions, setFetchingOptions] = useState(false);
     const [options, setOptions] = useState<ITagWithType[]>([]);
+    const [pendingDelete, setPendingDelete] = useState<{tag: ITagWithType; onDelete: (e: any) => void} | null>(null);
 
     const fetchMatchingOptions = async (value: string) => {
         setFetchingOptions(true);
@@ -29,7 +30,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
         setFetchingOptions(false);
     };
 
-    return <Autocomplete
+    return <><Autocomplete
         value={selectedTags}
         onChange={(_, newValue) => {
             onChange(newValue);
@@ -49,7 +50,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
         loading={fetchingOptions}
         renderTags={(value: readonly ITagWithType[], getItemProps) =>
             value.map((option: ITagWithType, index: number) => {
-                const {key, ...itemProps} = getItemProps({index});
+                const {key, onDelete, ...itemProps} = getItemProps({index});
                 return (
                     <Tooltip
                         arrow
@@ -67,6 +68,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
                             label={option.name}
                             key={key}
                             {...itemProps}
+                            onDelete={() => setPendingDelete({tag: option, onDelete})}
                             onClick={onChipClick ? () => onChipClick(option) : undefined}
                         />
                     </Tooltip>
@@ -74,7 +76,25 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
             })
         }
         renderInput={(params) => (
-            <TextField {...params} variant="filled" label="Tags"/>
+            <TextField {...params} variant="filled" label={
+                <Stack direction={"row"} alignItems={"center"} gap={1}>
+                    <Typography>Tags</Typography>
+                </Stack>
+            }/>
         )}
-    />;
+    />
+    <Dialog open={pendingDelete !== null} onClose={() => setPendingDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Remove tag?</DialogTitle>
+        <DialogContent>
+            <Typography>Remove "<strong>{pendingDelete?.tag.name}</strong>"?</Typography>
+        </DialogContent>
+        <DialogActions>
+            <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
+            <Button color="error" variant="contained" onClick={() => {
+                pendingDelete?.onDelete(undefined);
+                setPendingDelete(null);
+            }}>Remove</Button>
+        </DialogActions>
+    </Dialog>
+</>;
 }
