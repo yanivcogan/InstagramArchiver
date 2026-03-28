@@ -23,6 +23,7 @@ import {ITagWithType} from "../types/tags";
 import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import {
     ADVANCED_FILTERS_CONFIG,
     batchAnnotate,
@@ -134,6 +135,7 @@ export default function SearchPage() {
     const [results, setResults] = useState<SearchResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [tagsMap, setTagsMap] = useState<Record<number, ITagWithType[]>>({});
+    const [taggingMode, setTaggingMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [bulkTags, setBulkTags] = useState<ITagWithType[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -161,8 +163,6 @@ export default function SearchPage() {
         abortControllerRef.current = controller;
         setIsLoading(true);
         setTagsMap({});
-        setSelectedIds(new Set());
-        setBulkTags([]);
         searchData(query, {signal: controller.signal}).then(results => {
             setResults(results);
             setIsLoading(false);
@@ -221,6 +221,11 @@ export default function SearchPage() {
         if (newSearch === searchParams.toString()) return;
         navigate({pathname: location.pathname, search: newSearch}, {replace: true});
     };
+
+    const toggleTaggingMode = () => setTaggingMode(prev => {
+        if (prev) { setSelectedIds(new Set()); setBulkTags([]); }
+        return !prev;
+    });
 
     const toggleSelected = (id: number) => setSelectedIds(prev => {
         const next = new Set(prev);
@@ -315,6 +320,8 @@ export default function SearchPage() {
                                             onChange={(e) => {
                                                 const newMode = e.target.value as T_Search_Mode;
                                                 setAdvancedFiltersTree(getEmptyTree(newMode));
+                                                setSelectedIds(new Set());
+                                                setBulkTags([]);
                                                 performSearch({
                                                     search_mode: newMode,
                                                     advanced_filters: null,
@@ -354,9 +361,24 @@ export default function SearchPage() {
                     </Stack>
                 </Box>
                 {/* Search shortcuts — always-visible, mode-specific quick controls */}
-                {SearchShortcuts && (
+                {(SearchShortcuts || SEARCH_MODE_TO_ENTITY[query.search_mode]) && (
                     <Box>
-                        <SearchShortcuts tree={advancedFiltersTree} onChange={onShortcutChange}/>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            {SearchShortcuts
+                                ? <SearchShortcuts tree={advancedFiltersTree} onChange={onShortcutChange}/>
+                                : <Box/>}
+                            {SEARCH_MODE_TO_ENTITY[query.search_mode] && (
+                                <Button
+                                    size="small"
+                                    variant={taggingMode ? 'contained' : 'outlined'}
+                                    startIcon={<LocalOfferIcon fontSize="small"/>}
+                                    onClick={toggleTaggingMode}
+                                    sx={{flexShrink: 0, ml: 2}}
+                                >
+                                    Tag Mode
+                                </Button>
+                            )}
+                        </Stack>
                     </Box>
                 )}
                 <Collapse in={showAdvancedFilters} timeout="auto" unmountOnExit>
@@ -411,7 +433,7 @@ export default function SearchPage() {
                             results={results}
                             tagsMap={tagsMap}
                             selectedIds={selectedIds}
-                            onToggleSelected={SEARCH_MODE_TO_ENTITY[query.search_mode] ? toggleSelected : undefined}
+                            onToggleSelected={taggingMode && SEARCH_MODE_TO_ENTITY[query.search_mode] ? toggleSelected : undefined}
                         />;
                     })()}
                 </Box>
@@ -434,7 +456,7 @@ export default function SearchPage() {
                 </Stack>
             </Stack>
         </div>
-        {selectedIds.size > 0 && SEARCH_MODE_TO_ENTITY[query.search_mode] && (
+        {taggingMode && SEARCH_MODE_TO_ENTITY[query.search_mode] && (
             <Paper
                 elevation={6}
                 sx={{
@@ -446,11 +468,11 @@ export default function SearchPage() {
             >
                 <Typography sx={{whiteSpace: 'nowrap'}}>{selectedIds.size} selected</Typography>
                 <Box sx={{flex: 1, minWidth: 0}}>
-                    <TagSelector selectedTags={bulkTags} onChange={setBulkTags}/>
+                    <TagSelector selectedTags={bulkTags} onChange={setBulkTags} entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}/>
                 </Box>
                 <Button
                     variant="contained"
-                    disabled={bulkTags.length === 0}
+                    disabled={bulkTags.length === 0 || selectedIds.size === 0}
                     onClick={async () => {
                         const entity = SEARCH_MODE_TO_ENTITY[query.search_mode]!;
                         await batchAnnotate(entity, [...selectedIds], bulkTags.map(t => ({id: t.id})));
@@ -462,7 +484,7 @@ export default function SearchPage() {
                     Add Tags
                 </Button>
                 <Button onClick={() => { setSelectedIds(new Set()); setBulkTags([]); }}>
-                    Clear
+                    Clear Selection
                 </Button>
             </Paper>
         )}

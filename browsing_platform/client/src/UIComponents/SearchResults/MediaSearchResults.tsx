@@ -30,7 +30,10 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellP
     const fullResSrc = fullRes ? anchor_local_static_files(fullRes) || undefined : undefined;
 
     return (
-        <Box sx={{position: 'relative'}}>
+        <Box
+            sx={{position: 'relative', cursor: onToggleSelected ? 'pointer' : undefined}}
+            onClick={onToggleSelected ? (e) => { e.preventDefault(); onToggleSelected(result.id); } : undefined}
+        >
             {onToggleSelected && <>
                 <Box sx={{
                     position: 'absolute', top: '12px', left: '12px', zIndex: 1,

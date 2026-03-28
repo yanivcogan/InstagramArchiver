@@ -13,9 +13,10 @@ interface IProps {
     onChange: (tags: ITagWithType[]) => void
     onChipClick?: (tag: ITagWithType) => void
     label?: string
+    entity?: string
 }
 
-export default function TagSelector({selectedTags, readOnly, onChange, onChipClick, label = 'Tags'}: IProps) {
+export default function TagSelector({selectedTags, readOnly, onChange, onChipClick, label = 'Tags', entity}: IProps) {
     const [inputValue, setInputValue] = useState('');
     const [fetchingOptions, setFetchingOptions] = useState(false);
     const [options, setOptions] = useState<ITagWithType[]>([]);
@@ -23,7 +24,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
 
     const fetchMatchingOptions = async (value: string) => {
         setFetchingOptions(true);
-        const matchingOptions = await lookupTags(value);
+        const matchingOptions = await lookupTags(value, entity);
         setOptions([...matchingOptions].sort(
             (a, b) => (a.tag_type_name ?? '').localeCompare(b.tag_type_name ?? '')
                 || a.name.localeCompare(b.name)

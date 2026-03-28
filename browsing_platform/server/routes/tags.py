@@ -18,7 +18,8 @@ async def lookup_tags(req: Request) -> Any:
     search_query = req.query_params.get("q", "")
     tag_type_id_raw = req.query_params.get("tag_type_id", None)
     tag_type_id = int(tag_type_id_raw) if tag_type_id_raw else None
-    return auto_complete_tags(search_query, tag_type_id)
+    entity = req.query_params.get("entity", None)
+    return auto_complete_tags(search_query, tag_type_id, entity)
 
 
 @router.get("/by-entities/", dependencies=[Depends(auth_user_access)])

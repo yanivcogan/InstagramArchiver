@@ -123,8 +123,10 @@ export const fetchArchivingSessionsMedia = async (mediaId: number, config: Entit
     return await server.get(`archiving_session/media/${mediaId}/?${transformConfigToQueryParams(config)}`);
 }
 
-export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {
-    return await server.get(`tags/?q=` + encodeURIComponent(tagQuery));
+export const lookupTags = async (tagQuery: string, entity?: string): Promise<ITagWithType[]> => {
+    const params = new URLSearchParams({q: tagQuery});
+    if (entity) params.append('entity', entity);
+    return await server.get(`tags/?${params}`);
 }
 
 export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, string>> = {

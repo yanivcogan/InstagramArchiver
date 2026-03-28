@@ -23,7 +23,11 @@ export default function PostSearchResults({results, tagsMap, selectedIds, onTogg
                 const tags = tagsMap?.[result.id] ?? [];
 
                 return (
-                    <Box key={idx} sx={{position: 'relative'}}>
+                    <Box
+                        key={idx}
+                        sx={{position: 'relative', cursor: onToggleSelected ? 'pointer' : undefined}}
+                        onClick={onToggleSelected ? (e) => { e.preventDefault(); onToggleSelected(result.id); } : undefined}
+                    >
                         {onToggleSelected && (
                             <Checkbox
                                 checked={selectedIds?.has(result.id) ?? false}
