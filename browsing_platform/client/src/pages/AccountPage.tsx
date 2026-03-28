@@ -138,7 +138,7 @@ export default function AccountPage() {
                     all: {hideInnerLinks},
                     account: {
                         annotator: disableAnnotator ? "disable" : "show",
-                        postsPageSize: showAllPosts ? null : 5,
+                        postsPageSize: showAllPosts ? null : 10,
                     },
                     post: {
                         annotator: "disable",

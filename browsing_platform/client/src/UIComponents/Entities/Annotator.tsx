@@ -31,12 +31,18 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     const [quickAccessTags, setQuickAccessTags] = useState<ITagWithType[]>([]);
 
     useEffect(() => {
-        fetchQuickAccessTags().then(setQuickAccessTags).catch(() => {});
-    }, []);
+        if (!readonly) {
+            fetchQuickAccessTags().then(setQuickAccessTags).catch(() => {
+            });
+        }
+    }, [readonly]);
 
     const saveToServer = async (newTags: ITagWithType[]) => {
         try {
-            await saveAnnotationsToServer({...entity, tags: newTags} as IAnnotatableEntity, entityType as AnnotatableEntityType);
+            await saveAnnotationsToServer({
+                ...entity,
+                tags: newTags
+            } as IAnnotatableEntity, entityType as AnnotatableEntityType);
             if (onSave) onSave();
         } catch {
             toast.error("Failed to save annotations.");
@@ -64,18 +70,21 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
         return <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="baseline">
             <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>Tags:</Typography>
             {tags.map((tag, index) => (
-                <Typography key={index} component="span" variant="caption" sx={{
-                    padding: '0.1em 0.4em',
-                    backgroundColor: '#e0e0e0',
-                    borderRadius: '4px',
-                }}>
-                    {tag.tag_type_name ? `${tag.tag_type_name} / ` : ""}{tag.name}
-                    {tag.assignment_notes && (
-                        <Typography component="span" variant="caption" sx={{ml: 0.5, color: 'text.secondary', fontStyle: 'italic'}}>
-                            ({tag.assignment_notes})
-                        </Typography>
-                    )}
-                </Typography>
+                <Tooltip title={tag.tag_type_name} arrow disableInteractive>
+                    <Typography key={index} component="span" variant="caption" sx={{
+                        padding: '0.1em 0.4em',
+                        backgroundColor: '#e0e0e0',
+                        borderRadius: '4px',
+                    }}>
+                        {tag.name}
+                        {tag.assignment_notes && (
+                            <Typography component="span" variant="caption"
+                                        sx={{ml: 0.5, color: 'text.secondary', fontStyle: 'italic'}}>
+                                ({tag.assignment_notes})
+                            </Typography>
+                        )}
+                    </Typography>
+                </Tooltip>
             ))}
         </Stack>;
     }
@@ -89,7 +98,9 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
         />
         <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
             {quickAccessTags.map(qTag => (
-                <Tooltip key={qTag.id} title={`Quick-add: ${qTag.tag_type_name ? `${qTag.tag_type_name} / ` : ""}${qTag.name}`} disableInteractive>
+                <Tooltip key={qTag.id}
+                         title={`Quick-add: ${qTag.tag_type_name ? `${qTag.tag_type_name} / ` : ""}${qTag.name}`}
+                         disableInteractive>
                     <Button
                         variant="outlined"
                         size="small"
@@ -146,7 +157,10 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
                 </Button>
                 <Button onClick={() => {
                     if (noteModalTag) {
-                        const updated = tags.map(t => t.id === noteModalTag.id ? {...t, assignment_notes: noteModalTag.assignment_notes ?? ""} : t);
+                        const updated = tags.map(t => t.id === noteModalTag.id ? {
+                            ...t,
+                            assignment_notes: noteModalTag.assignment_notes ?? ""
+                        } : t);
                         setTags(updated);
                         saveToServer(updated);
                     }

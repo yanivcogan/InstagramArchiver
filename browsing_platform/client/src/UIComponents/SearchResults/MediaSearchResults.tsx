@@ -31,17 +31,27 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellP
 
     return (
         <Box sx={{position: 'relative'}}>
-            {onToggleSelected && (
+            {onToggleSelected && <>
+                <Box sx={{
+                    position: 'absolute', top: '12px', left: '12px', zIndex: 1,
+                    width: '12px', height: '12px', borderRadius: '2px',
+                    backgroundColor: 'rgba(0,0,0,0.55)', pointerEvents: 'none',
+                }} />
                 <Checkbox
                     checked={selected}
-                    onClick={e => { e.preventDefault(); e.stopPropagation(); onToggleSelected(result.id); }}
+                    onClick={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onToggleSelected(result.id);
+                    }}
                     sx={{
                         position: 'absolute', top: 4, left: 4, zIndex: 2,
-                        color: 'white', '&.Mui-checked': {color: 'white'}, p: 0.5,
+                        color: 'white', p: 0.5,
+                        '&.Mui-checked': {color: 'white'},
                     }}
                     size="small"
                 />
-            )}
+            </>}
             <a href={`/${result.page}/${result.id}`} style={{textDecoration: 'none'}}>
                 <Box
                     sx={{

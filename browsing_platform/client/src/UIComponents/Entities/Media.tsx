@@ -1,4 +1,5 @@
 import React, {useState} from 'react';
+import {useLocation, useNavigate} from "react-router";
 import {IMediaAndAssociatedEntities,} from "../../types/entities";
 import {Box, Button, CircularProgress, Fade, IconButton, Stack, Typography} from "@mui/material";
 import SelfContainedPopover from "../SelfContainedComponents/selfContainedPopover";
@@ -40,16 +41,22 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
         setMedia(curr => ({...curr, media_parts}));
     };
 
+    const navigate = useNavigate();
+    const location = useLocation();
+    const onMediaPage = location.pathname.startsWith('/media/');
+
     const localUrl = anchor_local_static_files(media.local_url) || undefined;
     const shareToken = getShareTokenFromHref();
 
     return <div>
         <Box
-            sx={{cursor: "pointer", position: "relative"}}
+            sx={{cursor: onMediaPage ? "default" : "pointer", position: "relative"}}
             onMouseEnter={() => setExpandDetails(true)}
             onMouseLeave={() => setExpandDetails(false)}
-            onDoubleClick={()=>{
-
+            onDoubleClick={() => {
+                if (!onMediaPage && media.id !== undefined) {
+                    navigate(`/media/${media.id}${shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : ''}`);
+                }
             }}
         >
             {

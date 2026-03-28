@@ -1,10 +1,9 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {IComment, IPostAndAssociatedEntities, IPostLike} from "../../types/entities";
-import {Button, CircularProgress, Collapse, IconButton, Paper, Stack, Typography} from "@mui/material";
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import {Link, Paper, Stack, Tooltip, Typography} from "@mui/material";
+import LazyCollapsible from "../LazyCollapsible";
 import Media from "./Media";
 import ReactJson from "react-json-view";
-import LinkIcon from "@mui/icons-material/Link";
 import {fetchPostComments, fetchPostData, fetchPostLikes} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
@@ -16,6 +15,7 @@ import Comment from "./Comment";
 import PostLike from "./PostLike";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
+import {useLocation} from "react-router";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -36,7 +36,6 @@ interface IProps {
 
 export default function Post({post: postProp, viewerConfig, highlightCommentId, highlightLikeId}: IProps) {
     const [post, setPost] = useState(postProp);
-    const [expandDetails, setExpandDetails] = useState(false);
     const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
 
     const preloadedComments = postProp.post_comments.length > 0 ? postProp.post_comments : null;
@@ -60,14 +59,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
         setAwaitingDetailsFetch(false);
     };
 
-    const toggleDetails = async () => {
-        const next = !expandDetails;
-        setExpandDetails(next);
-        if (next && (post.data === undefined || post.data === null)) {
-            await fetchPostDetails();
-        }
-    };
-
     const loadComments = useCallback(async () => {
         if (loadingComments || commentsLoaded || post.id == null) return;
         setLoadingComments(true);
@@ -86,12 +77,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
         setLoadingLikes(false);
     }, [loadingLikes, likesLoaded, post.id]);
 
-    // Auto-load on mount when a highlight target is specified
-    useEffect(() => {
-        if (highlightCommentId && !commentsLoaded) loadComments();
-        if (highlightLikeId && !likesLoaded) loadLikes();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
     // Scroll to highlighted comment after load
     useEffect(() => {
         if (highlightCommentId && commentsLoaded) {
@@ -108,28 +93,37 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
         }
     }, [likesLoaded, highlightLikeId]);
 
+    const location = useLocation();
+
     const dateRaw = post.publication_date;
     const date = dayjs.utc(dateRaw);
     const dateInUTC = date.utc().format('YYYY-MM-DD HH:mm:ss');
     const dateInGaza = date.tz('Asia/Jerusalem').format('YYYY-MM-DD HH:mm:ss');
     const shareToken = getShareTokenFromHref();
+    const postHref = "/post/" + post.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '');
+    const disablePostLink = viewerConfig?.all?.hideInnerLinks;
 
     const taggedAccounts = post.post_tagged_accounts || [];
     const showTaggedAccounts = viewerConfig?.taggedAccount?.display !== 'hide' && taggedAccounts.length > 0;
 
-    return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%'}}>
+    return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%', backgroundColor: '#e8f0ff'}}>
         <Stack gap={0.5}>
             <Stack gap={1} direction={"row"} alignItems={"center"}>
-                <Typography variant={"body1"} sx={{userSelect: "all"}}>{post.url}</Typography>
-                {
-                    viewerConfig?.all?.hideInnerLinks ? null : <IconButton
-                        color={"primary"}
-                        href={"/post/" + post.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '')}
-                    >
-                        <LinkIcon/>
-                    </IconButton>
-                }
+                <Typography variant={"subtitle2"} sx={{userSelect: "all"}} color={"textSecondary"}>{post.url}</Typography>
             </Stack>
+            <Tooltip
+                title={
+                    <Typography variant="caption">{dateInGaza} (in Gaza)</Typography>
+                }
+                arrow
+            >
+                {disablePostLink
+                    ? <Typography variant="caption" sx={{alignSelf: 'flex-start'}}>{dateInUTC} (UTC+0)</Typography>
+                    : <Link color={"primary"} href={postHref} sx={{alignSelf: 'flex-start'}}>
+                        <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
+                    </Link>
+                }
+            </Tooltip>
             {
                 viewerConfig?.post?.annotator !== "hide" ?
                     <EntityAnnotator
@@ -139,8 +133,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                     /> :
                     null
             }
-            <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
-            <Typography variant="caption">{dateInGaza} (in Gaza)</Typography>
             {post.caption ? <Typography variant="body2">{post.caption}</Typography> : null}
 
             {showTaggedAccounts && (
@@ -149,99 +141,56 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                 </Stack>
             )}
 
-            <span>
-                <IconButton size="small" color={"primary"} onClick={toggleDetails}>
-                    <MoreHorizIcon/>
-                </IconButton>
-            </span>
-            <Collapse in={expandDetails}>
-                {
-                    awaitingDetailsFetch ?
-                        <CircularProgress size={20}/> :
-                        post.data ?
-                            <ReactJson
-                                src={post.data}
-                                enableClipboard={false}
-                                style={{wordBreak: 'break-word'}}
-                            /> :
-                            null
-                }
-            </Collapse>
             <Stack direction={"row"} useFlexGap={true} gap={1} flexWrap={"wrap"}>
                 {post.post_media.map((m, m_i) => <Media media={m} viewerConfig={viewerConfig} key={m_i}/>)}
             </Stack>
 
             {/* Comments */}
-            {commentsLoaded && comments && comments.length > 0 && (
-                <Stack gap={0.5} sx={{mt: 0.5}}>
-                    <Typography variant="caption" color="text.secondary">
-                        Comments ({comments.length})
-                    </Typography>
-                    {comments.map((c, i) => (
-                        <div
-                            key={i}
-                            ref={c.id != null ? el => {
-                                if (el) commentRefs.current.set(c.id!, el);
-                            } : undefined}
-                            style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
-                        >
-                            <Comment comment={c} postId={post.id} shareToken={shareToken}/>
-                        </div>
-                    ))}
-                </Stack>
-            )}
-            {commentsLoaded && (!comments || comments.length === 0) && (
-                <Typography variant="caption" color="text.secondary">No comments</Typography>
-            )}
-            {!commentsLoaded && post.id != null && (
-                <span>
-                    <Button
-                        size="small"
-                        variant="text"
-                        onClick={loadComments}
-                        disabled={loadingComments}
-                        startIcon={loadingComments ? <CircularProgress size={14}/> : undefined}
-                    >
-                        Load Comments
-                    </Button>
-                </span>
+            {post.id != null && (
+                <LazyCollapsible label="Comments" onLoad={loadComments} loading={loadingComments} defaultExpanded={!!highlightCommentId}>
+                    <Stack gap={0.5} sx={{mt: 0.5}}>
+                        {commentsLoaded && comments && comments.length > 0 && comments.map((c, i) => (
+                            <div
+                                key={i}
+                                ref={c.id != null ? el => { if (el) commentRefs.current.set(c.id!, el); } : undefined}
+                                style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
+                            >
+                                <Comment comment={c} postId={post.id} shareToken={shareToken}/>
+                            </div>
+                        ))}
+                        {commentsLoaded && (!comments || comments.length === 0) && (
+                            <Typography variant="caption" color="text.secondary">No comments</Typography>
+                        )}
+                    </Stack>
+                </LazyCollapsible>
             )}
 
             {/* Likes */}
-            {likesLoaded && likes && likes.length > 0 && (
-                <Stack gap={0.5} sx={{mt: 0.5}}>
-                    <Typography variant="caption" color="text.secondary">
-                        Likes ({likes.length})
-                    </Typography>
-                    {likes.map((l, i) => (
-                        <div
-                            key={i}
-                            ref={l.id != null ? el => {
-                                if (el) likeRefs.current.set(l.id!, el);
-                            } : undefined}
-                            style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
-                        >
-                            <PostLike like={l} postId={post.id} shareToken={shareToken}/>
-                        </div>
-                    ))}
-                </Stack>
+            {post.id != null && (
+                <LazyCollapsible label="Likes" onLoad={loadLikes} loading={loadingLikes} defaultExpanded={!!highlightLikeId}>
+                    <Stack gap={0.5} sx={{mt: 0.5}}>
+                        {likesLoaded && likes && likes.length > 0 && likes.map((l, i) => (
+                            <div
+                                key={i}
+                                ref={l.id != null ? el => { if (el) likeRefs.current.set(l.id!, el); } : undefined}
+                                style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
+                            >
+                                <PostLike like={l} postId={post.id} shareToken={shareToken}/>
+                            </div>
+                        ))}
+                        {likesLoaded && (!likes || likes.length === 0) && (
+                            <Typography variant="caption" color="text.secondary">No likes</Typography>
+                        )}
+                    </Stack>
+                </LazyCollapsible>
             )}
-            {likesLoaded && (!likes || likes.length === 0) && (
-                <Typography variant="caption" color="text.secondary">No likes</Typography>
-            )}
-            {!likesLoaded && post.id != null && (
-                <span>
-                    <Button
-                        size="small"
-                        variant="text"
-                        onClick={loadLikes}
-                        disabled={loadingLikes}
-                        startIcon={loadingLikes ? <CircularProgress size={14}/> : undefined}
-                    >
-                        Load Likes
-                    </Button>
-                </span>
-            )}
+
+            {/* Raw data section */}
+            <LazyCollapsible label="Raw Data" onLoad={fetchPostDetails} loading={awaitingDetailsFetch}>
+                {post.data && (
+                    <ReactJson src={post.data} enableClipboard={false} style={{wordBreak: 'break-word'}}/>
+                )}
+            </LazyCollapsible>
         </Stack>
     </Paper>
 }

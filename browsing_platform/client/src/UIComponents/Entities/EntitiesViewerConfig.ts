@@ -56,7 +56,7 @@ export class EntityViewerConfig implements IEntityViewerConfig {
     account = {
         display: "display" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
-        postsPageSize: 10
+        postsPageSize: null
     };
     post = {
         display: "display" as IEntityDisplayOption,
