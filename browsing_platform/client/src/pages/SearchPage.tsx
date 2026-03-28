@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate, useSearchParams} from "react-router";
 import {
+    Autocomplete,
     Box,
     Button,
     CircularProgress,
@@ -24,6 +25,8 @@ import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import HistoryIcon from '@mui/icons-material/History';
+import CloseIcon from '@mui/icons-material/Close';
 import {
     ADVANCED_FILTERS_CONFIG,
     batchAnnotate,
@@ -51,6 +54,7 @@ import {
 import '@react-awesome-query-builder/mui/css/styles.css';
 import rison from "rison";
 import {removeUndefinedValues} from "../services/utils";
+import {useSearchHistory} from "../lib/useSearchHistory";
 
 const InitialConfig = MuiConfig;
 
@@ -139,6 +143,8 @@ export default function SearchPage() {
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [bulkTags, setBulkTags] = useState<ITagWithType[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const isDropdownOpen = useRef(false);
+    const {addSearch, removeSearch, getSuggestions} = useSearchHistory();
 
     useEffect(() => {
         document.title = `Search | Browsing Platform`;
@@ -223,7 +229,10 @@ export default function SearchPage() {
     };
 
     const toggleTaggingMode = () => setTaggingMode(prev => {
-        if (prev) { setSelectedIds(new Set()); setBulkTags([]); }
+        if (prev) {
+            setSelectedIds(new Set());
+            setBulkTags([]);
+        }
         return !prev;
     });
 
@@ -284,68 +293,119 @@ export default function SearchPage() {
                 {/* Search Bar */}
                 <Box sx={{mb: 2}}>
                     <Stack direction="row" spacing={2}>
-                        <OutlinedInput
-                            value={typedSearchTerm || ""}
-                            onChange={e => setTypedSearchTerm(e.target.value)}
-                            onKeyDown={async e => {
-                                if (e.key === 'Enter') {
-                                    performSearch();
+                        <Autocomplete
+                            freeSolo
+                            disableClearable
+                            options={getSuggestions(query.search_mode, typedSearchTerm)}
+                            inputValue={typedSearchTerm}
+                            onInputChange={(_, value, reason) => {
+                                if (reason !== 'reset') setTypedSearchTerm(value);
+                            }}
+                            onChange={(_, value) => {
+                                if (typeof value === 'string' && value) {
+                                    addSearch(query.search_mode, value);
+                                    performSearch({search_term: value});
                                 }
                             }}
-                            placeholder="Search..."
-                            sx={{
-                                flex: 1,
-                                width: '100%',
-                                '& .MuiOutlinedInput-input': {
-                                    width: 'calc(100% - 200px)',
-                                }
-                            }}
-                            size="small"
-                            endAdornment={
-                                <Stack direction="row" gap={2} alignItems="center">
-                                    <Tooltip title={"Boolean Search Syntax Explainer"} arrow disableInteractive>
-                                        <Fab
-                                            color={"info"}
-                                            href={"https://dev.mysql.com/doc/refman/8.4/en/fulltext-boolean.html"}
-                                            size={"small"}
-                                            target={"_blank"}
-                                            sx={{width: 24, height: 24, minHeight: 24}}
+                            onOpen={() => { isDropdownOpen.current = true; }}
+                            onClose={() => { isDropdownOpen.current = false; }}
+                            filterOptions={x => x}
+                            renderOption={(props, option) => (
+                                <Box component="li" {...props}
+                                     sx={{display: 'flex', alignItems: 'center', gap: 1, pr: 0.5}}>
+                                    <Box sx={{
+                                        flex: 1,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        {option}
+                                    </Box>
+                                    <HistoryIcon fontSize="small" sx={{color: 'text.disabled', flexShrink: 0}}/>
+                                    <Tooltip title={"Remove from Search History"} arrow disableInteractive>
+                                        <IconButton
+                                            size="small"
+                                            onClick={e => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                removeSearch(query.search_mode, option);
+                                            }}
+                                            sx={{flexShrink: 0, p: 0.25}}
                                         >
-                                            <QuestionMarkIcon fontSize="small" sx={{fontSize: "1em"}}/>
-                                        </Fab>
+                                            <CloseIcon sx={{fontSize: '0.9rem'}}/>
+                                        </IconButton>
                                     </Tooltip>
-                                    <FormControl variant="standard" sx={{width: "200px"}}>
-                                        <Select
-                                            value={query.search_mode}
-                                            onChange={(e) => {
-                                                const newMode = e.target.value as T_Search_Mode;
-                                                setAdvancedFiltersTree(getEmptyTree(newMode));
-                                                setSelectedIds(new Set());
-                                                setBulkTags([]);
-                                                performSearch({
-                                                    search_mode: newMode,
-                                                    advanced_filters: null,
-                                                    page_size: defaultPageSize(newMode),
-                                                });
-                                            }}
-                                            sx={{
-                                                width: "100%",
-                                                '& .MuiSelect-select': {paddingLeft: '8px'},
-                                                '::before': {borderBottom: 'none !important'}
-                                            }}
-                                        >
-                                            {SEARCH_MODES.map((mode) => (
-                                                <MenuItem key={mode.key} value={mode.key}>
-                                                    {mode.label}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                </Stack>
-                            }
+                                </Box>
+                            )}
+                            sx={{flex: 1}}
+                            renderInput={(params) => (
+                                <OutlinedInput
+                                    {...params.InputProps}
+                                    inputProps={params.inputProps}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && !isDropdownOpen.current) {
+                                            if (typedSearchTerm) addSearch(query.search_mode, typedSearchTerm);
+                                            performSearch();
+                                        }
+                                    }}
+                                    placeholder="Search..."
+                                    sx={{
+                                        width: '100%',
+                                        '& .MuiOutlinedInput-input': {
+                                            width: 'calc(100% - 200px)',
+                                        }
+                                    }}
+                                    size="small"
+                                    endAdornment={
+                                        <Stack direction="row" gap={2} alignItems="center">
+                                            <Tooltip title={"Boolean Search Syntax Explainer"} arrow disableInteractive>
+                                                <Fab
+                                                    color={"info"}
+                                                    href={"https://dev.mysql.com/doc/refman/8.4/en/fulltext-boolean.html"}
+                                                    size={"small"}
+                                                    target={"_blank"}
+                                                    sx={{width: 24, height: 24, minHeight: 24}}
+                                                >
+                                                    <QuestionMarkIcon fontSize="small" sx={{fontSize: "1em"}}/>
+                                                </Fab>
+                                            </Tooltip>
+                                            <FormControl variant="standard" sx={{width: "200px"}}>
+                                                <Select
+                                                    value={query.search_mode}
+                                                    onChange={(e) => {
+                                                        const newMode = e.target.value as T_Search_Mode;
+                                                        setAdvancedFiltersTree(getEmptyTree(newMode));
+                                                        setSelectedIds(new Set());
+                                                        setBulkTags([]);
+                                                        performSearch({
+                                                            search_mode: newMode,
+                                                            advanced_filters: null,
+                                                            page_size: defaultPageSize(newMode),
+                                                        });
+                                                    }}
+                                                    sx={{
+                                                        width: "100%",
+                                                        '& .MuiSelect-select': {paddingLeft: '8px'},
+                                                        '::before': {borderBottom: 'none !important'}
+                                                    }}
+                                                >
+                                                    {SEARCH_MODES.map((mode) => (
+                                                        <MenuItem key={mode.key} value={mode.key}>
+                                                            {mode.label}
+                                                        </MenuItem>
+                                                    ))}
+                                                </Select>
+                                            </FormControl>
+                                        </Stack>
+                                    }
+                                />
+                            )}
                         />
                         <Tooltip title="Search" arrow disableInteractive>
-                            <IconButton color="primary" sx={{padding: '8px'}} onClick={() => performSearch()}>
+                            <IconButton color="primary" sx={{padding: '8px'}} onClick={() => {
+                                addSearch(query.search_mode, typedSearchTerm);
+                                performSearch();
+                            }}>
                                 <SearchIcon/>
                             </IconButton>
                         </Tooltip>
@@ -468,7 +528,8 @@ export default function SearchPage() {
             >
                 <Typography sx={{whiteSpace: 'nowrap'}}>{selectedIds.size} selected</Typography>
                 <Box sx={{flex: 1, minWidth: 0}}>
-                    <TagSelector selectedTags={bulkTags} onChange={setBulkTags} entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}/>
+                    <TagSelector selectedTags={bulkTags} onChange={setBulkTags}
+                                 entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}/>
                 </Box>
                 <Button
                     variant="contained"
@@ -483,7 +544,10 @@ export default function SearchPage() {
                 >
                     Add Tags
                 </Button>
-                <Button onClick={() => { setSelectedIds(new Set()); setBulkTags([]); }}>
+                <Button onClick={() => {
+                    setSelectedIds(new Set());
+                    setBulkTags([]);
+                }}>
                     Clear Selection
                 </Button>
             </Paper>
