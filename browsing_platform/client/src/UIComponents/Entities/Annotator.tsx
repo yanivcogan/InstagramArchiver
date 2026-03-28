@@ -60,29 +60,23 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     };
 
     if (readonly) {
-        return <Stack gap={1}>
-            <Typography variant={"h6"}>Tags</Typography>
-            {tags.length === 0
-                ? <Typography variant={"body2"}>-</Typography>
-                : <Stack gap={1}>
-                    {tags.map((tag, index) => (
-                        <Stack key={index} gap={0.5}>
-                            <Typography variant={"body2"} sx={{
-                                display: 'inline-block',
-                                padding: '0.2em 0.5em',
-                                backgroundColor: '#e0e0e0',
-                                borderRadius: '4px',
-                                width: 'fit-content',
-                            }}>{tag.tag_type_name ? `${tag.tag_type_name} / ` : ""}{tag.name}</Typography>
-                            {tag.assignment_notes && (
-                                <Typography variant={"caption"} sx={{pl: 1, color: 'text.secondary'}}>
-                                    {tag.assignment_notes}
-                                </Typography>
-                            )}
-                        </Stack>
-                    ))}
-                </Stack>
-            }
+        if (tags.length === 0) return null;
+        return <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="baseline">
+            <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>Tags:</Typography>
+            {tags.map((tag, index) => (
+                <Typography key={index} component="span" variant="caption" sx={{
+                    padding: '0.1em 0.4em',
+                    backgroundColor: '#e0e0e0',
+                    borderRadius: '4px',
+                }}>
+                    {tag.tag_type_name ? `${tag.tag_type_name} / ` : ""}{tag.name}
+                    {tag.assignment_notes && (
+                        <Typography component="span" variant="caption" sx={{ml: 0.5, color: 'text.secondary', fontStyle: 'italic'}}>
+                            ({tag.assignment_notes})
+                        </Typography>
+                    )}
+                </Typography>
+            ))}
         </Stack>;
     }
 
@@ -91,6 +85,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             selectedTags={tags}
             onChange={handleTagsChange}
             onChipClick={tag => setNoteModalTag({...tag})}
+            label={`Tags on ${entityType} ${entity.id}`}
         />
         <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
             {quickAccessTags.map(qTag => (

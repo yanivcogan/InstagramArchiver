@@ -12,9 +12,10 @@ interface IProps {
     readOnly?: boolean
     onChange: (tags: ITagWithType[]) => void
     onChipClick?: (tag: ITagWithType) => void
+    label?: string
 }
 
-export default function TagSelector({selectedTags, readOnly, onChange, onChipClick}: IProps) {
+export default function TagSelector({selectedTags, readOnly, onChange, onChipClick, label = 'Tags'}: IProps) {
     const [inputValue, setInputValue] = useState('');
     const [fetchingOptions, setFetchingOptions] = useState(false);
     const [options, setOptions] = useState<ITagWithType[]>([]);
@@ -78,7 +79,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
         renderInput={(params) => (
             <TextField {...params} variant="filled" label={
                 <Stack direction={"row"} alignItems={"center"} gap={1}>
-                    <Typography>Tags</Typography>
+                    <Typography>{label}</Typography>
                 </Stack>
             }/>
         )}
