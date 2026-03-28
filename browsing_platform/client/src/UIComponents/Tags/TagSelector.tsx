@@ -13,11 +13,10 @@ interface IProps {
     onChange: (tags: ITagWithType[]) => void
 }
 
-export default function TagSelector({selectedTags: initialTags, readOnly, onChange}: IProps) {
+export default function TagSelector({selectedTags, readOnly, onChange}: IProps) {
     const [inputValue, setInputValue] = useState('');
     const [fetchingOptions, setFetchingOptions] = useState(false);
     const [options, setOptions] = useState<ITagWithType[]>([]);
-    const [selectedTags, setSelectedTags] = useState(initialTags);
 
     const fetchMatchingOptions = async (value: string) => {
         setFetchingOptions(true);
@@ -32,7 +31,6 @@ export default function TagSelector({selectedTags: initialTags, readOnly, onChan
     return <Autocomplete
         value={selectedTags}
         onChange={(_, newValue) => {
-            setSelectedTags(newValue);
             onChange(newValue);
         }}
         disabled={readOnly === true}
