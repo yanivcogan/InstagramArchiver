@@ -1,10 +1,11 @@
-from typing import Any, Literal, TypeAlias
+from typing import Any, List, Literal, TypeAlias
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.account import get_account_by_id, annotate_account
-from browsing_platform.server.services.annotation import Annotation
+from browsing_platform.server.services.annotation import Annotation, TagWithNotes, add_tags_batch
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, get_enriched_post_by_id, \
     get_enriched_media_by_id
 from browsing_platform.server.services.media import get_media_by_id, annotate_media
@@ -22,6 +23,17 @@ router = APIRouter(
 
 EntityType: TypeAlias = Literal["account", "post", "media", "media_part"]
 
+
+class BatchAnnotationBody(BaseModel):
+    entity_type: Literal["account", "post", "media"]
+    entity_ids: List[int]
+    tags: List[TagWithNotes]
+
+
+@router.post("/batch", dependencies=[Depends(auth_user_access)])
+async def annotate_batch(body: BatchAnnotationBody) -> bool:
+    add_tags_batch(body.entity_type, body.entity_ids, body.tags)
+    return True
 
 
 @router.post("/{entity:str}/{item_id:int}", dependencies=[Depends(auth_user_access)])

@@ -1,14 +1,19 @@
 import React, {useState} from 'react';
-import {Box, Fade, Typography} from '@mui/material';
+import {Box, Checkbox, Chip, Fade, Stack, Typography} from '@mui/material';
 import dayjs from 'dayjs';
 import {SearchResult} from '../../services/DataFetcher';
+import {ITagWithType} from '../../types/tags';
 import {anchor_local_static_files} from '../../services/server';
+import {SearchResultsProps} from './index';
 
 interface CellProps {
     result: SearchResult;
+    tags: ITagWithType[];
+    selected: boolean;
+    onToggleSelected?: (id: number) => void;
 }
 
-function MediaSearchResultCell({result}: CellProps) {
+function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellProps) {
     const [hovered, setHovered] = useState(false);
     const thumbnail = result.thumbnails?.[0];
     const fullRes = result.thumbnails?.[1];
@@ -25,85 +30,111 @@ function MediaSearchResultCell({result}: CellProps) {
     const fullResSrc = fullRes ? anchor_local_static_files(fullRes) || undefined : undefined;
 
     return (
-        <a href={`/${result.page}/${result.id}`} style={{textDecoration: 'none'}}>
-            <Box
-                sx={{
-                    position: 'relative',
-                    aspectRatio: '1',
-                    backgroundColor: '#111',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                }}
-                onMouseEnter={() => setHovered(true)}
-                onMouseLeave={() => setHovered(false)}
-            >
-                {thumbnail && (
-                    <img
-                        src={anchor_local_static_files(thumbnail) || undefined}
-                        alt=""
-                        style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}
-                    />
-                )}
-                {hovered && fullResSrc && (
-                    isVideo ? (
-                        <video
-                            src={fullResSrc}
-                            autoPlay
-                            muted
-                            loop
-                            playsInline
-                            style={{
-                                position: 'absolute', inset: 0,
-                                width: '100%', height: '100%', objectFit: 'cover',
-                            }}
-                        />
-                    ) : (
+        <Box sx={{position: 'relative'}}>
+            {onToggleSelected && (
+                <Checkbox
+                    checked={selected}
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); onToggleSelected(result.id); }}
+                    sx={{
+                        position: 'absolute', top: 4, left: 4, zIndex: 2,
+                        color: 'white', '&.Mui-checked': {color: 'white'}, p: 0.5,
+                    }}
+                    size="small"
+                />
+            )}
+            <a href={`/${result.page}/${result.id}`} style={{textDecoration: 'none'}}>
+                <Box
+                    sx={{
+                        position: 'relative',
+                        aspectRatio: '1',
+                        backgroundColor: '#111',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                    }}
+                    onMouseEnter={() => setHovered(true)}
+                    onMouseLeave={() => setHovered(false)}
+                >
+                    {thumbnail && (
                         <img
-                            src={fullResSrc}
+                            src={anchor_local_static_files(thumbnail) || undefined}
                             alt=""
-                            style={{
-                                position: 'absolute', inset: 0,
-                                width: '100%', height: '100%', objectFit: 'cover',
-                            }}
+                            style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}
                         />
-                    )
-                )}
-                <Fade in={hovered} timeout={300}>
-                    <Box
-                        sx={{
-                            position: 'absolute',
-                            bottom: 0,
-                            left: 0,
-                            width: '100%',
-                            boxSizing: 'border-box',
-                            backgroundColor: 'rgba(0,0,0,0.7)',
-                            color: '#fff',
-                            p: 1,
-                            zIndex: 1,
-                        }}
-                    >
-                        {accountName && (
-                            <Typography variant="caption" display="block" noWrap>
-                                {accountName}
-                            </Typography>
-                        )}
-                        {pubDate && (
-                            <Typography variant="caption" display="block" noWrap>
-                                {pubDate}
-                            </Typography>
-                        )}
-                    </Box>
-                </Fade>
-            </Box>
-        </a>
+                    )}
+                    {hovered && fullResSrc && (
+                        isVideo ? (
+                            <video
+                                src={fullResSrc}
+                                autoPlay
+                                muted
+                                loop
+                                playsInline
+                                style={{
+                                    position: 'absolute', inset: 0,
+                                    width: '100%', height: '100%', objectFit: 'cover',
+                                }}
+                            />
+                        ) : (
+                            <img
+                                src={fullResSrc}
+                                alt=""
+                                style={{
+                                    position: 'absolute', inset: 0,
+                                    width: '100%', height: '100%', objectFit: 'cover',
+                                }}
+                            />
+                        )
+                    )}
+                    <Fade in={hovered} timeout={300}>
+                        <Box
+                            sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: 0,
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                backgroundColor: 'rgba(0,0,0,0.7)',
+                                color: '#fff',
+                                p: 1,
+                                zIndex: 1,
+                            }}
+                        >
+                            {accountName && (
+                                <Typography variant="caption" display="block" noWrap>
+                                    {accountName}
+                                </Typography>
+                            )}
+                            {pubDate && (
+                                <Typography variant="caption" display="block" noWrap>
+                                    {pubDate}
+                                </Typography>
+                            )}
+                            {tags.length > 0 && (
+                                <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{mt: 0.5}}>
+                                    {tags.map(t => (
+                                        <Chip
+                                            key={t.id}
+                                            label={t.name}
+                                            size="small"
+                                            variant="outlined"
+                                            sx={{
+                                                fontSize: '0.65rem', height: 18, color: '#fff',
+                                                borderColor: 'rgba(255,255,255,0.5)',
+                                                '& .MuiChip-label': {px: 0.75},
+                                            }}
+                                        />
+                                    ))}
+                                </Stack>
+                            )}
+                        </Box>
+                    </Fade>
+                </Box>
+            </a>
+        </Box>
     );
 }
 
-interface Props {
-    results: SearchResult[];
-}
-
-export default function MediaSearchResults({results}: Props) {
+export default function MediaSearchResults({results, tagsMap, selectedIds, onToggleSelected}: SearchResultsProps) {
     if (results.length === 0) {
         return <Box>No results found.</Box>;
     }
@@ -116,7 +147,13 @@ export default function MediaSearchResults({results}: Props) {
             }}
         >
             {results.map((result, idx) => (
-                <MediaSearchResultCell key={idx} result={result}/>
+                <MediaSearchResultCell
+                    key={idx}
+                    result={result}
+                    tags={tagsMap?.[result.id] ?? []}
+                    selected={selectedIds?.has(result.id) ?? false}
+                    onToggleSelected={onToggleSelected}
+                />
             ))}
         </Box>
     );

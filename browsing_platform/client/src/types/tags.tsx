@@ -23,6 +23,11 @@ export interface ITagType {
     entity_affinity?: string[] | null;
 }
 
+export interface ITagParent {
+    id: number;
+    name: string;
+}
+
 export interface ITagDetail {
     id?: number;
     name: string;
@@ -30,6 +35,7 @@ export interface ITagDetail {
     tag_type_id?: number | null;
     tag_type_name?: string | null;
     quick_access?: boolean;
+    parents?: ITagParent[];
 }
 
 export interface ITagHierarchyEntry {

@@ -58,3 +58,10 @@ export const addHierarchy = async (body: ITagHierarchyEntry): Promise<ITagHierar
 
 export const removeHierarchy = async (super_tag_id: number, sub_tag_id: number): Promise<void> =>
     server.post(`${BASE}/hierarchy/`, {super_tag_id, sub_tag_id}, HTTP_METHODS.delete);
+
+export const updateHierarchyNotes = async (
+    super_tag_id: number,
+    sub_tag_id: number,
+    notes: string | null
+): Promise<void> =>
+    server.post(`${BASE}/hierarchy/`, {super_tag_id, sub_tag_id, notes}, HTTP_METHODS.patch);

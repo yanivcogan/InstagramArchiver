@@ -33,9 +33,14 @@ class ITagWithType(ITag):
 
 
 
-def auto_complete_tags(query: str) -> list[ITagWithType]:
+def auto_complete_tags(query: str, tag_type_id: Optional[int] = None) -> list[ITagWithType]:
+    args: dict = {"query": f"%{query}%"}
+    where = "WHERE tag.name LIKE %(query)s"
+    if tag_type_id is not None:
+        where += " AND tag.tag_type_id = %(tag_type_id)s"
+        args["tag_type_id"] = tag_type_id
     matching_rows = db.execute_query(
-        """SELECT
+        f"""SELECT
                 tag.*,
                 tag_type.name AS tag_type_name,
                 tag_type.description AS tag_type_description,
@@ -43,9 +48,9 @@ def auto_complete_tags(query: str) -> list[ITagWithType]:
                 tag_type.entity_affinity AS tag_type_entity_affinity
             FROM tag
             LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id
-            WHERE tag.name LIKE %(query)s
+            {where}
             LIMIT 10""",
-        {"query": f"%{query}%"},
+        args,
         return_type="rows"
     )
     return [ITagWithType(**row) for row in matching_rows]

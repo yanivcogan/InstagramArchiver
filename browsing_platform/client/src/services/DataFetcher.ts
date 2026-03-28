@@ -127,6 +127,30 @@ export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {
     return await server.get(`tags/?q=` + encodeURIComponent(tagQuery));
 }
 
+export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, string>> = {
+    accounts: 'account',
+    posts: 'post',
+    media: 'media',
+};
+
+export const fetchTagsForSearchResults = async (
+    mode: T_Search_Mode,
+    ids: number[]
+): Promise<Record<number, ITagWithType[]>> => {
+    const entity = SEARCH_MODE_TO_ENTITY[mode];
+    if (!entity || ids.length === 0) return {};
+    const result = await server.get(`tags/by-entities/?entity=${entity}&ids=${ids.join(',')}`);
+    return Object.fromEntries(Object.entries(result).map(([k, v]) => [Number(k), v as ITagWithType[]]));
+};
+
+export const batchAnnotate = async (
+    entityType: string,
+    entityIds: number[],
+    tags: Array<{id: number; notes?: string | null}>
+): Promise<void> => {
+    await server.post('annotate/batch', {entity_type: entityType, entity_ids: entityIds, tags});
+};
+
 export const SEARCH_MODES: readonly { key: string, label: string }[] = [
     {key: 'accounts', label: 'Accounts'},
     {key: 'posts', label: 'Posts'},

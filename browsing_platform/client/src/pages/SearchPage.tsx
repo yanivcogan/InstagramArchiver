@@ -11,18 +11,24 @@ import {
     IconButton,
     MenuItem,
     OutlinedInput,
+    Paper,
     Select,
     Stack,
     Tooltip,
+    Typography,
 } from "@mui/material";
 import TagFilterBar from "../UIComponents/Tags/TagFilterBar";
+import TagSelector from "../UIComponents/Tags/TagSelector";
 import {ITagWithType} from "../types/tags";
 import SearchIcon from '@mui/icons-material/Search';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import {
     ADVANCED_FILTERS_CONFIG,
+    batchAnnotate,
+    fetchTagsForSearchResults,
     ISearchQuery,
+    SEARCH_MODE_TO_ENTITY,
     SEARCH_MODES,
     searchData,
     SearchResult,
@@ -127,6 +133,9 @@ export default function SearchPage() {
     );
     const [results, setResults] = useState<SearchResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [tagsMap, setTagsMap] = useState<Record<number, ITagWithType[]>>({});
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [bulkTags, setBulkTags] = useState<ITagWithType[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -151,10 +160,17 @@ export default function SearchPage() {
         const controller = new AbortController();
         abortControllerRef.current = controller;
         setIsLoading(true);
+        setTagsMap({});
+        setSelectedIds(new Set());
+        setBulkTags([]);
         searchData(query, {signal: controller.signal}).then(results => {
             setResults(results);
             setIsLoading(false);
             abortControllerRef.current = null;
+            const ids = results.map(r => r.id).filter((id): id is number => id != null);
+            if (ids.length > 0) {
+                fetchTagsForSearchResults(query.search_mode, ids).then(setTagsMap);
+            }
         }).catch((e: any) => {
             if (e.name !== "AbortError") {
                 setIsLoading(false);
@@ -205,6 +221,12 @@ export default function SearchPage() {
         if (newSearch === searchParams.toString()) return;
         navigate({pathname: location.pathname, search: newSearch}, {replace: true});
     };
+
+    const toggleSelected = (id: number) => setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+    });
 
     const performSearch = (overrides?: Partial<ISearchQuery>) => {
         const filters = QbUtils.Export.jsonLogicFormat(advancedFiltersTree, {
@@ -385,7 +407,12 @@ export default function SearchPage() {
                         </Box>
                     ) : (() => {
                         const ResultsComponent = SEARCH_RESULT_RENDERERS[query.search_mode] ?? DefaultSearchResults;
-                        return <ResultsComponent results={results}/>;
+                        return <ResultsComponent
+                            results={results}
+                            tagsMap={tagsMap}
+                            selectedIds={selectedIds}
+                            onToggleSelected={SEARCH_MODE_TO_ENTITY[query.search_mode] ? toggleSelected : undefined}
+                        />;
                     })()}
                 </Box>
                 {/* Pagination */}
@@ -407,5 +434,37 @@ export default function SearchPage() {
                 </Stack>
             </Stack>
         </div>
+        {selectedIds.size > 0 && SEARCH_MODE_TO_ENTITY[query.search_mode] && (
+            <Paper
+                elevation={6}
+                sx={{
+                    position: 'fixed', bottom: 0, left: 0, right: 0,
+                    p: 2, zIndex: 1300,
+                    display: 'flex', alignItems: 'center', gap: 2,
+                    borderTop: '1px solid', borderColor: 'divider',
+                }}
+            >
+                <Typography sx={{whiteSpace: 'nowrap'}}>{selectedIds.size} selected</Typography>
+                <Box sx={{flex: 1, minWidth: 0}}>
+                    <TagSelector selectedTags={bulkTags} onChange={setBulkTags}/>
+                </Box>
+                <Button
+                    variant="contained"
+                    disabled={bulkTags.length === 0}
+                    onClick={async () => {
+                        const entity = SEARCH_MODE_TO_ENTITY[query.search_mode]!;
+                        await batchAnnotate(entity, [...selectedIds], bulkTags.map(t => ({id: t.id})));
+                        const ids = results.map(r => r.id).filter((id): id is number => id != null);
+                        fetchTagsForSearchResults(query.search_mode, ids).then(setTagsMap);
+                        setBulkTags([]);
+                    }}
+                >
+                    Add Tags
+                </Button>
+                <Button onClick={() => { setSelectedIds(new Set()); setBulkTags([]); }}>
+                    Clear
+                </Button>
+            </Paper>
+        )}
     </div>
 }

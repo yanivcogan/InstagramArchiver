@@ -22,7 +22,10 @@ export default function TagSelector({selectedTags: initialTags, readOnly, onChan
     const fetchMatchingOptions = async (value: string) => {
         setFetchingOptions(true);
         const matchingOptions = await lookupTags(value);
-        setOptions(matchingOptions);
+        setOptions([...matchingOptions].sort(
+            (a, b) => (a.tag_type_name ?? '').localeCompare(b.tag_type_name ?? '')
+                || a.name.localeCompare(b.name)
+        ));
         setFetchingOptions(false);
     };
 
@@ -40,8 +43,9 @@ export default function TagSelector({selectedTags: initialTags, readOnly, onChan
         }}
         multiple
         noOptionsText={fetchingOptions ? 'Loading…' : (inputValue ? 'No tags found' : 'Start typing to search tags')}
-        isOptionEqualToValue={(option, value) => option.name === value.name}
+        isOptionEqualToValue={(option, value) => option.id === value.id}
         getOptionLabel={(option) => option.name}
+        groupBy={(option) => option.tag_type_name ?? '(No type)'}
         options={options}
         loading={fetchingOptions}
         renderTags={(value: readonly ITagWithType[], getItemProps) =>
