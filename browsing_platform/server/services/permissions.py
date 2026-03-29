@@ -101,6 +101,23 @@ async def raise_share_access_error(request: Request, share_permissions: Optional
         return True
 
 
+async def require_any_auth(request: Request) -> None:
+    """Raise 401 immediately if the request carries no credentials at all.
+
+    Used by URL-based lookup routes (e.g. /pk/{id}, /url/{url}) that must
+    perform a DB lookup *before* they know the entity's numeric ID — and
+    therefore can't run the full entity-level auth check up front.
+    Without this guard, unauthenticated callers can probe whether an entity
+    exists by observing the 404 vs 401 distinction in the response.
+    """
+    token_perms = await get_auth_permissions(request)
+    if token_perms and token_perms.valid:
+        return
+    if request.headers.get("X-Share-Link"):
+        return
+    raise HTTPException(status_code=401)
+
+
 async def auth_entity_view_access(request: Request, entity: T_Entities, entity_id: int):
     token_permissions = await get_auth_permissions(request)
     if not token_permissions or not token_permissions.valid:

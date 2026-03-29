@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from argon2 import PasswordHasher, exceptions as argon_exc
@@ -25,10 +26,29 @@ _ph = PasswordHasher(
     salt_len=16
 )
 
+PASSWORD_STRENGTH_ERROR = (
+    "Password must be at least 12 characters long and contain characters from "
+    "at least 3 of the following categories: lowercase letters (a-z), "
+    "uppercase letters (A-Z), digits (0-9), special characters (!@#… etc.)."
+)
+
+
+def _check_password_strength(password: str) -> None:
+    """Raise ValueError if the password does not meet minimum strength requirements."""
+    classes = sum([
+        bool(re.search(r'[a-z]', password)),
+        bool(re.search(r'[A-Z]', password)),
+        bool(re.search(r'[0-9]', password)),
+        bool(re.search(r'[^a-zA-Z0-9]', password)),
+    ])
+    if classes < 3:
+        raise ValueError(PASSWORD_STRENGTH_ERROR)
+
+
 def hash_password(password: str) -> tuple[str, str]:
     if len(password) < 12 or len(password) > 512:
         raise ValueError("Password length invalid (12-512 chars required)")
-
+    _check_password_strength(password)
     h = _ph.hash(password)
     return h, "argon2id"
 

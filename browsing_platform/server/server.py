@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
@@ -28,6 +29,28 @@ if is_production and os.getenv("BROWSING_PLATFORM_DEV") == "1":
     raise RuntimeError(
         "FATAL: BROWSING_PLATFORM_DEV=1 is set in production environment. "
         "This would bypass all authentication. Refusing to start."
+    )
+
+def _is_strong_db_password(pw: str) -> bool:
+    """Return True only if the password is long enough and sufficiently varied.
+    Requirements: 20+ chars, characters from at least 3 of the 4 standard classes.
+    A randomly generated 20-char alphanumeric password has ~119 bits of entropy."""
+    if len(pw) < 20:
+        return False
+    classes = sum([
+        bool(re.search(r'[a-z]', pw)),
+        bool(re.search(r'[A-Z]', pw)),
+        bool(re.search(r'[0-9]', pw)),
+        bool(re.search(r'[^a-zA-Z0-9]', pw)),
+    ])
+    return classes >= 3
+
+
+if is_production and not _is_strong_db_password(os.getenv("DB_PASSWORD", "")):
+    raise RuntimeError(
+        "FATAL: DB_PASSWORD does not meet minimum strength requirements "
+        "(20+ characters, 3+ character classes). "
+        "Refusing to start in production with a weak database password."
     )
 
 # Security check: FILE_TOKEN_SECRET must be set in production (without it all

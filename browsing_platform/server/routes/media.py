@@ -8,7 +8,7 @@ from browsing_platform.server.services.enriched_entities import get_enriched_med
 from browsing_platform.server.services.media import get_media_by_id, get_media_data_by_id, media_exists, \
     get_media_by_platform_id
 from browsing_platform.server.services.media_part import get_media_part_by_media
-from browsing_platform.server.services.permissions import auth_entity_view_access
+from browsing_platform.server.services.permissions import auth_entity_view_access, require_any_auth
 from extractors.entity_types import ExtractedEntitiesNested
 
 router = APIRouter(
@@ -25,6 +25,7 @@ async def _auth_media_view(req: Request, item_id: int):
 @router.get("/pk/{platform_id}/")
 @router.get("/pk/{platform_id}")
 async def get_media_by_pk(platform_id: str, req: Request) -> ExtractedEntitiesNested:
+    await require_any_auth(req)
     media = get_media_by_platform_id(platform_id, include_data=False)
     if not media:
         raise HTTPException(status_code=404, detail="Media Not Found")
