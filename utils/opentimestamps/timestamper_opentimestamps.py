@@ -177,6 +177,43 @@ def _find_openssl_dlls_in_dir(candidate_dir: Path):
     return [p for p in matches if p.is_file()]
 
 
+def _ensure_ssl_dll_alias() -> bool:
+    """
+    On Windows, python-bitcoinlib calls ctypes.util.find_library('ssl') which
+    looks for 'ssl.dll'. Modern OpenSSL ships as 'libssl-3-x64.dll' /
+    'libcrypto-3-x64.dll', and the crypto functions bitcoin actually needs
+    (BN_add, EC_*, etc.) live in libcrypto, not libssl.
+
+    This function creates ssl.dll in the venv's Scripts directory as a copy of
+    libcrypto-3-x64.dll so that find_library('ssl') resolves correctly.
+    Scripts/ is on PATH when the venv is activated, and it's also prepended to
+    PATH by ensure_ots_on_path(), so child processes inherit it automatically.
+
+    Returns True if ssl.dll now exists in Scripts, False otherwise.
+    """
+    if os.name != "nt":
+        return False
+
+    scripts = Path(sys.prefix) / "Scripts"
+    ssl_dll = scripts / "ssl.dll"
+    if ssl_dll.exists():
+        return True
+
+    site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+    src = site_packages / "libcrypto-3-x64.dll"
+    if not src.exists():
+        return False
+
+    try:
+        import shutil
+        shutil.copy2(src, ssl_dll)
+        # Ensure Scripts is on PATH so child processes find ssl.dll
+        os.environ["PATH"] = str(scripts) + os.pathsep + os.environ.get("PATH", "")
+        return True
+    except Exception:
+        return False
+
+
 def ensure_openssl_on_path() -> None:
     """
     Ensure a directory containing OpenSSL DLLs is on PATH for child processes.
@@ -190,7 +227,8 @@ def ensure_openssl_on_path() -> None:
 
     Behavior:
     - If ctypes.util.find_library('ssl') already returns a non-None value, do nothing.
-    - Otherwise, look at a saved path in `open_ssl_location.txt` for candidate DLLs.
+    - Otherwise, attempt to auto-create ssl.dll in the venv Scripts directory.
+    - If that fails, look at a saved path in `open_ssl_location.txt` for candidate DLLs.
     - If that fails, prompt the user to enter the directory that contains the
       OpenSSL DLLs (where files like libssl-*.dll or libcrypto-*.dll live).
     - Save the user-provided path to `open_ssl_location.txt` for future runs.
@@ -199,6 +237,10 @@ def ensure_openssl_on_path() -> None:
     """
     # Quick check: if ctypes can already find the library, nothing to do.
     if ctypes.util.find_library("ssl") is not None:
+        return
+
+    # Auto-create ssl.dll alias in venv Scripts if libcrypto is available there.
+    if _ensure_ssl_dll_alias() and ctypes.util.find_library("ssl") is not None:
         return
 
     candidate_dir = None
