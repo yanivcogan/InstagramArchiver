@@ -55,19 +55,22 @@ export default function Login() {
     const verifyPasswordLogin = async () => {
         if (awaitingAuthentication) return;
         setAwaitingAuthentication(true);
-        const res = await server.post("login/", {email, password});
-        if (res.token) {
-            cookie.set('token', res.token, {
-                expires: 30,
-                sameSite: 'strict',
-                secure: window.location.protocol === 'https:',
-            });
+        try {
+            const res = await server.post("login/", {email, password}, undefined, {ignoreErrors: true});
+            if (res?.token) {
+                cookie.set('token', res.token, {
+                    expires: 30,
+                    sameSite: 'strict',
+                    secure: window.location.protocol === 'https:',
+                });
+                proceedToSite();
+            } else {
+                setAuthenticationError(res?.error || 'An Unknown Error Has Occurred');
+            }
+        } catch (e: any) {
+            setAuthenticationError(e?.message || 'An Unknown Error Has Occurred');
+        } finally {
             setAwaitingAuthentication(false);
-            proceedToSite();
-        } else {
-            const error = res?.error || `An Unknown Error Has Occurred`;
-            setAwaitingAuthentication(false);
-            setAuthenticationError(error);
         }
     };
 

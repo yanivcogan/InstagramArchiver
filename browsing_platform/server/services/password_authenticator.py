@@ -2,6 +2,16 @@ from typing import Optional
 
 from argon2 import PasswordHasher, exceptions as argon_exc
 
+
+class AuthenticationError(Exception):
+    """Raised when login credentials are invalid."""
+    pass
+
+
+class AccountLockedException(Exception):
+    """Raised when the account is locked due to too many failed attempts."""
+    pass
+
 from browsing_platform.server.services.event_logger import log_event
 from browsing_platform.server.services.token_manager import generate_token
 from utils import db
@@ -62,11 +72,11 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             "$argon2id$v=19$m=65536,t=3,p=4$abcdefghijklmnopqrstuv$01234567890123456789012345678901",
             password
         )
-        raise Exception("error - couldn't login")
+        raise AuthenticationError("Invalid credentials")
     if user["locked"]:
-        raise Exception("Error - too many failed login attempts. Please ask the system admin to unlock your user.")
+        raise AccountLockedException("Too many failed login attempts. Please ask the system admin to unlock your account.")
     if not user["password_hash"]:
-        raise Exception("error - couldn't login")
+        raise AuthenticationError("Invalid credentials")
 
     ok = verify_password(user["password_hash"], password)
     if ok:
@@ -102,5 +112,5 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             {"id": user["id"], "maxf": max_failures},
             "none"
         )
-        raise Exception("error - couldn't login")
+        raise AuthenticationError("Invalid credentials")
 

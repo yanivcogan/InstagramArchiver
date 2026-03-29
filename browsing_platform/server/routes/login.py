@@ -4,7 +4,7 @@ import traceback
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from browsing_platform.server.services.password_authenticator import login_with_password
+from browsing_platform.server.services.password_authenticator import login_with_password, AccountLockedException
 from browsing_platform.server.services.permissions import parse_token_from_header
 from browsing_platform.server.services.token_manager import remove_token
 
@@ -26,11 +26,12 @@ class LoginCredentialsPass(BaseModel):
 @router.post('/')
 async def login_with_pass(data: LoginCredentialsPass):
     try:
-        login_res = login_with_password(data.email, data.password)
-        return login_res
-    except Exception as e:
+        return login_with_password(data.email, data.password)
+    except AccountLockedException as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except Exception:
         logger.error(f"Login error: {traceback.format_exc()}")
-        return {"error": "Authentication failed"}
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 @router.post('/logout')

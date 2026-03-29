@@ -214,7 +214,7 @@ def apply_flattened_entities_transform(
             if m.local_url is not None and m.local_url.strip() != "":
                 parsed = urlparse(m.local_url)
                 qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
-                qs['ft'] = generate_file_token(transform.access_token, m.local_url.split(f"{transform.local_files_root}")[-1])
+                qs['ft'] = generate_file_token(transform.access_token, parsed.path)
                 new_query = urlencode(qs, doseq=True)
                 m.local_url = str(urlunparse(parsed._replace(query=new_query)))
     if transform.strip_raw_data:
