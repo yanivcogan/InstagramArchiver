@@ -317,6 +317,10 @@ export default function UploadPage() {
     const cancelledRef = useRef(false);
     const dragCounterRef = useRef(0);
     const pageContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        document.title = 'Upload | Browsing Platform';
+    }, []);
     const uploadStartTimeRef = useRef<number>(0);
     const speedSamplesRef = useRef<{ time: number; bytes: number }[]>([]);
     const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);

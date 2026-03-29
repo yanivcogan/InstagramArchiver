@@ -46,6 +46,14 @@ export default function SessionPage() {
         });
     }, [id]);
 
+    useEffect(() => {
+        if (loadingData) {
+            document.title = 'Session - Loading... | Browsing Platform';
+        } else {
+            document.title = id !== null ? `Session #${id} | Browsing Platform` : 'Session | Browsing Platform';
+        }
+    }, [loadingData, id]);
+
     const renderData = () => {
         if (loadingData) {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>

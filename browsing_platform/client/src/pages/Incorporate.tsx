@@ -67,6 +67,10 @@ export default function IncorporatePage() {
     const logBoxRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
+    useEffect(() => {
+        document.title = 'Incorporate | Browsing Platform';
+    }, []);
+
     // -----------------------------------------------------------------------
     // Fetch initial status and history
     // -----------------------------------------------------------------------

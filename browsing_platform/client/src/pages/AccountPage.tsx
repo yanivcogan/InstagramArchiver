@@ -103,6 +103,16 @@ export default function AccountPage() {
         });
     }, [apiRef]);
 
+    useEffect(() => {
+        if (loadingData) {
+            document.title = 'Account - Loading... | Browsing Platform';
+        } else {
+            const account = data?.accounts?.[0];
+            const name = account?.display_name || account?.url;
+            document.title = name ? `${name} | Account | Browsing Platform` : 'Account | Browsing Platform';
+        }
+    }, [loadingData, data]);
+
     const loadTagStats = () => {
         if (!dbId || loadingTagStats || tagStats !== null) return;
         setLoadingTagStats(true);

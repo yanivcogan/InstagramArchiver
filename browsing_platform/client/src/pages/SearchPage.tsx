@@ -147,8 +147,10 @@ export default function SearchPage() {
     const {addSearch, removeSearch, getSuggestions} = useSearchHistory();
 
     useEffect(() => {
-        document.title = `Search | Browsing Platform`;
-    }, []);
+        document.title = query.search_term
+            ? `${query.search_term} | Search | Browsing Platform`
+            : `Search | Browsing Platform`;
+    }, [query.search_term]);
 
     useEffect(() => {
         // Sync typed term and tree with URL when params change (e.g. back/forward navigation)
