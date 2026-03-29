@@ -166,7 +166,7 @@ def _extract_and_verify_tar(archive_name: str) -> dict:
             if sys.version_info >= (3, 12):
                 tf.extractall(archive_dir, filter="data")
             else:
-                tf.extractall(archive_dir)
+                tf.extractall(archive_dir)  # nosec B202 - all members pre-validated: isreg() + validate_file_path()
     except _tarfile.TarError as exc:
         return {"status": "fail", "results": [{"path": "_upload.tar", "status": f"tar_error: {exc}"}]}
 
@@ -242,7 +242,7 @@ def verify_archive(archive_name: str) -> dict:
             if state.get("upload_mode") == "tar":
                 return _extract_and_verify_tar(archive_name)
         except Exception:
-            pass
+            logger.warning("Could not parse TUS state file %s during tar detection", state_file)
 
     # --- Individual-file path (original behaviour) ---
     results = []
@@ -305,7 +305,7 @@ def _collect_tus_records(archive_name: str) -> list[dict]:
                     "size_bytes": state.get("upload_length"),
                 })
             except Exception:
-                pass
+                logger.warning("Could not parse TUS state file %s", state_file)
     return sorted(records, key=lambda r: r["relative_path"])
 
 

@@ -26,7 +26,7 @@ _ph = PasswordHasher(
     salt_len=16
 )
 
-PASSWORD_STRENGTH_ERROR = (
+PASSWORD_STRENGTH_ERROR = (  # nosec B105 - this is a user-facing error message, not a hardcoded credential
     "Password must be at least 12 characters long and contain characters from "
     "at least 3 of the following categories: lowercase letters (a-z), "
     "uppercase letters (A-Z), digits (0-9), special characters (!@#… etc.)."
@@ -117,9 +117,9 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             , {"user_id": user["id"], "token": token}, "id"
         )
         log_event(
-            "login_attempt", None,
+            "login_attempt", user["id"],
             "{'success': true}",
-            f"{{'email': {email!r}}}"
+            "{}"
         )
         return {"token": token, "permissions": user["admin"]}
     else:
