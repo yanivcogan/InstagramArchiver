@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {IAccountAndAssociatedEntities, IAccountInteractions, IAccountRelation} from "../../types/entities";
+import {IAccountAndAssociatedEntities, IAccountInteractions, IAccountRelation, IPostAndAssociatedEntities} from "../../types/entities";
 import {
-    Button,
     CircularProgress,
     IconButton,
     List,
@@ -27,6 +26,51 @@ import TaggedAccountChip from "./TaggedAccountChip";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 import {useLocation} from "react-router";
+
+function parseCssDimension(value: string | number | undefined, viewportPx: number): number {
+    if (value == null) return 0;
+    if (typeof value === 'number') return value;
+    if (value.endsWith('vh')) return (parseFloat(value) / 100) * viewportPx;
+    if (value.endsWith('px')) return parseFloat(value);
+    return 0;
+}
+
+function estimatePostHeight(
+    post: IPostAndAssociatedEntities,
+    mediaStyle: React.CSSProperties | undefined,
+): number {
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+
+    // Fixed structure: paper padding (32) + URL (22) + date (20) + annotator (40)
+    //   + 3x LazyCollapsible headers for Comments/Likes/Raw Data (40 each)
+    //   + ~6 Stack gaps at 4px each
+    const FIXED = 32 + 22 + 20 + 40 + 3 * 40 + 6 * 4;
+
+    // Caption (body2, ~80 chars/line, 24px line-height)
+    const captionLines = post.caption ? Math.ceil(post.caption.length / 80) : 0;
+    const captionHeight = captionLines * 24;
+
+    // Tagged accounts row
+    const taggedHeight = (post.post_tagged_accounts?.length ?? 0) > 0 ? 36 : 0;
+
+    // Media section (wrapping flex row, width ≈ height rule of thumb)
+    const numMedia = post.post_media?.length ?? 0;
+    let mediaHeight = 0;
+    if (numMedia > 0 && mediaStyle) {
+        const maxH = parseCssDimension(mediaStyle.maxHeight, vh);
+        const minH = parseCssDimension(mediaStyle.minHeight, vh);
+        const itemH = Math.max(minH || 0, maxH || 300);
+        const itemW = itemH;
+        const containerW = vw - 128;
+        const gap = 8;
+        const itemsPerRow = Math.max(1, Math.floor((containerW + gap) / (itemW + gap)));
+        const rows = Math.ceil(numMedia / itemsPerRow);
+        mediaHeight = rows * itemH + (rows - 1) * gap;
+    }
+
+    return FIXED + captionHeight + taggedHeight + mediaHeight;
+}
 
 const HIGHLIGHT_STYLE: React.CSSProperties = {
     backgroundColor: '#fff8dc',
@@ -60,9 +104,11 @@ export default function Account({
                                 }: IProps) {
     const [account, setAccount] = useState(accountProp);
     const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
-    const [postsToShow, setPostsToShow] = useState(
-        viewerConfig?.account?.postsPageSize || accountProp.account_posts.length || 5
-    );
+    const [renderedIndices, setRenderedIndices] = useState<Set<number>>(() => {
+        const pSize = viewerConfig?.account?.postsPageSize;
+        if (!pSize) return new Set<number>(); // export mode: irrelevant, all posts render via !pageSize check
+        return new Set(Array.from({length: pSize}, (_, i) => i));
+    });
 
     const [relations, setRelations] = useState<IAccountRelation[] | null>(null);
     const [loadingRelations, setLoadingRelations] = useState(false);
@@ -71,6 +117,7 @@ export default function Account({
     const [loadingInteractions, setLoadingInteractions] = useState(false);
 
     const relationRefs = useRef<Map<number, HTMLElement>>(new Map());
+    const observerRef = useRef<IntersectionObserver | null>(null);
 
     const fetchAccountDetails = async () => {
         const itemId = account.id;
@@ -89,6 +136,50 @@ export default function Account({
         setLoadingRelations(false);
     }, [loadingRelations, relations, account.id]);
 
+    const sortedPosts = useMemo(() =>
+        [...account.account_posts].sort((a, b) =>
+            (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
+        ), [account.account_posts]);
+
+    const pageSize = viewerConfig?.account?.postsPageSize ?? null;
+    const mediaStyle = viewerConfig?.media?.style;
+    const estimatedHeights = useMemo(
+        () => sortedPosts.map(p => estimatePostHeight(p, mediaStyle)),
+        [sortedPosts, mediaStyle]
+    );
+
+    // Returns the shared IntersectionObserver, creating it on first use.
+    // Using a getter instead of an effect avoids timing issues between ref callbacks and effects.
+    const getObserver = useCallback((): IntersectionObserver | null => {
+        if (!pageSize) return null;
+        if (!observerRef.current) {
+            observerRef.current = new IntersectionObserver(
+                (entries) => {
+                    const newIndices = entries
+                        .filter(e => e.isIntersecting)
+                        .map(e => parseInt((e.target as HTMLElement).dataset.postIndex!))
+                        .filter(i => !isNaN(i));
+                    if (newIndices.length > 0) {
+                        setRenderedIndices(prev => {
+                            const toAdd = newIndices.filter(i => !prev.has(i));
+                            if (toAdd.length === 0) return prev;
+                            const next = new Set(prev);
+                            toAdd.forEach(i => next.add(i));
+                            return next;
+                        });
+                    }
+                },
+                {root: null, rootMargin: '0px 0px 400px 0px', threshold: 0}
+            );
+        }
+        return observerRef.current;
+    }, [pageSize]);
+
+    // Disconnect observer on unmount
+    useEffect(() => {
+        return () => { observerRef.current?.disconnect(); };
+    }, []);
+
     // Scroll to highlighted relation after load
     useEffect(() => {
         if (highlightRelationId && relations) {
@@ -96,11 +187,6 @@ export default function Account({
             el?.scrollIntoView({behavior: 'smooth', block: 'center'});
         }
     }, [relations, highlightRelationId]);
-
-    const sortedPosts = useMemo(() =>
-        [...account.account_posts].sort((a, b) =>
-            (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
-        ), [account.account_posts]);
 
     const location = useLocation();
 
@@ -153,11 +239,10 @@ export default function Account({
 
             {/* Posts section */}
             <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
-                {
-                    sortedPosts
-                        .slice(0, postsToShow)
-                        .map((p, p_i) => (
-                            <React.Fragment key={p_i}>
+                {sortedPosts.map((p, i) => {
+                    if (!pageSize || renderedIndices.has(i)) {
+                        return (
+                            <React.Fragment key={p.id ?? i}>
                                 <Post
                                     post={p}
                                     viewerConfig={viewerConfig}
@@ -165,20 +250,19 @@ export default function Account({
                                     highlightLikeId={highlightLikeId}
                                 />
                             </React.Fragment>
-                        ))
-                }
-                {
-                    viewerConfig?.account?.postsPageSize ?
-                        <Button
-                            variant="contained"
-                            disabled={sortedPosts.length <= postsToShow}
-                            onClick={() => setPostsToShow(curr => curr + 5)}
-                            onDoubleClick={() => setPostsToShow(sortedPosts.length)}
-                        >
-                            Load More Posts
-                        </Button>
-                        : null
-                }
+                        );
+                    }
+                    // Placeholder for unrendered post — registers with shared observer on mount
+                    return (
+                        <div
+                            key={p.id ?? i}
+                            ref={(el) => { if (el) getObserver()?.observe(el); }}
+                            data-post-index={String(i)}
+                            style={{height: estimatedHeights[i], width: '100%', boxSizing: 'border-box'}}
+                            aria-hidden="true"
+                        />
+                    );
+                })}
             </Stack>
 
             {/* Account relations section (on-demand) */}
