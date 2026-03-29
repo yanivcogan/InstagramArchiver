@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from utils import db
+
 logger = logging.getLogger(__name__)
 
 _ARCHIVE_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-]*$')
@@ -357,6 +359,18 @@ def commit_archive(archive_name: str, uploader_info: dict):
     # a separately mounted data disk) by falling back to copy+delete when os.rename
     # raises EXDEV (errno 18 "Invalid cross-device link").
     shutil.move(str(src), str(dst))
+
+    # Reset DB incorporation status so the pipeline re-processes a re-uploaded archive.
+    # For new archives this matches 0 rows (harmless); for overrides it resets the record.
+    try:
+        db.execute_query(
+            "UPDATE archive_session SET incorporation_status = 'pending', extraction_error = NULL "
+            "WHERE external_id = %(name)s AND source_type = 'local_har'",
+            {"name": archive_name},
+            return_type="none"
+        )
+    except Exception as exc:
+        logger.warning(f"Could not reset incorporation status for '{archive_name}': {exc}")
 
     # --- Checksum record ---
     checksum_doc = {
