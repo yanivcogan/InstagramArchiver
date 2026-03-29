@@ -70,8 +70,8 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
         return <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="baseline">
             <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>Tags:</Typography>
             {tags.map((tag, index) => (
-                <Tooltip title={tag.tag_type_name} arrow disableInteractive>
-                    <Typography key={index} component="span" variant="caption" sx={{
+                <Tooltip key={index} title={tag.tag_type_name} arrow disableInteractive>
+                    <Typography component="span" variant="caption" sx={{
                         padding: '0.1em 0.4em',
                         backgroundColor: '#e0e0e0',
                         borderRadius: '4px',

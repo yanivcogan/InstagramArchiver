@@ -5,7 +5,7 @@ from fastapi import HTTPException
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id, get_comments_by_post_ids, \
-    get_likes_by_post_id
+    get_likes_by_post_id, get_post_auxiliary_counts, PostAuxiliaryCounts
 from browsing_platform.server.services.permissions import auth_entity_view_access
 from browsing_platform.server.services.post import get_post_data_by_id, post_exists, \
     get_post_by_platform_id, get_post_by_url
@@ -65,6 +65,14 @@ async def get_post_likes(item_id: int) -> list[Like]:
     if not post_exists(item_id):
         raise HTTPException(status_code=404, detail="Post Not Found")
     return get_likes_by_post_id(item_id)
+
+
+@router.get("/{item_id}/auxiliary-counts/", dependencies=[Depends(_auth_post_view)])
+@router.get("/{item_id}/auxiliary-counts", dependencies=[Depends(_auth_post_view)])
+async def get_post_auxiliary_counts_route(item_id: int) -> PostAuxiliaryCounts:
+    if not post_exists(item_id):
+        raise HTTPException(status_code=404, detail="Post Not Found")
+    return get_post_auxiliary_counts(item_id)
 
 
 @router.get("/{item_id}/", dependencies=[Depends(_auth_post_view)])

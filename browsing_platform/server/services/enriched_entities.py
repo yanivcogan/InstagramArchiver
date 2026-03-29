@@ -23,6 +23,22 @@ class AccountInteractions(BaseModel):
     tagged_in: list[TaggedAccount] = []
 
 
+class AccountInteractionCounts(BaseModel):
+    comments_count: int = 0
+    likes_count: int = 0
+    tagged_in_count: int = 0
+
+
+class AccountAuxiliaryCounts(BaseModel):
+    relations_count: int = 0
+    interaction_counts: AccountInteractionCounts = AccountInteractionCounts()
+
+
+class PostAuxiliaryCounts(BaseModel):
+    comments_count: int = 0
+    likes_count: int = 0
+
+
 def _build_in_clause(ids: list[int]) -> tuple[dict, str]:
     """Returns (query_args_dict, IN clause string) for a list of int IDs."""
     args = {f"id_{i}": id_ for i, id_ in enumerate(ids)}
@@ -139,6 +155,38 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
         likes=[Like(**r) for r in like_rows],
         tagged_in=[TaggedAccount(**r) for r in tagged_rows]
     )
+
+
+def get_account_auxiliary_counts(account_id: int) -> AccountAuxiliaryCounts:
+    relations_row = db.execute_query(
+        """SELECT COUNT(*) AS relations_count FROM account_relation
+           WHERE follower_account_id = %(id)s OR followed_account_id = %(id)s""",
+        {"id": account_id},
+        return_type="single_row"
+    )
+    interactions_row = db.execute_query(
+        """SELECT
+             (SELECT COUNT(*) FROM comment WHERE account_id = %(id)s) AS comments_count,
+             (SELECT COUNT(*) FROM post_like WHERE account_id = %(id)s) AS likes_count,
+             (SELECT COUNT(*) FROM tagged_account WHERE tagged_account_id = %(id)s) AS tagged_in_count""",
+        {"id": account_id},
+        return_type="single_row"
+    )
+    return AccountAuxiliaryCounts(
+        relations_count=relations_row["relations_count"],
+        interaction_counts=AccountInteractionCounts(**interactions_row)
+    )
+
+
+def get_post_auxiliary_counts(post_id: int) -> PostAuxiliaryCounts:
+    row = db.execute_query(
+        """SELECT
+             (SELECT COUNT(*) FROM comment WHERE post_id = %(id)s) AS comments_count,
+             (SELECT COUNT(*) FROM post_like WHERE post_id = %(id)s) AS likes_count""",
+        {"id": post_id},
+        return_type="single_row"
+    )
+    return PostAuxiliaryCounts(**row)
 
 
 class FlattenedEntitiesTransform(BaseModel):

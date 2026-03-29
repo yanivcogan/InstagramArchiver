@@ -1,4 +1,5 @@
 import {
+    IAccountAuxiliaryCounts,
     IAccountInteractions,
     IAccountRelation,
     IArchiveSession,
@@ -6,6 +7,7 @@ import {
     IComment,
     IExtractedEntitiesNested,
     IMediaPart,
+    IPostAuxiliaryCounts,
     IPostLike
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
@@ -109,6 +111,14 @@ export const fetchAccountRelations = async (accountId: number): Promise<IAccount
 
 export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions> => {
     return await server.get(`account/${accountId}/interactions/`);
+}
+
+export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts> => {
+    return await server.get(`account/${accountId}/auxiliary-counts/`);
+}
+
+export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts> => {
+    return await server.get(`post/${postId}/auxiliary-counts/`);
 }
 
 export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {

@@ -183,3 +183,19 @@ export interface IAccountInteractions {
     likes: IPostLike[];
     tagged_in: ITaggedAccount[];
 }
+
+export interface IAccountInteractionCounts {
+    comments_count: number;
+    likes_count: number;
+    tagged_in_count: number;
+}
+
+export interface IAccountAuxiliaryCounts {
+    relations_count: number;
+    interaction_counts: IAccountInteractionCounts;
+}
+
+export interface IPostAuxiliaryCounts {
+    comments_count: number;
+    likes_count: number;
+}

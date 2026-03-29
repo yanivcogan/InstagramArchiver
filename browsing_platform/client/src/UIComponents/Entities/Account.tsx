@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {IAccountAndAssociatedEntities, IAccountInteractions, IAccountRelation, IPostAndAssociatedEntities} from "../../types/entities";
+import {IAccountAndAssociatedEntities, IAccountAuxiliaryCounts, IAccountInteractions, IAccountRelation, IPostAndAssociatedEntities} from "../../types/entities";
 import {
     CircularProgress,
     IconButton,
@@ -16,7 +16,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import LazyCollapsible from "../LazyCollapsible";
 import Post from "./Post";
 import ReactJson from "react-json-view";
-import {fetchAccountData, fetchAccountInteractions, fetchAccountRelations} from "../../services/DataFetcher";
+import {fetchAccountAuxiliaryCounts, fetchAccountData, fetchAccountInteractions, fetchAccountRelations} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
 import AccountRelation from "./AccountRelation";
@@ -116,6 +116,8 @@ export default function Account({
     const [interactions, setInteractions] = useState<IAccountInteractions | null>(null);
     const [loadingInteractions, setLoadingInteractions] = useState(false);
 
+    const [auxiliaryCounts, setAuxiliaryCounts] = useState<IAccountAuxiliaryCounts | null>(null);
+
     const relationRefs = useRef<Map<number, HTMLElement>>(new Map());
     const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -180,6 +182,13 @@ export default function Account({
         return () => { observerRef.current?.disconnect(); };
     }, []);
 
+    useEffect(() => {
+        if (account.id == null) return;
+        fetchAccountAuxiliaryCounts(account.id)
+            .then(counts => setAuxiliaryCounts(counts))
+            .catch(() => {});
+    }, [account.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Scroll to highlighted relation after load
     useEffect(() => {
         if (highlightRelationId && relations) {
@@ -189,6 +198,22 @@ export default function Account({
     }, [relations, highlightRelationId]);
 
     const location = useLocation();
+
+    const relationsLabel = auxiliaryCounts != null
+        ? `Related Accounts (${auxiliaryCounts.relations_count})`
+        : "Related Accounts";
+
+    const interactionsLabel = (() => {
+        if (auxiliaryCounts == null) return "Interactions";
+        const ic = auxiliaryCounts.interaction_counts;
+        const total = ic.comments_count + ic.likes_count + ic.tagged_in_count;
+        if (total === 0) return "Interactions (0)";
+        const parts: string[] = [];
+        if (ic.comments_count > 0) parts.push(`comments: ${ic.comments_count}`);
+        if (ic.likes_count > 0) parts.push(`likes: ${ic.likes_count}`);
+        if (ic.tagged_in_count > 0) parts.push(`tagged: ${ic.tagged_in_count}`);
+        return `Interactions (${parts.join(", ")})`;
+    })();
 
     const urls = (account.identifiers || []).filter(x => x.startsWith("url_")).map(x => x.split("url_")[1]);
     const shareToken = getShareTokenFromHref();
@@ -267,7 +292,7 @@ export default function Account({
 
             {/* Account relations section (on-demand) */}
             {viewerConfig?.accountRelation?.display !== 'hide' && account.id != null && (
-                <LazyCollapsible label="Related Accounts" onLoad={loadRelations} loading={loadingRelations} defaultExpanded={!!highlightRelationId}>
+                <LazyCollapsible label={relationsLabel} onLoad={loadRelations} loading={loadingRelations} defaultExpanded={!!highlightRelationId}>
                     {relations && relations.length === 0 && (
                         <Typography variant="caption" color="text.secondary">No relations found</Typography>
                     )}
@@ -289,7 +314,7 @@ export default function Account({
 
             {/* Account interactions section (on-demand) */}
             {account.id != null && (
-                <LazyCollapsible label="Interactions" loading={loadingInteractions}
+                <LazyCollapsible label={interactionsLabel} loading={loadingInteractions}
                     onLoad={async () => {
                         setLoadingInteractions(true);
                         const fetched = await fetchAccountInteractions(account.id!);

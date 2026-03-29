@@ -1,10 +1,10 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {IComment, IPostAndAssociatedEntities, IPostLike} from "../../types/entities";
+import {IComment, IPostAndAssociatedEntities, IPostAuxiliaryCounts, IPostLike} from "../../types/entities";
 import {Link, Paper, Stack, Tooltip, Typography} from "@mui/material";
 import LazyCollapsible from "../LazyCollapsible";
 import Media from "./Media";
 import ReactJson from "react-json-view";
-import {fetchPostComments, fetchPostData, fetchPostLikes} from "../../services/DataFetcher";
+import {fetchPostAuxiliaryCounts, fetchPostComments, fetchPostData, fetchPostLikes} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
 import dayjs from "dayjs";
@@ -46,6 +46,8 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
     const [likes, setLikes] = useState<IPostLike[] | null>(null);
     const [loadingLikes, setLoadingLikes] = useState(false);
     const [likesLoaded, setLikesLoaded] = useState(false);
+
+    const [auxiliaryCounts, setAuxiliaryCounts] = useState<IPostAuxiliaryCounts | null>(null);
 
     const commentRefs = useRef<Map<number, HTMLElement>>(new Map());
     const likeRefs = useRef<Map<number, HTMLElement>>(new Map());
@@ -93,6 +95,13 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
         }
     }, [likesLoaded, highlightLikeId]);
 
+    useEffect(() => {
+        if (post.id == null) return;
+        fetchPostAuxiliaryCounts(post.id)
+            .then(counts => setAuxiliaryCounts(counts))
+            .catch(() => {});
+    }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const location = useLocation();
 
     const dateRaw = post.publication_date;
@@ -102,6 +111,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
     const shareToken = getShareTokenFromHref();
     const postHref = "/post/" + post.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : '');
     const disablePostLink = viewerConfig?.all?.hideInnerLinks;
+
+    const commentsLabel = auxiliaryCounts != null ? `Comments (${auxiliaryCounts.comments_count})` : "Comments";
+    const likesLabel = auxiliaryCounts != null ? `Likes (${auxiliaryCounts.likes_count})` : "Likes";
 
     const taggedAccounts = post.post_tagged_accounts || [];
     const showTaggedAccounts = viewerConfig?.taggedAccount?.display !== 'hide' && taggedAccounts.length > 0;
@@ -147,7 +159,7 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
 
             {/* Comments */}
             {post.id != null && (
-                <LazyCollapsible label="Comments" onLoad={loadComments} loading={loadingComments} defaultExpanded={!!highlightCommentId}>
+                <LazyCollapsible label={commentsLabel} onLoad={loadComments} loading={loadingComments} defaultExpanded={!!highlightCommentId}>
                     <Stack gap={0.5} sx={{mt: 0.5}}>
                         {commentsLoaded && comments && comments.length > 0 && comments.map((c, i) => (
                             <div
@@ -167,7 +179,7 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
 
             {/* Likes */}
             {post.id != null && (
-                <LazyCollapsible label="Likes" onLoad={loadLikes} loading={loadingLikes} defaultExpanded={!!highlightLikeId}>
+                <LazyCollapsible label={likesLabel} onLoad={loadLikes} loading={loadingLikes} defaultExpanded={!!highlightLikeId}>
                     <Stack gap={0.5} sx={{mt: 0.5}}>
                         {likesLoaded && likes && likes.length > 0 && likes.map((l, i) => (
                             <div
