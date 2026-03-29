@@ -111,11 +111,11 @@ def screen_record(output_path, stop_event):
     window_keywords = ("Nightly")
     browser_window = None
     for attempt in range(5):
-        time.sleep(5)
         windows = [w for w in gw.getAllWindows() if any(k in w.title for k in window_keywords)]
         if windows:
             browser_window = windows[0]
             break
+        time.sleep(5)
     else:
         print("Could not find the Firefox browser window for screen recording.")
         return
@@ -397,11 +397,6 @@ def archive_instagram_content(profile: Profile, target_url: str):
         # Start screen recording in a separate thread
         video_path = archive_dir / "screen_recording.mp4"
         stop_event = threading.Event()
-        recording_thread = threading.Thread(
-            target=screen_record,
-            args=(str(video_path), stop_event)
-        )
-        recording_thread.start()
         recording_start_timestamp = datetime.datetime.now().isoformat()
         metadata = ArchiveSessionMetadata(
             commit_id=commit_id,
@@ -425,6 +420,11 @@ def archive_instagram_content(profile: Profile, target_url: str):
         )
 
         page = context.new_page()
+        recording_thread = threading.Thread(
+            target=screen_record,
+            args=(str(video_path), stop_event)
+        )
+        recording_thread.start()
 
         try:
             # Navigate to the target URL
