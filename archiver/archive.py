@@ -312,6 +312,15 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
         recording_thread.join()
         print("Recording finished.")
 
+    # archive signing dialog
+    storage_config = get_storage_config()
+
+    if storage_config is None:
+        print("Archiving cancelled by user. Deleting archive directory.")
+        if archive_dir.exists():
+            shutil.rmtree(archive_dir)
+        return
+
     # Hash and timestamp the screen recording
     video_path = archive_dir / "screen_recording.mp4"
     if video_path.exists():
@@ -352,14 +361,6 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
 
     archiving_finished_timestamp = datetime.datetime.now().isoformat()
     metadata.archiving_finished_timestamp = archiving_finished_timestamp
-
-    storage_config = get_storage_config()
-
-    if storage_config is None:
-        print("Archiving cancelled by user. Deleting archive directory.")
-        if archive_dir.exists():
-            shutil.rmtree(archive_dir)
-        return
 
     # video downloading configuration
     v_download_missing: bool = True
