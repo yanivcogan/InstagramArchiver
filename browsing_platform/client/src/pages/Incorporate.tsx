@@ -67,6 +67,10 @@ export default function IncorporatePage() {
     const logBoxRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
+    useEffect(() => {
+        document.title = 'Incorporate | Browsing Platform';
+    }, []);
+
     // -----------------------------------------------------------------------
     // Fetch initial status and history
     // -----------------------------------------------------------------------
@@ -92,11 +96,15 @@ export default function IncorporatePage() {
 
     useEffect(() => {
         const token = cookie.get('token') ?? '';
-        const url = `${WS_URL}?token=${encodeURIComponent(token)}`;
-        const ws = new WebSocket(url);
+        const ws = new WebSocket(WS_URL);
         wsRef.current = ws;
 
-        ws.onopen = () => setWsConnected(true);
+        // Send the auth token as the first message rather than in the URL,
+        // which would expose it in server logs and browser history.
+        ws.onopen = () => {
+            ws.send(JSON.stringify({token}));
+            setWsConnected(true);
+        };
         ws.onclose = () => setWsConnected(false);
         ws.onerror = () => setWsConnected(false);
 

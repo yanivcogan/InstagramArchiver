@@ -101,6 +101,40 @@ async function collectFiles(entry: FileSystemEntry, prefix: string): Promise<{ r
     return results.flat();
 }
 
+/** Scan dropped directories and call preflight. Returns ready-to-use ArchiveState list. */
+async function processDroppedDirs(dirEntries: FileSystemDirectoryEntry[]): Promise<ArchiveState[]> {
+    const archiveList: ArchiveState[] = [];
+    for (const archiveEntry of dirEntries) {
+        const children = await readAllDirEntries(archiveEntry.createReader());
+        const flat = await Promise.all(children.map(c => collectFiles(c, '')));
+        const fileList = flat.flat();
+        const files: FileState[] = fileList.map(({ relativePath, file }): FileState => ({
+            relativePath,
+            file,
+            uploadedBytes: 0,
+            status: 'pending',
+        }));
+        const totalBytes = files.reduce((s, f) => s + f.file.size, 0);
+        archiveList.push({
+            name: archiveEntry.name,
+            files,
+            totalBytes,
+            uploadedBytes: 0,
+            hasConflict: false,
+            resolution: 'skip' as ArchiveState['resolution'],
+            status: 'pending' as ArchiveState['status'],
+            expanded: false,
+        });
+    }
+    const preflight = await apiPost('upload/preflight', { archives: archiveList.map(a => a.name) });
+    const conflicts: Record<string, boolean> = preflight.conflicts ?? {};
+    return archiveList.map((a): ArchiveState => ({
+        ...a,
+        hasConflict: !!conflicts[a.name],
+        resolution: (conflicts[a.name] ? 'skip' : 'overwrite') as ArchiveState['resolution'],
+    }));
+}
+
 /** Compute SHA-256 of a file using the browser's native Web Crypto API. */
 async function computeSha256(file: File): Promise<string> {
     const buffer = await file.arrayBuffer();
@@ -154,7 +188,7 @@ async function apiDelete(path: string): Promise<void> {
  * Build a single 512-byte POSIX ustar header block.
  * typeFlag: '0' = regular file, 'L' = GNU long-name extension entry.
  */
-function makeTarHeader(name: string, size: number, typeFlag = '0'): Uint8Array {
+function makeTarHeader(name: string, size: number, typeFlag: string = '0'): Uint8Array<ArrayBuffer> {
     const enc = new TextEncoder();
     const buf = new Uint8Array(512);
 
@@ -276,12 +310,17 @@ export default function UploadPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [isDragActive, setIsDragActive] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [isAddingMore, setIsAddingMore] = useState(false);
 
     // Refs shared with async upload callbacks
     const activeUploadsRef = useRef<Map<string, TusUpload>>(new Map());
     const cancelledRef = useRef(false);
     const dragCounterRef = useRef(0);
     const pageContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        document.title = 'Upload | Browsing Platform';
+    }, []);
     const uploadStartTimeRef = useRef<number>(0);
     const speedSamplesRef = useRef<{ time: number; bytes: number }[]>([]);
     const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -350,61 +389,46 @@ export default function UploadPage() {
         e.preventDefault();
         dragCounterRef.current = 0;
         setIsDragActive(false);
-        if (phase !== 'idle') return;
+        if (phase !== 'idle' && phase !== 'setup') return;
 
-        setScanError(null);
-        setPhase('scanning');
+        const items = Array.from(e.dataTransfer.items);
+        const dirEntries = items
+            .map(item => item.webkitGetAsEntry())
+            .filter((entry): entry is FileSystemDirectoryEntry => !!entry && entry.isDirectory);
+
+        if (!dirEntries.length) {
+            if (phase === 'idle') setScanError('No folders detected. Please drop one or more archive folders.');
+            return;
+        }
+
+        if (phase === 'idle') {
+            setScanError(null);
+            setPhase('scanning');
+        } else {
+            setIsAddingMore(true);
+        }
 
         try {
-            const items = Array.from(e.dataTransfer.items);
-            const dirEntries = items
-                .map(item => item.webkitGetAsEntry())
-                .filter((entry): entry is FileSystemDirectoryEntry => !!entry && entry.isDirectory);
-
-            if (!dirEntries.length) {
-                setScanError('No folders detected. Please drop one or more archive folders.');
-                setPhase('idle');
-                return;
-            }
-
-            const archiveList: ArchiveState[] = [];
-            for (const archiveEntry of dirEntries) {
-                const children = await readAllDirEntries(archiveEntry.createReader());
-                const flat = await Promise.all(children.map(c => collectFiles(c, '')));
-                const fileList = flat.flat();
-                const files: FileState[] = fileList.map(({ relativePath, file }) => ({
-                    relativePath,
-                    file,
-                    uploadedBytes: 0,
-                    status: 'pending',
-                }));
-                const totalBytes = files.reduce((s, f) => s + f.file.size, 0);
-                archiveList.push({
-                    name: archiveEntry.name,
-                    files,
-                    totalBytes,
-                    uploadedBytes: 0,
-                    hasConflict: false,
-                    resolution: 'skip',
-                    status: 'pending',
-                    expanded: false,
+            const newArchives = await processDroppedDirs(dirEntries);
+            if (phase === 'idle') {
+                setArchives(newArchives);
+                setHideSkipped(false);
+                setCurrentPage(1);
+                setPhase('setup');
+            } else {
+                setArchives(prev => {
+                    const existingNames = new Set(prev.map(a => a.name));
+                    const toAdd = newArchives.filter(a => !existingNames.has(a.name));
+                    return [...prev, ...toAdd];
                 });
             }
-
-            const preflight = await apiPost('upload/preflight', { archives: archiveList.map(a => a.name) });
-            const conflicts: Record<string, boolean> = preflight.conflicts ?? {};
-
-            setArchives(archiveList.map(a => ({
-                ...a,
-                hasConflict: !!conflicts[a.name],
-                resolution: conflicts[a.name] ? 'skip' : 'overwrite',
-            })));
-            setHideSkipped(false);
-            setCurrentPage(1);
-            setPhase('setup');
         } catch (err) {
-            setScanError(`Failed to scan folders: ${err instanceof Error ? err.message : String(err)}`);
-            setPhase('idle');
+            if (phase === 'idle') {
+                setScanError(`Failed to scan folders: ${err instanceof Error ? err.message : String(err)}`);
+                setPhase('idle');
+            }
+        } finally {
+            setIsAddingMore(false);
         }
     }, [phase]);
 
@@ -480,7 +504,7 @@ export default function UploadPage() {
                             const fi = infoByPath.get(af.relativePath);
                             if (!fi) return af;
                             const uploaded = Math.min(Math.max(0, uploadedTarBytes - fi.dataStart), fi.file.size);
-                            const status = uploaded >= fi.file.size ? 'done'
+                            const status: FileState['status'] = uploaded >= fi.file.size ? 'done'
                                 : uploaded > 0 ? 'uploading' : 'pending';
                             return { ...af, uploadedBytes: uploaded, status };
                         });
@@ -685,6 +709,7 @@ export default function UploadPage() {
     // Pagination helpers
     // -----------------------------------------------------------------------
 
+    const activeSetupArchives = archives.filter(a => !(a.hasConflict && a.resolution === 'skip'));
     const hasAnySkipped = archives.some(a => a.hasConflict && a.resolution === 'skip');
 
     const visibleSetupArchives = hideSkipped
@@ -779,8 +804,9 @@ export default function UploadPage() {
                                     {archives.length} archive{archives.length !== 1 ? 's' : ''} detected
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    ({archives.reduce((s, a) => s + a.files.length, 0)} files,{' '}
-                                    {formatBytes(archives.reduce((s, a) => s + a.totalBytes, 0))} total)
+                                    ({activeSetupArchives.reduce((s, a) => s + a.files.length, 0)} files,{' '}
+                                    {formatBytes(activeSetupArchives.reduce((s, a) => s + a.totalBytes, 0))}{' '}
+                                    {activeSetupArchives.length < archives.length ? 'to upload' : 'total'})
                                 </Typography>
                             </Stack>
 
@@ -862,6 +888,19 @@ export default function UploadPage() {
                             ))}
 
                             {renderPagination(visibleSetupArchives.length)}
+
+                            {isAddingMore && (
+                                <Stack direction="row" alignItems="center" justifyContent="center" gap={1}>
+                                    <CircularProgress size={16} />
+                                    <Typography variant="body2" color="text.secondary">
+                                        Scanning additional folders…
+                                    </Typography>
+                                </Stack>
+                            )}
+
+                            <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                                Drop additional archive folders here to add them
+                            </Typography>
                         </Stack>
                     )}
 

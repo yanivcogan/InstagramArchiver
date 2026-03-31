@@ -55,16 +55,16 @@ export class EntityViewerConfig implements IEntityViewerConfig {
     }
     account = {
         display: "display" as IEntityDisplayOption,
-        annotator: "hide" as IEntityAnnotatorOption,
-        postsPageSize: 5
+        annotator: "show" as IEntityAnnotatorOption,
+        postsPageSize: null
     };
     post = {
         display: "display" as IEntityDisplayOption,
-        annotator: "hide" as IEntityAnnotatorOption,
+        annotator: "show" as IEntityAnnotatorOption,
     };
     media = {
         display: "display" as IEntityDisplayOption,
-        annotator: "hide" as IEntityAnnotatorOption,
+        annotator: "show" as IEntityAnnotatorOption,
         style: {} as React.CSSProperties,
     };
     mediaPart = {

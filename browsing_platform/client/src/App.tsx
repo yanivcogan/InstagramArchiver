@@ -15,6 +15,7 @@ import {AdapterDayjs} from '@mui/x-date-pickers/AdapterDayjs';
 import {KeyStatesProvider} from './services/keys/keyStates';
 import {ToastContainer} from "material-react-toastify";
 import {incorporateArrayInQueue, IPopupAlert, IPreparedPopupAlert} from "./services/alerts/alerts";
+import AlertQueueModal from "./services/alerts/AlertQueueModal";
 import AccountPage from "./pages/AccountPage";
 import PostPage from "./pages/PostPage";
 import MediaPage from "./pages/MediaPage";
@@ -79,6 +80,7 @@ export default function App() {
                     position="bottom-left"
                     bodyStyle={{color: '#000'}}
                 />
+                <AlertQueueModal alertQueue={alertQueue}/>
             </Router>
         </KeyStatesProvider>
         </LocalizationProvider>

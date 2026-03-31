@@ -314,14 +314,16 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
 
             # --- Step 1: Read metadata.json ---
             logger.debug(f"Extracting metadata...")
-            # Contains target_url, archiving_start_timestamp
+            # Contains target_url, notes, archiving_start_timestamp
             metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
             archived_url = None
+            notes = None
             try:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.loads(f.read())
                 archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
+                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
                 timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
 
                 # Convert timestamp to UTC if present
@@ -396,7 +398,8 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         structures = %(structures)s,
                         metadata = %(metadata)s,
                         extraction_error = NULL,
-                        attachments = %(attachments)s
+                        attachments = %(attachments)s,
+                        notes = %(notes)s
                     WHERE id = %(id)s
                     ''',
                     {
@@ -407,6 +410,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str),
                         "archived_url": archived_url,
                         "archiving_timestamp": iso_timestamp,
+                        "notes": notes,
                     },
                     'none'
                 )
@@ -639,10 +643,12 @@ def add_missing_metadata():
             metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
             archived_url = None
+            notes = None
             try:
                 with open(metadata_path, "r", encoding="utf-8") as f:
                     metadata = json.loads(f.read())
                 archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
+                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
                 timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
                 timezone = get_localzone_name()
                 if timestamp is not None:
@@ -659,12 +665,14 @@ def add_missing_metadata():
             db.execute_query(
                 '''UPDATE archive_session SET
                     archived_url = %(archived_url)s,
-                    archiving_timestamp = %(archiving_timestamp)s
+                    archiving_timestamp = %(archiving_timestamp)s,
+                    notes = %(notes)s
                    WHERE id = %(id)s''',
                 {
                     "id": entry['id'],
                     "archived_url": archived_url,
                     "archiving_timestamp": iso_timestamp,
+                    "notes": notes,
                 },
                 return_type="none"
             )

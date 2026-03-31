@@ -9,7 +9,7 @@ from browsing_platform.server.services.tag_management import (
     ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, list_tag_types, create_tag_type, update_tag_type,
     delete_tag_type,
     list_tags, list_quick_access_tags, create_tag, update_tag, delete_tag, get_tag_usage_counts,
-    list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle,
+    list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle, update_hierarchy_notes,
 )
 
 router = APIRouter(
@@ -154,4 +154,11 @@ async def post_hierarchy(body: HierarchyBody) -> ITagHierarchyEntry:
 @router.delete("/hierarchy")
 async def del_hierarchy(body: HierarchyDeleteBody) -> dict:
     remove_hierarchy(body.super_tag_id, body.sub_tag_id)
+    return {"ok": True}
+
+
+@router.patch("/hierarchy/")
+@router.patch("/hierarchy")
+async def patch_hierarchy_notes(body: HierarchyBody) -> dict:
+    update_hierarchy_notes(body.super_tag_id, body.sub_tag_id, body.notes)
     return {"ok": True}

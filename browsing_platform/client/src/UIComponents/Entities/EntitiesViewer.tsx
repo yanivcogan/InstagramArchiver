@@ -26,7 +26,7 @@ export default function EntitiesViewer({entities, viewerConfig, highlightComment
 
     const sortedAccounts = useMemo(() =>
         [...(entities.accounts ?? [])].sort(
-            (a, b) => (b.posts?.length ?? 0) - (a.posts?.length ?? 0)
+            (a, b) => (b.account_posts?.length ?? 0) - (a.account_posts?.length ?? 0)
         ), [entities.accounts]);
 
     return <Stack gap={1}>

@@ -11,6 +11,7 @@ from browsing_platform.server.services.event_logger import log_event
 from browsing_platform.server.services.sharing_manager import check_share_permissions, \
     SharePermissions
 from browsing_platform.server.services.token_manager import check_token, TokenPermissions
+from utils import db
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +34,33 @@ async def get_auth_permissions(request: Request):
     return check_token(token)
 
 
+async def _log_body_snippet(request: Request) -> str:
+    """Return a short excerpt of the request body for diagnostic logging.
+    Skips reading entirely for non-JSON content types to avoid buffering large
+    binary payloads (e.g. TUS file chunks) and to prevent UnicodeDecodeError."""
+    if "application/json" not in request.headers.get("content-type", ""):
+        return "<non-json body skipped>"
+    try:
+        body = await request.body()
+        return body[:512].decode("utf-8", errors="replace")
+    except Exception:
+        return "<unreadable>"
+
+
 async def raise_auth_user_error(request: Request, token_permissions: Optional[TokenPermissions]):
     if not token_permissions:
-        body = await request.body()
+        body_snippet = await _log_body_snippet(request)
         logger.warning(f"Unauthorized access - missing or invalid auth header: {request.scope['route'].path}")
         log_event("unauthorized_access", None,
                   request.scope['root_path'] + request.scope['route'].path,
-                  json.dumps({"body": body.decode()}))
+                  json.dumps({"body": body_snippet}))
         raise HTTPException(status_code=401)
     elif not token_permissions.valid:
-        body = await request.body()
+        body_snippet = await _log_body_snippet(request)
         logger.warning(f"Unauthorized access - invalid token: {request.scope['route'].path}")
         log_event("unauthorized_access", None,
                   request.scope['root_path'] + request.scope['route'].path,
-                  json.dumps({"body": body.decode()}))
+                  json.dumps({"body": body_snippet}))
         raise HTTPException(status_code=401)
     else:
         logger.debug(f"Auth successful for user {token_permissions.user_id}: {request.scope['route'].path}")
@@ -69,22 +83,39 @@ async def get_share_permissions(request: Request) -> Optional[str]:
 
 async def raise_share_access_error(request: Request, share_permissions: Optional[SharePermissions]):
     if not share_permissions:
-        body = await request.body()
+        body_snippet = await _log_body_snippet(request)
         logger.warning(f"Unauthorized access - missing or invalid share token: {request.scope['route'].path}")
         log_event("unauthorized_access", None,
                   request.scope['root_path'] + request.scope['route'].path,
-                  json.dumps({"body": body.decode()}))
+                  json.dumps({"body": body_snippet}))
         raise HTTPException(status_code=401)
     elif not share_permissions.view:
-        body = await request.body()
+        body_snippet = await _log_body_snippet(request)
         logger.warning(f"Unauthorized access - share token does not grant view access: {request.scope['route'].path}")
         log_event("unauthorized_access", None,
                   request.scope['root_path'] + request.scope['route'].path,
-                  json.dumps({"body": body.decode()}))
+                  json.dumps({"body": body_snippet}))
         raise HTTPException(status_code=401)
     else:
         logger.debug(f"Auth successful using share link: {request.scope['route'].path}")
         return True
+
+
+async def require_any_auth(request: Request) -> None:
+    """Raise 401 immediately if the request carries no credentials at all.
+
+    Used by URL-based lookup routes (e.g. /pk/{id}, /url/{url}) that must
+    perform a DB lookup *before* they know the entity's numeric ID — and
+    therefore can't run the full entity-level auth check up front.
+    Without this guard, unauthenticated callers can probe whether an entity
+    exists by observing the 404 vs 401 distinction in the response.
+    """
+    token_perms = await get_auth_permissions(request)
+    if token_perms and token_perms.valid:
+        return
+    if request.headers.get("X-Share-Link"):
+        return
+    raise HTTPException(status_code=401)
 
 
 async def auth_entity_view_access(request: Request, entity: T_Entities, entity_id: int):
@@ -111,6 +142,10 @@ async def auth_admin_access(request: Request):
 
 
 def get_user_id(request: Request):
+    if os.getenv("BROWSING_PLATFORM_DEV") == "1":
+        # In dev mode there is no real session token; use the first user in the DB as a stand-in.
+        row = db.execute_query("SELECT id FROM user ORDER BY id LIMIT 1", {}, "single_row")
+        return row["id"] if row else None
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
     token_permissions = check_token(token)

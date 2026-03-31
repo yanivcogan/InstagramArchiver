@@ -1,25 +1,22 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {IAccountAndAssociatedEntities, IAccountInteractions, IAccountRelation} from "../../types/entities";
+import {IAccountAndAssociatedEntities, IAccountAuxiliaryCounts, IAccountInteractions, IAccountRelation, IPostAndAssociatedEntities} from "../../types/entities";
 import {
-    Button,
     CircularProgress,
-    Collapse,
     IconButton,
     List,
     ListItem,
     Paper,
     Stack,
     Tooltip,
-    Typography
+    Typography,
+    Link
 } from "@mui/material";
 import LinkIcon from '@mui/icons-material/Link';
-import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import HistoryIcon from '@mui/icons-material/History';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import LazyCollapsible from "../LazyCollapsible";
 import Post from "./Post";
 import ReactJson from "react-json-view";
-import {fetchAccountData, fetchAccountInteractions, fetchAccountRelations} from "../../services/DataFetcher";
+import {fetchAccountAuxiliaryCounts, fetchAccountData, fetchAccountInteractions, fetchAccountRelations} from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
 import AccountRelation from "./AccountRelation";
@@ -28,6 +25,52 @@ import PostLike from "./PostLike";
 import TaggedAccountChip from "./TaggedAccountChip";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
+import {useLocation} from "react-router";
+
+function parseCssDimension(value: string | number | undefined, viewportPx: number): number {
+    if (value == null) return 0;
+    if (typeof value === 'number') return value;
+    if (value.endsWith('vh')) return (parseFloat(value) / 100) * viewportPx;
+    if (value.endsWith('px')) return parseFloat(value);
+    return 0;
+}
+
+function estimatePostHeight(
+    post: IPostAndAssociatedEntities,
+    mediaStyle: React.CSSProperties | undefined,
+): number {
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+
+    // Fixed structure: paper padding (32) + URL (22) + date (20) + annotator (40)
+    //   + 3x LazyCollapsible headers for Comments/Likes/Raw Data (40 each)
+    //   + ~6 Stack gaps at 4px each
+    const FIXED = 32 + 22 + 20 + 40 + 3 * 40 + 6 * 4;
+
+    // Caption (body2, ~80 chars/line, 24px line-height)
+    const captionLines = post.caption ? Math.ceil(post.caption.length / 80) : 0;
+    const captionHeight = captionLines * 24;
+
+    // Tagged accounts row
+    const taggedHeight = (post.post_tagged_accounts?.length ?? 0) > 0 ? 36 : 0;
+
+    // Media section (wrapping flex row, width ≈ height rule of thumb)
+    const numMedia = post.post_media?.length ?? 0;
+    let mediaHeight = 0;
+    if (numMedia > 0 && mediaStyle) {
+        const maxH = parseCssDimension(mediaStyle.maxHeight, vh);
+        const minH = parseCssDimension(mediaStyle.minHeight, vh);
+        const itemH = Math.max(minH || 0, maxH || 300);
+        const itemW = itemH;
+        const containerW = vw - 128;
+        const gap = 8;
+        const itemsPerRow = Math.max(1, Math.floor((containerW + gap) / (itemW + gap)));
+        const rows = Math.ceil(numMedia / itemsPerRow);
+        mediaHeight = rows * itemH + (rows - 1) * gap;
+    }
+
+    return FIXED + captionHeight + taggedHeight + mediaHeight;
+}
 
 const HIGHLIGHT_STYLE: React.CSSProperties = {
     backgroundColor: '#fff8dc',
@@ -44,23 +87,39 @@ interface IProps {
     highlightRelationId?: number
 }
 
-export default function Account({account: accountProp, viewerConfig, highlightCommentId, highlightLikeId, highlightRelationId}: IProps) {
+const usernameFromUrl = (url?: string) : string | null => {
+    if(!url){
+        return null
+    }
+    const urlParts = url.trim().split("/").filter(x=>x.length);
+    return urlParts[urlParts.length - 1]
+}
+
+export default function Account({
+                                    account: accountProp,
+                                    viewerConfig,
+                                    highlightCommentId,
+                                    highlightLikeId,
+                                    highlightRelationId
+                                }: IProps) {
     const [account, setAccount] = useState(accountProp);
-    const [expandDetails, setExpandDetails] = useState(false);
     const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
-    const [postsToShow, setPostsToShow] = useState(
-        viewerConfig?.account?.postsPageSize || accountProp.account_posts.length || 5
-    );
+    const [renderedIndices, setRenderedIndices] = useState<Set<number>>(() => {
+        const pSize = viewerConfig?.account?.postsPageSize;
+        if (!pSize) return new Set<number>(); // export mode: irrelevant, all posts render via !pageSize check
+        return new Set(Array.from({length: pSize}, (_, i) => i));
+    });
 
     const [relations, setRelations] = useState<IAccountRelation[] | null>(null);
     const [loadingRelations, setLoadingRelations] = useState(false);
-    const [relationsExpanded, setRelationsExpanded] = useState(false);
 
     const [interactions, setInteractions] = useState<IAccountInteractions | null>(null);
     const [loadingInteractions, setLoadingInteractions] = useState(false);
-    const [interactionsExpanded, setInteractionsExpanded] = useState(false);
+
+    const [auxiliaryCounts, setAuxiliaryCounts] = useState<IAccountAuxiliaryCounts | null>(null);
 
     const relationRefs = useRef<Map<number, HTMLElement>>(new Map());
+    const observerRef = useRef<IntersectionObserver | null>(null);
 
     const fetchAccountDetails = async () => {
         const itemId = account.id;
@@ -71,14 +130,6 @@ export default function Account({account: accountProp, viewerConfig, highlightCo
         setAwaitingDetailsFetch(false);
     };
 
-    const toggleDetails = async () => {
-        const next = !expandDetails;
-        setExpandDetails(next);
-        if (next && (account.data === undefined || account.data === null)) {
-            await fetchAccountDetails();
-        }
-    };
-
     const loadRelations = useCallback(async () => {
         if (loadingRelations || relations !== null || account.id == null) return;
         setLoadingRelations(true);
@@ -87,30 +138,56 @@ export default function Account({account: accountProp, viewerConfig, highlightCo
         setLoadingRelations(false);
     }, [loadingRelations, relations, account.id]);
 
-    const toggleRelations = async () => {
-        const next = !relationsExpanded;
-        setRelationsExpanded(next);
-        if (next && relations === null) await loadRelations();
-    };
+    const sortedPosts = useMemo(() =>
+        [...account.account_posts].sort((a, b) =>
+            (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
+        ), [account.account_posts]);
 
-    const toggleInteractions = async () => {
-        const next = !interactionsExpanded;
-        setInteractionsExpanded(next);
-        if (next && interactions === null && account.id != null) {
-            setLoadingInteractions(true);
-            const fetched = await fetchAccountInteractions(account.id);
-            setInteractions(fetched);
-            setLoadingInteractions(false);
+    const pageSize = viewerConfig?.account?.postsPageSize ?? null;
+    const mediaStyle = viewerConfig?.media?.style;
+    const estimatedHeights = useMemo(
+        () => sortedPosts.map(p => estimatePostHeight(p, mediaStyle)),
+        [sortedPosts, mediaStyle]
+    );
+
+    // Returns the shared IntersectionObserver, creating it on first use.
+    // Using a getter instead of an effect avoids timing issues between ref callbacks and effects.
+    const getObserver = useCallback((): IntersectionObserver | null => {
+        if (!pageSize) return null;
+        if (!observerRef.current) {
+            observerRef.current = new IntersectionObserver(
+                (entries) => {
+                    const newIndices = entries
+                        .filter(e => e.isIntersecting)
+                        .map(e => parseInt((e.target as HTMLElement).dataset.postIndex!))
+                        .filter(i => !isNaN(i));
+                    if (newIndices.length > 0) {
+                        setRenderedIndices(prev => {
+                            const toAdd = newIndices.filter(i => !prev.has(i));
+                            if (toAdd.length === 0) return prev;
+                            const next = new Set(prev);
+                            toAdd.forEach(i => next.add(i));
+                            return next;
+                        });
+                    }
+                },
+                {root: null, rootMargin: '0px 0px 400px 0px', threshold: 0}
+            );
         }
-    };
+        return observerRef.current;
+    }, [pageSize]);
 
-    // Auto-expand and load relations if a highlight target is specified
+    // Disconnect observer on unmount
     useEffect(() => {
-        if (highlightRelationId) {
-            setRelationsExpanded(true);
-            loadRelations();
-        }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        return () => { observerRef.current?.disconnect(); };
+    }, []);
+
+    useEffect(() => {
+        if (account.id == null) return;
+        fetchAccountAuxiliaryCounts(account.id)
+            .then(counts => setAuxiliaryCounts(counts))
+            .catch(() => {});
+    }, [account.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Scroll to highlighted relation after load
     useEffect(() => {
@@ -120,18 +197,33 @@ export default function Account({account: accountProp, viewerConfig, highlightCo
         }
     }, [relations, highlightRelationId]);
 
-    const sortedPosts = useMemo(() =>
-        [...account.account_posts].sort((a, b) =>
-            (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
-        ), [account.account_posts]);
+    const location = useLocation();
+
+    const relationsLabel = auxiliaryCounts != null
+        ? `Related Accounts (${auxiliaryCounts.relations_count})`
+        : "Related Accounts";
+
+    const interactionsLabel = (() => {
+        if (auxiliaryCounts == null) return "Interactions";
+        const ic = auxiliaryCounts.interaction_counts;
+        const total = ic.comments_count + ic.likes_count + ic.tagged_in_count;
+        if (total === 0) return "Interactions (0)";
+        const parts: string[] = [];
+        if (ic.comments_count > 0) parts.push(`comments: ${ic.comments_count}`);
+        if (ic.likes_count > 0) parts.push(`likes: ${ic.likes_count}`);
+        if (ic.tagged_in_count > 0) parts.push(`tagged: ${ic.tagged_in_count}`);
+        return `Interactions (${parts.join(", ")})`;
+    })();
 
     const urls = (account.identifiers || []).filter(x => x.startsWith("url_")).map(x => x.split("url_")[1]);
     const shareToken = getShareTokenFromHref();
+    const accountHref = "/account/" + account.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : "");
+    const disableAccountLink = viewerConfig?.all?.hideInnerLinks;
 
     return <Paper sx={{padding: '1em'}}>
         <Stack gap={0.5} sx={{height: "100%"}}>
             <Stack gap={1} direction={"row"} alignItems={"center"}>
-                <Typography variant={"body1"} sx={{userSelect: "all"}}>{account.url}</Typography>
+                <Typography variant={"subtitle2"} sx={{userSelect: "all"}} color={"textSecondary"}>{account.url}</Typography>
                 {
                     urls.length > 1 ? <Tooltip
                         title={
@@ -148,35 +240,18 @@ export default function Account({account: accountProp, viewerConfig, highlightCo
                         </span>
                     </Tooltip> : null
                 }
-                {
-                    viewerConfig?.all?.hideInnerLinks ? null : <IconButton
-                        color={"primary"}
-                        href={"/account/" + account.id + (shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : "")}
-                    >
-                        <LinkIcon/>
-                    </IconButton>
-                }
             </Stack>
-            {account.display_name ? <Typography variant="h4">{account.display_name}</Typography> : null}
+            {disableAccountLink
+                ? <Typography variant="h5" sx={{alignSelf: 'flex-start'}}>
+                    {account.display_name ? account.display_name : usernameFromUrl(account.url) || account.url}
+                </Typography>
+                : <Link href={accountHref} color={"primary"} sx={{alignSelf: 'flex-start'}}>
+                    <Typography variant="h5">
+                        {account.display_name ? account.display_name : usernameFromUrl(account.url) || account.url}
+                    </Typography>
+                </Link>
+            }
             <Typography variant="caption">{account.bio}</Typography>
-            <span>
-                <IconButton size="small" color={"primary"} onClick={toggleDetails}>
-                    <MoreHorizIcon/>
-                </IconButton>
-            </span>
-            <Collapse in={expandDetails}>
-                {
-                    awaitingDetailsFetch ?
-                        <CircularProgress size={20}/> :
-                        account.data ?
-                            <ReactJson
-                                src={account.data}
-                                enableClipboard={false}
-                                style={{wordBreak: 'break-word'}}
-                            /> :
-                            null
-                }
-            </Collapse>
             {
                 viewerConfig?.account?.annotator !== "hide" && <Stack gap={1}>
                     <EntityAnnotator
@@ -189,11 +264,10 @@ export default function Account({account: accountProp, viewerConfig, highlightCo
 
             {/* Posts section */}
             <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
-                {
-                    sortedPosts
-                        .slice(0, postsToShow)
-                        .map((p, p_i) => (
-                            <React.Fragment key={p_i}>
+                {sortedPosts.map((p, i) => {
+                    if (!pageSize || renderedIndices.has(i)) {
+                        return (
+                            <React.Fragment key={p.id ?? i}>
                                 <Post
                                     post={p}
                                     viewerConfig={viewerConfig}
@@ -201,106 +275,95 @@ export default function Account({account: accountProp, viewerConfig, highlightCo
                                     highlightLikeId={highlightLikeId}
                                 />
                             </React.Fragment>
-                        ))
-                }
-                {
-                    viewerConfig?.account?.postsPageSize ?
-                        <Button
-                            variant="contained"
-                            disabled={sortedPosts.length <= postsToShow}
-                            onClick={() => setPostsToShow(curr => curr + 5)}
-                            onDoubleClick={() => setPostsToShow(sortedPosts.length)}
-                        >
-                            Load More Posts
-                        </Button>
-                        : null
-                }
+                        );
+                    }
+                    // Placeholder for unrendered post — registers with shared observer on mount
+                    return (
+                        <div
+                            key={p.id ?? i}
+                            ref={(el) => { if (el) getObserver()?.observe(el); }}
+                            data-post-index={String(i)}
+                            style={{height: estimatedHeights[i], width: '100%', boxSizing: 'border-box'}}
+                            aria-hidden="true"
+                        />
+                    );
+                })}
             </Stack>
 
             {/* Account relations section (on-demand) */}
             {viewerConfig?.accountRelation?.display !== 'hide' && account.id != null && (
-                <Stack gap={0.5}>
-                    <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={toggleRelations}
-                        endIcon={relationsExpanded ? <ExpandLessIcon/> : <ExpandMoreIcon/>}
-                        disabled={loadingRelations}
-                        startIcon={loadingRelations ? <CircularProgress size={14}/> : undefined}
-                    >
-                        Related Accounts
-                    </Button>
-                    <Collapse in={relationsExpanded}>
-                        {relations && relations.length === 0 && (
-                            <Typography variant="caption" color="text.secondary">No relations found</Typography>
-                        )}
-                        {relations && relations.length > 0 && (
-                            <Stack gap={0.5} sx={{mt: 0.5}}>
-                                {relations.map((r, i) => (
-                                    <div
-                                        key={i}
-                                        ref={r.id != null ? el => { if (el) relationRefs.current.set(r.id!, el); } : undefined}
-                                        style={r.id != null && r.id === highlightRelationId ? HIGHLIGHT_STYLE : undefined}
-                                    >
-                                        <AccountRelation relation={r} contextAccountId={account.id}/>
-                                    </div>
-                                ))}
-                            </Stack>
-                        )}
-                    </Collapse>
-                </Stack>
+                <LazyCollapsible label={relationsLabel} onLoad={loadRelations} loading={loadingRelations} defaultExpanded={!!highlightRelationId}>
+                    {relations && relations.length === 0 && (
+                        <Typography variant="caption" color="text.secondary">No relations found</Typography>
+                    )}
+                    {relations && relations.length > 0 && (
+                        <Stack gap={0.5} sx={{mt: 0.5}}>
+                            {relations.map((r, i) => (
+                                <div
+                                    key={i}
+                                    ref={r.id != null ? el => { if (el) relationRefs.current.set(r.id!, el); } : undefined}
+                                    style={r.id != null && r.id === highlightRelationId ? HIGHLIGHT_STYLE : undefined}
+                                >
+                                    <AccountRelation relation={r} contextAccountId={account.id}/>
+                                </div>
+                            ))}
+                        </Stack>
+                    )}
+                </LazyCollapsible>
             )}
 
             {/* Account interactions section (on-demand) */}
             {account.id != null && (
-                <Stack gap={0.5}>
-                    <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={toggleInteractions}
-                        endIcon={interactionsExpanded ? <ExpandLessIcon/> : <ExpandMoreIcon/>}
-                        disabled={loadingInteractions}
-                        startIcon={loadingInteractions ? <CircularProgress size={14}/> : undefined}
-                    >
-                        Interactions
-                    </Button>
-                    <Collapse in={interactionsExpanded}>
-                        {interactions && (
-                            <Stack gap={1} sx={{mt: 0.5}}>
-                                {interactions.comments.length > 0 && (
-                                    <Stack gap={0.5}>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Comments ({interactions.comments.length})
-                                        </Typography>
-                                        {interactions.comments.map((c, i) => <Comment key={i} comment={c}/>)}
+                <LazyCollapsible label={interactionsLabel} loading={loadingInteractions}
+                    onLoad={async () => {
+                        setLoadingInteractions(true);
+                        const fetched = await fetchAccountInteractions(account.id!);
+                        setInteractions(fetched);
+                        setLoadingInteractions(false);
+                    }}
+                >
+                    {interactions && (
+                        <Stack gap={1} sx={{mt: 0.5}}>
+                            {interactions.comments.length > 0 && (
+                                <Stack gap={0.5}>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Comments ({interactions.comments.length})
+                                    </Typography>
+                                    {interactions.comments.map((c, i) => <Comment key={i} comment={c}/>)}
+                                </Stack>
+                            )}
+                            {interactions.likes.length > 0 && (
+                                <Stack gap={0.5}>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Likes ({interactions.likes.length})
+                                    </Typography>
+                                    {interactions.likes.map((l, i) => <PostLike key={i} like={l}/>)}
+                                </Stack>
+                            )}
+                            {interactions.tagged_in.length > 0 && (
+                                <Stack gap={0.5}>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Tagged in ({interactions.tagged_in.length})
+                                    </Typography>
+                                    <Stack direction="row" gap={0.5} flexWrap="wrap">
+                                        {interactions.tagged_in.map((ta, i) => <TaggedAccountChip key={i} taggedAccount={ta}/>)}
                                     </Stack>
-                                )}
-                                {interactions.likes.length > 0 && (
-                                    <Stack gap={0.5}>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Likes ({interactions.likes.length})
-                                        </Typography>
-                                        {interactions.likes.map((l, i) => <PostLike key={i} like={l}/>)}
-                                    </Stack>
-                                )}
-                                {interactions.tagged_in.length > 0 && (
-                                    <Stack gap={0.5}>
-                                        <Typography variant="caption" color="text.secondary">
-                                            Tagged in ({interactions.tagged_in.length})
-                                        </Typography>
-                                        <Stack direction="row" gap={0.5} flexWrap="wrap">
-                                            {interactions.tagged_in.map((ta, i) => <TaggedAccountChip key={i} taggedAccount={ta}/>)}
-                                        </Stack>
-                                    </Stack>
-                                )}
-                                {interactions.comments.length === 0 && interactions.likes.length === 0 && interactions.tagged_in.length === 0 && (
-                                    <Typography variant="caption" color="text.secondary">No interactions found</Typography>
-                                )}
-                            </Stack>
-                        )}
-                    </Collapse>
-                </Stack>
+                                </Stack>
+                            )}
+                            {interactions.comments.length === 0 && interactions.likes.length === 0 && interactions.tagged_in.length === 0 && (
+                                <Typography variant="caption" color="text.secondary">No interactions found</Typography>
+                            )}
+                        </Stack>
+                    )}
+                </LazyCollapsible>
             )}
+
+            {/* Raw data section */}
+            <LazyCollapsible label="Raw Data" onLoad={fetchAccountDetails} loading={awaitingDetailsFetch}>
+                {account.data && (
+                    <ReactJson src={account.data} enableClipboard={false} style={{wordBreak: 'break-word'}}/>
+                )}
+            </LazyCollapsible>
         </Stack>
     </Paper>
 }

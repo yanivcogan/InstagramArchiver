@@ -8,6 +8,7 @@ from browsing_platform.server.services.permissions import auth_user_access, get_
 from browsing_platform.server.services.sharing_manager import (
     EntitySharePermissions,
     create_share_link,
+    entity_exists,
     get_existing_share_link,
     set_link_validity,
 )
@@ -22,6 +23,10 @@ router = APIRouter(
 
 @router.post("/", dependencies=[Depends(auth_user_access)])
 async def new_share_link(scope: EntitySharePermissions, req: Request) -> Any:
+    if scope.shared_entity is None:
+        raise HTTPException(status_code=400, detail="shared_entity is required")
+    if not entity_exists(scope.shared_entity.entity, scope.shared_entity.entity_id):
+        raise HTTPException(status_code=404, detail=f"{scope.shared_entity.entity} not found")
     user_id = get_user_id(req)
     return create_share_link(scope, user_id)
 

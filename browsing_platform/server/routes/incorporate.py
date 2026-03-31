@@ -3,9 +3,8 @@ import json
 import logging
 import os
 import threading
-from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from browsing_platform.server.services.incorporation_service import manager, _run_incorporation, incorporation_ws
 from browsing_platform.server.services.permissions import auth_admin_access
@@ -96,16 +95,24 @@ def history(_=Depends(auth_admin_access)):
 # ---------------------------------------------------------------------------
 
 @router.websocket("/ws")
-async def ws_endpoint(websocket: WebSocket, token: Optional[str] = Query(default=None)):
-    # Auth: dev bypass or validate admin token
+async def ws_endpoint(websocket: WebSocket):
+    # Accept first so we can send a proper close frame if auth fails.
+    # Tokens must NOT be passed in the URL (they appear in server logs); instead
+    # the client sends {"token": "<value>"} as its very first message.
+    await websocket.accept()
     is_dev = os.getenv("BROWSING_PLATFORM_DEV") == "1"
     if not is_dev:
+        try:
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+            msg = json.loads(raw)
+            token = msg.get("token") if isinstance(msg, dict) else None
+        except (asyncio.TimeoutError, json.JSONDecodeError, Exception):
+            await websocket.close(code=4003)
+            return
         perms = check_token(token)
         if not perms.valid or not perms.admin:
             await websocket.close(code=4003)
             return
-
-    await websocket.accept()
     q = incorporation_ws.subscribe()
     try:
         while True:

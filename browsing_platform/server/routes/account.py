@@ -7,8 +7,9 @@ from browsing_platform.server.routes.fast_api_request_processor import extract_e
 from browsing_platform.server.services.account import account_exists, get_account_data_by_id, \
     get_account_by_platform_id, get_account_by_url
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
-    get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions
-from browsing_platform.server.services.permissions import auth_entity_view_access
+    get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions, \
+    get_account_auxiliary_counts, AccountAuxiliaryCounts
+from browsing_platform.server.services.permissions import auth_entity_view_access, require_any_auth
 from browsing_platform.server.services.tag_management import get_related_account_tag_stats, ITagStat
 from extractors.entity_types import ExtractedEntitiesNested, AccountRelation
 
@@ -26,6 +27,7 @@ async def _auth_account_view(req: Request, item_id: int):
 @router.get("/pk/{platform_id}/")
 @router.get("/pk/{platform_id}")
 async def get_account_by_pk(platform_id: str, req: Request) -> ExtractedEntitiesNested:
+    await require_any_auth(req)
     account = get_account_by_platform_id(platform_id, include_data=False)
     if not account:
         raise HTTPException(status_code=404, detail="Account Not Found")
@@ -35,6 +37,7 @@ async def get_account_by_pk(platform_id: str, req: Request) -> ExtractedEntities
 
 @router.get("/url/{account_url:path}")
 async def get_account_by_url_path(account_url: str, req: Request) -> ExtractedEntitiesNested:
+    await require_any_auth(req)
     account = get_account_by_url(account_url, include_data=False)
     if not account:
         raise HTTPException(status_code=404, detail="Account Not Found")
@@ -73,6 +76,14 @@ async def get_related_tag_stats(item_id: int) -> list[ITagStat]:
     if not account_exists(item_id):
         raise HTTPException(status_code=404, detail="Account Not Found")
     return get_related_account_tag_stats(item_id)
+
+
+@router.get("/{item_id}/auxiliary-counts/", dependencies=[Depends(_auth_account_view)])
+@router.get("/{item_id}/auxiliary-counts", dependencies=[Depends(_auth_account_view)])
+async def get_account_auxiliary_counts_route(item_id: int) -> AccountAuxiliaryCounts:
+    if not account_exists(item_id):
+        raise HTTPException(status_code=404, detail="Account Not Found")
+    return get_account_auxiliary_counts(item_id)
 
 
 @router.get("/{item_id}/", dependencies=[Depends(_auth_account_view)])

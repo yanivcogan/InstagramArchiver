@@ -81,6 +81,19 @@ export default function PostPage() {
         });
     }, [apiRef]);
 
+    useEffect(() => {
+        if (loadingData) {
+            document.title = 'Post - Loading... | Browsing Platform';
+        } else {
+            const post = data?.accounts?.[0]?.account_posts?.[0];
+            const author = data?.accounts?.[0];
+            const authorName = author?.display_name || author?.url;
+            document.title = post
+                ? `Post #${post.id} by ${authorName || 'Unknown'} | Browsing Platform`
+                : 'Post | Browsing Platform';
+        }
+    }, [loadingData, data]);
+
     const renderData = () => {
         if (loadingData) {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
@@ -99,8 +112,14 @@ export default function PostPage() {
             highlightLikeId={highlightLikeId}
             viewerConfig={
                 new EntityViewerConfig({
-                    post: {annotator: disableAnnotator ? "disable" : "show"},
+                    account: {
+                        annotator: "disable"
+                    },
+                    post: {
+                        annotator: disableAnnotator ? "disable" : "show"
+                    },
                     media: {
+                        annotator: "disable",
                         style: {
                             maxWidth: '100%',
                             maxHeight: '40vh',

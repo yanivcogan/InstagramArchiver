@@ -34,6 +34,7 @@ export interface IErrorResponse {
 
 export class ServerError extends Error {
     status: number;
+
     constructor(status: number, message: string) {
         super(message);
         this.status = status;
@@ -69,7 +70,36 @@ const post = async (
         headers,
         signal: options?.abortSignal
     });
-    const resAsJson = res.status === 401 ? {error: "missing permissions"} : await res.json();
+    if (res.status === 401 && !options?.ignoreErrors) {
+        const currPosition = encodeURIComponent(window.location.pathname + window.location.search);
+        const missingTokenAlert: IPopupAlert = {
+            title: `Missing Permissions`,
+            message: `Your user doesn't have permissions to do this action, would you like to switch user?`,
+            actions: [
+                {
+                    label: `Switch User`,
+                    onClick: async () => {
+                        window.location.href = '/Login?redirect=' + currPosition;
+                    },
+                    onResolve: (_, closeNotification) => {
+                        closeNotification()
+                    }
+                },
+                {
+                    label: `Cancel`,
+                    onClick: async () => {
+                        return
+                    },
+                    onResolve: (_, closeNotification) => {
+                        closeNotification()
+                    }
+                },
+            ],
+            dismissible: true,
+        }
+        PubSub.publish(events.alert, missingTokenAlert);
+    }
+    const resAsJson = await res.json();
     if (!res.ok && !resAsJson?.error) {
         return Promise.reject(new ServerError(res.status, resAsJson?.detail || `Request failed with status ${res.status}`));
     }
@@ -79,57 +109,13 @@ const post = async (
 function handleResult(json: any, method: HTTP_METHODS, path: string, data?: {
     [key: string]: any
 }, options?: IRequestOptions) {
-    const currPosition = encodeURIComponent(window.location.pathname + window.location.search);
     return new Promise((resolve) => {
         let suppressResult = false;
         if (json && json.error && !(options && options.ignoreErrors)) {
             if (json.error === "missing token") {
                 suppressResult = true;
-                const missingTokenAlert: IPopupAlert = {
-                    title: `Invalid Token`,
-                    message: `You are not logged in, please log in again`,
-                    actions: [
-                        {
-                            label: `Login`,
-                            onClick: async () => {
-                                window.location.href = '/Login?redirect=' + currPosition;
-                            },
-                            onResolve: (_, closeNotification) => {
-                                closeNotification()
-                            }
-                        }
-                    ],
-                    dismissible: false,
-                }
-                PubSub.publish(events.alert, missingTokenAlert);
             } else if (json.error === "missing permissions") {
-                const missingTokenAlert: IPopupAlert = {
-                    title: `Missing Permissions`,
-                    message: `Your user doesn't have permissions to do this action, would you like to switch user?`,
-                    actions: [
-                        {
-                            label: `Switch User`,
-                            onClick: async () => {
-                                window.location.href = '/Login?redirect=' + currPosition;
-                            },
-                            onResolve: (_, closeNotification) => {
-                                closeNotification()
-                            }
-                        },
-                        {
-                            label: `Cancel`,
-                            onClick: async () => {
-                                return
-                            },
-                            onResolve: (_, closeNotification) => {
-                                closeNotification()
-                            }
-                        },
-                    ],
-                    dismissible: true,
-                }
                 suppressResult = true;
-                PubSub.publish(events.alert, missingTokenAlert);
             }
         }
         if (!suppressResult) {

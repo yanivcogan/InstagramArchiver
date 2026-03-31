@@ -163,6 +163,7 @@ export interface IArchiveSession {
     attachments?: ISessionAttachments;
     extract_algorithm_version?: number;
     archiving_timestamp?: string;
+    notes?: string;
     extraction_error?: string;
     source_type: 'AA_xlsx' | 'local_har' | 'local_wacz';
     incorporation_status?: 'pending' | 'parse_failed' | 'parsed' | 'extract_failed' | 'done';
@@ -181,4 +182,20 @@ export interface IAccountInteractions {
     comments: IComment[];
     likes: IPostLike[];
     tagged_in: ITaggedAccount[];
+}
+
+export interface IAccountInteractionCounts {
+    comments_count: number;
+    likes_count: number;
+    tagged_in_count: number;
+}
+
+export interface IAccountAuxiliaryCounts {
+    relations_count: number;
+    interaction_counts: IAccountInteractionCounts;
+}
+
+export interface IPostAuxiliaryCounts {
+    comments_count: number;
+    likes_count: number;
 }

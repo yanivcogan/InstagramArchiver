@@ -85,9 +85,7 @@ def run(cnx):
         else:
             print("    media_part: notes already absent, skipping")
 
-        _drop_notes_and_rebuild_fulltext(
-            cur, "archive_session", "idx_search_fulltext", "archived_url, archived_url_parts"
-        )
+        # archive_session intentionally keeps its notes column (not dropped here)
 
         # 1.4 Add entity_affinity JSON column to tag_type
         if not _column_exists(cur, "tag_type", "entity_affinity"):

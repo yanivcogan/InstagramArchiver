@@ -75,6 +75,19 @@ export default function MediaPage() {
         });
     }, [apiRef]);
 
+    useEffect(() => {
+        if (loadingData) {
+            document.title = 'Media - Loading... | Browsing Platform';
+        } else {
+            const media = data?.accounts?.[0]?.account_posts?.[0]?.post_media?.[0];
+            const author = data?.accounts?.[0];
+            const authorName = author?.display_name || author?.url;
+            document.title = media
+                ? `Media #${media.id} by ${authorName || 'Unknown'} | Browsing Platform`
+                : 'Media | Browsing Platform';
+        }
+    }, [loadingData, data]);
+
     const renderData = () => {
         if (loadingData) {
             return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
@@ -91,11 +104,19 @@ export default function MediaPage() {
             entities={data}
             viewerConfig={
                 new EntityViewerConfig({
+                    account: {
+                        annotator: "disable",
+                    },
+                    post: {
+                        annotator: "disable",
+                    },
                     media: {
                         style: {maxWidth: '100%', maxHeight: '75vh'},
                         annotator: disableAnnotator ? "disable" : "show",
                     },
-                    mediaPart: {display: "display"}
+                    mediaPart: {
+                        display: "display"
+                    }
                 })
             }
         />

@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import {Link, useSearchParams} from 'react-router';
 import {
     Box,
     Button,
@@ -26,6 +27,7 @@ import {
     TableRow,
     Tabs,
     TextField,
+    Tooltip,
     Typography,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -45,6 +47,7 @@ import {
     fetchTagTypes,
     fetchTagUsage,
     removeHierarchy,
+    updateHierarchyNotes,
     updateTag,
     updateTagType,
 } from "../services/TagManagementService";
@@ -56,16 +59,34 @@ const ENTITY_AFFINITY_OPTIONS = ["account", "post", "media", "media_part"];
 
 /* ── Shared helpers ─────────────────────────────────────────────────────────── */
 
-function UsageSummary({usage}: {usage: ITagUsage | null}) {
-    if (!usage) return null;
+function UsageSummary({usage, tagId}: {usage: ITagUsage | null; tagId: number}) {
+    if (!usage) return <CircularProgress size={10}/>;
     const total = usage.accounts + usage.posts + usage.media + usage.media_parts;
     if (total === 0) return <Typography variant="caption" color="text.secondary">Unused</Typography>;
-    const parts = [];
-    if (usage.accounts) parts.push(`${usage.accounts} acct`);
-    if (usage.posts) parts.push(`${usage.posts} post`);
-    if (usage.media) parts.push(`${usage.media} media`);
-    if (usage.media_parts) parts.push(`${usage.media_parts} part`);
-    return <Typography variant="caption" color="text.secondary">{parts.join(", ")}</Typography>;
+    const parts: React.ReactNode[] = [];
+    if (usage.accounts) parts.push(
+        <Link key="accounts" to={`/search?sm=accounts&t=${tagId}`} style={{fontSize: 'inherit'}}>
+            {usage.accounts} {usage.accounts === 1 ? 'account' : 'accounts'}
+        </Link>
+    );
+    if (usage.posts) parts.push(
+        <Link key="posts" to={`/search?sm=posts&t=${tagId}`} style={{fontSize: 'inherit'}}>
+            {usage.posts} {usage.posts === 1 ? 'post' : 'posts'}
+        </Link>
+    );
+    if (usage.media) parts.push(
+        <Link key="media" to={`/search?sm=media&t=${tagId}`} style={{fontSize: 'inherit'}}>
+            {usage.media} media
+        </Link>
+    );
+    if (usage.media_parts) parts.push(
+        <span key="parts">{usage.media_parts} {usage.media_parts === 1 ? 'part' : 'parts'}</span>
+    );
+    return (
+        <Typography variant="caption" color="text.secondary">
+            {parts.reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
+        </Typography>
+    );
 }
 
 /* ── Tab 1: Tag Types ───────────────────────────────────────────────────────── */
@@ -189,17 +210,29 @@ function TagTypesTab() {
 /* ── Tab 2: Tags ────────────────────────────────────────────────────────────── */
 
 function TagsTab() {
+    const [params, setParams] = useSearchParams();
+    const selectedTypeId = params.get('type') ? Number(params.get('type')) : null;
+    const setSelectedTypeId = (id: number | null) => {
+        setPage(1);
+        setParams(p => {
+            const next = new URLSearchParams(p);
+            if (id == null) next.delete('type'); else next.set('type', String(id));
+            return next;
+        });
+    };
+
     const [tagTypes, setTagTypes] = useState<ITagType[]>([]);
     const [tags, setTags] = useState<ITagDetail[]>([]);
-    const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
+    const [page, setPage] = useState(1);
+    const PAGE_SIZE = 50;
     const [formOpen, setFormOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<ITagDetail | null>(null);
     const [form, setForm] = useState<{name: string; description: string; tag_type_id: number | null; quick_access: boolean}>({
         name: "", description: "", tag_type_id: null, quick_access: false
     });
-    const [usageMap, setUsageMap] = useState<Record<number, ITagUsage>>({});
+    const [editUsage, setEditUsage] = useState<ITagUsage | null>(null);
 
     // Hierarchy state (only active while dialog is open for an existing tag)
     const [hierarchyParents, setHierarchyParents] = useState<ITagHierarchyEntry[]>([]);
@@ -209,24 +242,19 @@ function TagsTab() {
     const [addParentOptions, setAddParentOptions] = useState<ITagWithType[]>([]);
     const [addChildTag, setAddChildTag] = useState<ITagWithType | null>(null);
     const [addChildOptions, setAddChildOptions] = useState<ITagWithType[]>([]);
+    const [editingNote, setEditingNote] = useState<{super_id: number; sub_id: number; notes: string} | null>(null);
 
     const loadTypes = () => fetchTagTypes().then(setTagTypes);
     const loadTags = () => {
         setLoading(true);
-        fetchTags({tag_type_id: selectedTypeId ?? undefined, q: search || undefined}).then(data => {
+        fetchTags({tag_type_id: selectedTypeId ?? undefined, q: search || undefined, page, page_size: PAGE_SIZE}).then(data => {
             setTags(data);
             setLoading(false);
         });
     };
 
     useEffect(() => { loadTypes(); }, []);
-    useEffect(() => { loadTags(); }, [selectedTypeId, search]);
-
-    const loadUsage = async (tagId: number) => {
-        if (usageMap[tagId]) return;
-        const u = await fetchTagUsage(tagId);
-        setUsageMap(m => ({...m, [tagId]: u}));
-    };
+    useEffect(() => { loadTags(); }, [selectedTypeId, search, page]);
 
     const loadHierarchy = async (tagId: number) => {
         setHierarchyLoading(true);
@@ -253,7 +281,11 @@ function TagsTab() {
         setHierarchyChildren([]);
         setAddParentTag(null);
         setAddChildTag(null);
-        if (t.id) loadHierarchy(t.id);
+        setEditUsage(null);
+        if (t.id) {
+            loadHierarchy(t.id);
+            fetchTagUsage(t.id).then(setEditUsage);
+        }
         setFormOpen(true);
     };
 
@@ -278,6 +310,18 @@ function TagsTab() {
             loadTags();
         } catch (e: any) {
             toast.error(e?.message || "Cannot delete tag");
+        }
+    };
+
+    const handleToggleQuickAccess = async (t: ITagDetail) => {
+        if (!t.id) return;
+        const newValue = !t.quick_access;
+        setTags(prev => prev.map(tag => tag.id === t.id ? {...tag, quick_access: newValue} : tag));
+        try {
+            await updateTag(t.id, {name: t.name, description: t.description ?? null, tag_type_id: t.tag_type_id ?? null, quick_access: newValue});
+        } catch (e: any) {
+            setTags(prev => prev.map(tag => tag.id === t.id ? {...tag, quick_access: !newValue} : tag));
+            toast.error(e?.message || "Error updating quick access");
         }
     };
 
@@ -327,7 +371,7 @@ function TagsTab() {
         {/* Right: tag table */}
         <Stack gap={1} sx={{flex: 1}}>
             <Stack direction="row" gap={1}>
-                <TextField size="small" placeholder="Search tags…" value={search} onChange={e => setSearch(e.target.value)} sx={{flex: 1}}/>
+                <TextField size="small" placeholder="Search tags…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} sx={{flex: 1}}/>
                 <Button variant="contained" startIcon={<AddIcon/>} onClick={openCreate}>New Tag</Button>
             </Stack>
             {loading ? <CircularProgress/> : (
@@ -337,19 +381,29 @@ function TagsTab() {
                             <TableCell>Name</TableCell>
                             <TableCell>Type</TableCell>
                             <TableCell>Description</TableCell>
+                            <TableCell>Parents</TableCell>
                             <TableCell>Quick Access</TableCell>
-                            <TableCell>Usage</TableCell>
                             <TableCell/>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {tags.map(t => (
-                            <TableRow key={t.id} onMouseEnter={() => t.id && loadUsage(t.id)}>
+                            <TableRow key={t.id}>
                                 <TableCell>{t.name}</TableCell>
                                 <TableCell>{t.tag_type_name && <Chip label={t.tag_type_name} size="small"/>}</TableCell>
                                 <TableCell>{t.description}</TableCell>
-                                <TableCell>{t.quick_access ? "✓" : ""}</TableCell>
-                                <TableCell><UsageSummary usage={t.id ? usageMap[t.id] ?? null : null}/></TableCell>
+                                <TableCell>
+                                    <Stack direction="row" gap={0.5} flexWrap="wrap">
+                                        {t.parents?.map(p => <Chip key={p.id} label={p.name} size="small" variant="outlined"/>)}
+                                    </Stack>
+                                </TableCell>
+                                <TableCell padding="checkbox">
+                                    <Checkbox
+                                        checked={!!t.quick_access}
+                                        size="small"
+                                        onChange={() => handleToggleQuickAccess(t)}
+                                    />
+                                </TableCell>
                                 <TableCell>
                                     <IconButton size="small" onClick={() => openEdit(t)}><EditIcon fontSize="small"/></IconButton>
                                     <IconButton size="small" color="error" onClick={() => handleDelete(t)}><DeleteIcon fontSize="small"/></IconButton>
@@ -359,6 +413,11 @@ function TagsTab() {
                     </TableBody>
                 </Table>
             )}
+            <Stack direction="row" justifyContent="center" alignItems="center" gap={2}>
+                <Button size="small" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+                <Typography variant="caption">Page {page}</Typography>
+                <Button size="small" disabled={tags.length < PAGE_SIZE} onClick={() => setPage(p => p + 1)}>Next</Button>
+            </Stack>
         </Stack>
 
         <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="sm" fullWidth>
@@ -390,17 +449,49 @@ function TagsTab() {
                         {hierarchyLoading ? <CircularProgress size={20}/> : <>
                             <Stack gap={0.5}>
                                 <Typography variant="caption" color="text.secondary">Parents (supertags)</Typography>
-                                <Stack direction="row" gap={0.5} flexWrap="wrap">
+                                <Stack direction="row" gap={0.5} flexWrap="wrap" alignItems="center">
                                     {hierarchyParents.map(e => (
-                                        <Chip
-                                            key={e.super_tag_id}
-                                            label={e.super_tag_name}
-                                            size="small"
-                                            onDelete={() => handleRemoveParent(e)}
-                                        />
+                                        <Stack key={e.super_tag_id} direction="row" alignItems="center" gap={0.25}>
+                                            <Tooltip title={e.notes || ''} arrow disableInteractive>
+                                                <Chip
+                                                    label={e.super_tag_name}
+                                                    size="small"
+                                                    onDelete={() => handleRemoveParent(e)}
+                                                />
+                                            </Tooltip>
+                                            <Tooltip title="Edit note" arrow disableInteractive>
+                                                <IconButton size="small" sx={{p: 0.25}} onClick={() => setEditingNote({super_id: e.super_tag_id, sub_id: e.sub_tag_id, notes: e.notes ?? ''})}>
+                                                    <EditIcon sx={{fontSize: '0.8rem'}}/>
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Stack>
                                     ))}
                                     {hierarchyParents.length === 0 && <Typography variant="caption" color="text.secondary">None</Typography>}
                                 </Stack>
+                                {editingNote && hierarchyParents.some(e => e.super_tag_id === editingNote.super_id && e.sub_tag_id === editingNote.sub_id) && (
+                                    <Stack direction="row" gap={1} alignItems="center">
+                                        <TextField
+                                            size="small"
+                                            label="Note"
+                                            value={editingNote.notes}
+                                            onChange={e => setEditingNote(n => n ? {...n, notes: e.target.value} : null)}
+                                            onKeyDown={async e => {
+                                                if (e.key === 'Enter') {
+                                                    await updateHierarchyNotes(editingNote.super_id, editingNote.sub_id, editingNote.notes || null);
+                                                    setHierarchyParents(prev => prev.map(p => p.super_tag_id === editingNote.super_id ? {...p, notes: editingNote.notes || null} : p));
+                                                    setEditingNote(null);
+                                                } else if (e.key === 'Escape') { setEditingNote(null); }
+                                            }}
+                                            onBlur={async () => {
+                                                await updateHierarchyNotes(editingNote.super_id, editingNote.sub_id, editingNote.notes || null);
+                                                setHierarchyParents(prev => prev.map(p => p.super_tag_id === editingNote.super_id ? {...p, notes: editingNote.notes || null} : p));
+                                                setEditingNote(null);
+                                            }}
+                                            autoFocus
+                                            sx={{flex: 1}}
+                                        />
+                                    </Stack>
+                                )}
                                 <Stack direction="row" gap={1} alignItems="center">
                                     <Autocomplete
                                         sx={{flex: 1}}
@@ -419,17 +510,49 @@ function TagsTab() {
 
                             <Stack gap={0.5}>
                                 <Typography variant="caption" color="text.secondary">Children (subtags)</Typography>
-                                <Stack direction="row" gap={0.5} flexWrap="wrap">
+                                <Stack direction="row" gap={0.5} flexWrap="wrap" alignItems="center">
                                     {hierarchyChildren.map(e => (
-                                        <Chip
-                                            key={e.sub_tag_id}
-                                            label={e.sub_tag_name}
-                                            size="small"
-                                            onDelete={() => handleRemoveChild(e)}
-                                        />
+                                        <Stack key={e.sub_tag_id} direction="row" alignItems="center" gap={0.25}>
+                                            <Tooltip title={e.notes || ''} arrow disableInteractive>
+                                                <Chip
+                                                    label={e.sub_tag_name}
+                                                    size="small"
+                                                    onDelete={() => handleRemoveChild(e)}
+                                                />
+                                            </Tooltip>
+                                            <Tooltip title="Edit note" arrow disableInteractive>
+                                                <IconButton size="small" sx={{p: 0.25}} onClick={() => setEditingNote({super_id: e.super_tag_id, sub_id: e.sub_tag_id, notes: e.notes ?? ''})}>
+                                                    <EditIcon sx={{fontSize: '0.8rem'}}/>
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Stack>
                                     ))}
                                     {hierarchyChildren.length === 0 && <Typography variant="caption" color="text.secondary">None</Typography>}
                                 </Stack>
+                                {editingNote && hierarchyChildren.some(e => e.super_tag_id === editingNote.super_id && e.sub_tag_id === editingNote.sub_id) && (
+                                    <Stack direction="row" gap={1} alignItems="center">
+                                        <TextField
+                                            size="small"
+                                            label="Note"
+                                            value={editingNote.notes}
+                                            onChange={e => setEditingNote(n => n ? {...n, notes: e.target.value} : null)}
+                                            onKeyDown={async e => {
+                                                if (e.key === 'Enter') {
+                                                    await updateHierarchyNotes(editingNote.super_id, editingNote.sub_id, editingNote.notes || null);
+                                                    setHierarchyChildren(prev => prev.map(c => c.sub_tag_id === editingNote.sub_id ? {...c, notes: editingNote.notes || null} : c));
+                                                    setEditingNote(null);
+                                                } else if (e.key === 'Escape') { setEditingNote(null); }
+                                            }}
+                                            onBlur={async () => {
+                                                await updateHierarchyNotes(editingNote.super_id, editingNote.sub_id, editingNote.notes || null);
+                                                setHierarchyChildren(prev => prev.map(c => c.sub_tag_id === editingNote.sub_id ? {...c, notes: editingNote.notes || null} : c));
+                                                setEditingNote(null);
+                                            }}
+                                            autoFocus
+                                            sx={{flex: 1}}
+                                        />
+                                    </Stack>
+                                )}
                                 <Stack direction="row" gap={1} alignItems="center">
                                     <Autocomplete
                                         sx={{flex: 1}}
@@ -446,6 +569,10 @@ function TagsTab() {
                                 </Stack>
                             </Stack>
                         </>}
+
+                        <Divider/>
+                        <Typography variant="subtitle2">Usage</Typography>
+                        <UsageSummary usage={editUsage} tagId={editTarget.id}/>
                     </>}
                 </Stack>
             </DialogContent>
@@ -459,8 +586,18 @@ function TagsTab() {
 
 /* ── Main Page ──────────────────────────────────────────────────────────────── */
 
+const TAB_KEYS = ['types', 'tags'];
+
 export default function TagManagementPage() {
-    const [tab, setTab] = useState(0);
+    const [params, setParams] = useSearchParams();
+    const tab = Math.max(0, TAB_KEYS.indexOf(params.get('tab') ?? 'types'));
+
+    const setTab = (v: number) => setParams(p => {
+        const next = new URLSearchParams(p);
+        next.set('tab', TAB_KEYS[v]);
+        if (TAB_KEYS[v] !== 'tags') next.delete('type');
+        return next;
+    });
 
     useEffect(() => {
         document.title = "Tags | Browsing Platform";

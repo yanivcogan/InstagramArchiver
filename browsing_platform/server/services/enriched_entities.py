@@ -23,6 +23,22 @@ class AccountInteractions(BaseModel):
     tagged_in: list[TaggedAccount] = []
 
 
+class AccountInteractionCounts(BaseModel):
+    comments_count: int = 0
+    likes_count: int = 0
+    tagged_in_count: int = 0
+
+
+class AccountAuxiliaryCounts(BaseModel):
+    relations_count: int = 0
+    interaction_counts: AccountInteractionCounts = AccountInteractionCounts()
+
+
+class PostAuxiliaryCounts(BaseModel):
+    comments_count: int = 0
+    likes_count: int = 0
+
+
 def _build_in_clause(ids: list[int]) -> tuple[dict, str]:
     """Returns (query_args_dict, IN clause string) for a list of int IDs."""
     args = {f"id_{i}": id_ for i, id_ in enumerate(ids)}
@@ -141,6 +157,38 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
     )
 
 
+def get_account_auxiliary_counts(account_id: int) -> AccountAuxiliaryCounts:
+    relations_row = db.execute_query(
+        """SELECT COUNT(*) AS relations_count FROM account_relation
+           WHERE follower_account_id = %(id)s OR followed_account_id = %(id)s""",
+        {"id": account_id},
+        return_type="single_row"
+    )
+    interactions_row = db.execute_query(
+        """SELECT
+             (SELECT COUNT(*) FROM comment WHERE account_id = %(id)s) AS comments_count,
+             (SELECT COUNT(*) FROM post_like WHERE account_id = %(id)s) AS likes_count,
+             (SELECT COUNT(*) FROM tagged_account WHERE tagged_account_id = %(id)s) AS tagged_in_count""",
+        {"id": account_id},
+        return_type="single_row"
+    )
+    return AccountAuxiliaryCounts(
+        relations_count=relations_row["relations_count"],
+        interaction_counts=AccountInteractionCounts(**interactions_row)
+    )
+
+
+def get_post_auxiliary_counts(post_id: int) -> PostAuxiliaryCounts:
+    row = db.execute_query(
+        """SELECT
+             (SELECT COUNT(*) FROM comment WHERE post_id = %(id)s) AS comments_count,
+             (SELECT COUNT(*) FROM post_like WHERE post_id = %(id)s) AS likes_count""",
+        {"id": post_id},
+        return_type="single_row"
+    )
+    return PostAuxiliaryCounts(**row)
+
+
 class FlattenedEntitiesTransform(BaseModel):
     local_files_root: Optional[str] = None
     access_token: Optional[str] = None
@@ -166,7 +214,7 @@ def apply_flattened_entities_transform(
             if m.local_url is not None and m.local_url.strip() != "":
                 parsed = urlparse(m.local_url)
                 qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
-                qs['ft'] = generate_file_token(transform.access_token, m.local_url.split(f"{transform.local_files_root}")[-1])
+                qs['ft'] = generate_file_token(transform.access_token, parsed.path)
                 new_query = urlencode(qs, doseq=True)
                 m.local_url = str(urlunparse(parsed._replace(query=new_query)))
     if transform.strip_raw_data:
@@ -410,7 +458,7 @@ def get_archiving_sessions_by_account_id(
         f"""SELECT DISTINCT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
                    a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
                    a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
-                   a_s.archiving_timestamp, a_s.extraction_error,
+                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                    a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
@@ -435,7 +483,7 @@ def get_archiving_sessions_by_post_id(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
-                  a_s.archiving_timestamp, a_s.extraction_error,
+                  a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN post_archive AS p_a ON a_s.id = p_a.archive_session_id
@@ -464,7 +512,7 @@ def get_archiving_sessions_by_media_id(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
-                  a_s.archiving_timestamp, a_s.extraction_error,
+                  a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
             FROM archive_session AS a_s
             LEFT JOIN media_archive AS m_a ON a_s.id = m_a.archive_session_id

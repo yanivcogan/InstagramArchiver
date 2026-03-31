@@ -1,6 +1,17 @@
+import re
 from typing import Optional
 
 from argon2 import PasswordHasher, exceptions as argon_exc
+
+
+class AuthenticationError(Exception):
+    """Raised when login credentials are invalid."""
+    pass
+
+
+class AccountLockedException(Exception):
+    """Raised when the account is locked due to too many failed attempts."""
+    pass
 
 from browsing_platform.server.services.event_logger import log_event
 from browsing_platform.server.services.token_manager import generate_token
@@ -15,10 +26,29 @@ _ph = PasswordHasher(
     salt_len=16
 )
 
+PASSWORD_STRENGTH_ERROR = (  # nosec B105 - this is a user-facing error message, not a hardcoded credential
+    "Password must be at least 12 characters long and contain characters from "
+    "at least 3 of the following categories: lowercase letters (a-z), "
+    "uppercase letters (A-Z), digits (0-9), special characters (!@#… etc.)."
+)
+
+
+def _check_password_strength(password: str) -> None:
+    """Raise ValueError if the password does not meet minimum strength requirements."""
+    classes = sum([
+        bool(re.search(r'[a-z]', password)),
+        bool(re.search(r'[A-Z]', password)),
+        bool(re.search(r'[0-9]', password)),
+        bool(re.search(r'[^a-zA-Z0-9]', password)),
+    ])
+    if classes < 3:
+        raise ValueError(PASSWORD_STRENGTH_ERROR)
+
+
 def hash_password(password: str) -> tuple[str, str]:
     if len(password) < 12 or len(password) > 512:
         raise ValueError("Password length invalid (12-512 chars required)")
-
+    _check_password_strength(password)
     h = _ph.hash(password)
     return h, "argon2id"
 
@@ -62,11 +92,11 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             "$argon2id$v=19$m=65536,t=3,p=4$abcdefghijklmnopqrstuv$01234567890123456789012345678901",
             password
         )
-        raise Exception("error - couldn't login")
+        raise AuthenticationError("Invalid credentials")
     if user["locked"]:
-        raise Exception("Error - too many failed login attempts. Please ask the system admin to unlock your user.")
+        raise AccountLockedException("Too many failed login attempts. Please ask the system admin to unlock your account.")
     if not user["password_hash"]:
-        raise Exception("error - couldn't login")
+        raise AuthenticationError("Invalid credentials")
 
     ok = verify_password(user["password_hash"], password)
     if ok:
@@ -87,9 +117,9 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             , {"user_id": user["id"], "token": token}, "id"
         )
         log_event(
-            "login_attempt", None,
+            "login_attempt", user["id"],
             "{'success': true}",
-            f"{{'email': {email!r}}}"
+            "{}"
         )
         return {"token": token, "permissions": user["admin"]}
     else:
@@ -102,5 +132,5 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
             {"id": user["id"], "maxf": max_failures},
             "none"
         )
-        raise Exception("error - couldn't login")
+        raise AuthenticationError("Invalid credentials")
 

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from utils import db
+
 logger = logging.getLogger(__name__)
 
 _ARCHIVE_NAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_\-]*$')
@@ -164,7 +166,7 @@ def _extract_and_verify_tar(archive_name: str) -> dict:
             if sys.version_info >= (3, 12):
                 tf.extractall(archive_dir, filter="data")
             else:
-                tf.extractall(archive_dir)
+                tf.extractall(archive_dir)  # nosec B202 - all members pre-validated: isreg() + validate_file_path()
     except _tarfile.TarError as exc:
         return {"status": "fail", "results": [{"path": "_upload.tar", "status": f"tar_error: {exc}"}]}
 
@@ -240,7 +242,7 @@ def verify_archive(archive_name: str) -> dict:
             if state.get("upload_mode") == "tar":
                 return _extract_and_verify_tar(archive_name)
         except Exception:
-            pass
+            logger.warning("Could not parse TUS state file %s during tar detection", state_file)
 
     # --- Individual-file path (original behaviour) ---
     results = []
@@ -303,7 +305,7 @@ def _collect_tus_records(archive_name: str) -> list[dict]:
                     "size_bytes": state.get("upload_length"),
                 })
             except Exception:
-                pass
+                logger.warning("Could not parse TUS state file %s", state_file)
     return sorted(records, key=lambda r: r["relative_path"])
 
 
@@ -357,6 +359,18 @@ def commit_archive(archive_name: str, uploader_info: dict):
     # a separately mounted data disk) by falling back to copy+delete when os.rename
     # raises EXDEV (errno 18 "Invalid cross-device link").
     shutil.move(str(src), str(dst))
+
+    # Reset DB incorporation status so the pipeline re-processes a re-uploaded archive.
+    # For new archives this matches 0 rows (harmless); for overrides it resets the record.
+    try:
+        db.execute_query(
+            "UPDATE archive_session SET incorporation_status = 'pending', extraction_error = NULL "
+            "WHERE external_id = %(name)s AND source_type = 'local_har'",
+            {"name": archive_name},
+            return_type="none"
+        )
+    except Exception as exc:
+        logger.warning(f"Could not reset incorporation status for '{archive_name}': {exc}")
 
     # --- Checksum record ---
     checksum_doc = {

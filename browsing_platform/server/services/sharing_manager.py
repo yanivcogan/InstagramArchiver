@@ -49,6 +49,28 @@ class ShareLinkCreationResult(BaseModel):
     error: Optional[str] = None
 
 
+_ENTITY_TABLE: dict[str, str] = {
+    "account": "account",
+    "post": "post",
+    "media": "media",
+    "media_part": "media_part",
+    "archiving_session": "archive_session",
+}
+
+
+def entity_exists(entity: T_Entities, entity_id: int) -> bool:
+    """Return True if a row with the given ID exists for the entity type."""
+    table = _ENTITY_TABLE.get(entity)
+    if not table:
+        return False
+    row = db.execute_query(
+        f"SELECT id FROM `{table}` WHERE id = %(id)s",
+        {"id": entity_id},
+        return_type="single_row",
+    )
+    return row is not None
+
+
 def create_share_link(scope: EntitySharePermissions, user_id: int) -> ShareLinkCreationResult:
     try:
         suffix = generate_suffix()

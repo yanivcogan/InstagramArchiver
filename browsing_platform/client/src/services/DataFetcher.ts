@@ -1,4 +1,5 @@
 import {
+    IAccountAuxiliaryCounts,
     IAccountInteractions,
     IAccountRelation,
     IArchiveSession,
@@ -6,6 +7,7 @@ import {
     IComment,
     IExtractedEntitiesNested,
     IMediaPart,
+    IPostAuxiliaryCounts,
     IPostLike
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
@@ -111,6 +113,14 @@ export const fetchAccountInteractions = async (accountId: number): Promise<IAcco
     return await server.get(`account/${accountId}/interactions/`);
 }
 
+export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts> => {
+    return await server.get(`account/${accountId}/auxiliary-counts/`);
+}
+
+export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts> => {
+    return await server.get(`post/${postId}/auxiliary-counts/`);
+}
+
 export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
     return await server.get(`archiving_session/account/${accountId}/?${transformConfigToQueryParams(config)}`);
 }
@@ -123,9 +133,35 @@ export const fetchArchivingSessionsMedia = async (mediaId: number, config: Entit
     return await server.get(`archiving_session/media/${mediaId}/?${transformConfigToQueryParams(config)}`);
 }
 
-export const lookupTags = async (tagQuery: string): Promise<ITagWithType[]> => {
-    return await server.get(`tags/?q=` + encodeURIComponent(tagQuery));
+export const lookupTags = async (tagQuery: string, entity?: string): Promise<ITagWithType[]> => {
+    const params = new URLSearchParams({q: tagQuery});
+    if (entity) params.append('entity', entity);
+    return await server.get(`tags/?${params}`);
 }
+
+export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, string>> = {
+    accounts: 'account',
+    posts: 'post',
+    media: 'media',
+};
+
+export const fetchTagsForSearchResults = async (
+    mode: T_Search_Mode,
+    ids: number[]
+): Promise<Record<number, ITagWithType[]>> => {
+    const entity = SEARCH_MODE_TO_ENTITY[mode];
+    if (!entity || ids.length === 0) return {};
+    const result = await server.get(`tags/by-entities/?entity=${entity}&ids=${ids.join(',')}`);
+    return Object.fromEntries(Object.entries(result).map(([k, v]) => [Number(k), v as ITagWithType[]]));
+};
+
+export const batchAnnotate = async (
+    entityType: string,
+    entityIds: number[],
+    tags: Array<{id: number; notes?: string | null}>
+): Promise<void> => {
+    await server.post('annotate/batch', {entity_type: entityType, entity_ids: entityIds, tags});
+};
 
 export const SEARCH_MODES: readonly { key: string, label: string }[] = [
     {key: 'accounts', label: 'Accounts'},
@@ -222,6 +258,11 @@ export const ADVANCED_FILTERS_CONFIG: { [key: T_Search_Mode]: Fields } = {
         },
         archived_url: {
             label: 'Archived URL',
+            type: 'text',
+            excludeOperators: disabled_operators_by_type['text'],
+        },
+        notes: {
+            label: 'Notes',
             type: 'text',
             excludeOperators: disabled_operators_by_type['text'],
         },

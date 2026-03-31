@@ -17,6 +17,11 @@ class ITagType(BaseModel):
     entity_affinity: Optional[list] = None
 
 
+class ITagParent(BaseModel):
+    id: int
+    name: str
+
+
 class ITagDetail(BaseModel):
     id: Optional[int] = None
     name: str
@@ -24,6 +29,7 @@ class ITagDetail(BaseModel):
     tag_type_id: Optional[int] = None
     tag_type_name: Optional[str] = None
     quick_access: bool = False
+    parents: list[ITagParent] = []
 
 
 class ITagHierarchyEntry(BaseModel):
@@ -123,7 +129,11 @@ def list_tags(tag_type_id: Optional[int] = None, q: Optional[str] = None, page: 
         args["q"] = f"%{q}%"
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     rows = db.execute_query(
-        f"""SELECT t.id, t.name, t.description, t.tag_type_id, t.quick_access, tt.name AS tag_type_name
+        f"""SELECT t.id, t.name, t.description, t.tag_type_id, t.quick_access,
+                   tt.name AS tag_type_name,
+                   (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pt.id, 'name', pt.name))
+                    FROM tag_hierarchy th JOIN tag pt ON th.super_tag_id = pt.id
+                    WHERE th.sub_tag_id = t.id) AS parents_json
             FROM tag t
             LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
             {where_sql}
@@ -132,7 +142,14 @@ def list_tags(tag_type_id: Optional[int] = None, q: Optional[str] = None, page: 
         args,
         return_type="rows"
     )
-    return [ITagDetail(**row) for row in rows]
+    results = []
+    for row in rows:
+        parents_raw = row.pop("parents_json", None)
+        if isinstance(parents_raw, str):
+            parents_raw = json.loads(parents_raw)
+        row["parents"] = parents_raw or []
+        results.append(ITagDetail(**row))
+    return results
 
 
 def list_quick_access_tags() -> list[ITagWithType]:
@@ -258,6 +275,15 @@ def remove_hierarchy(super_tag_id: int, sub_tag_id: int) -> bool:
     db.execute_query(
         "DELETE FROM tag_hierarchy WHERE super_tag_id = %(super_id)s AND sub_tag_id = %(sub_id)s",
         {"super_id": super_tag_id, "sub_id": sub_tag_id},
+        return_type="none"
+    )
+    return True
+
+
+def update_hierarchy_notes(super_tag_id: int, sub_tag_id: int, notes: Optional[str]) -> bool:
+    db.execute_query(
+        "UPDATE tag_hierarchy SET notes=%(notes)s WHERE super_tag_id=%(super_id)s AND sub_tag_id=%(sub_id)s",
+        {"super_id": super_tag_id, "sub_id": sub_tag_id, "notes": notes},
         return_type="none"
     )
     return True
