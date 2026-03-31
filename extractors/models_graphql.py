@@ -101,8 +101,8 @@ class GenericCursorInfo(BaseModel): # Placeholder
     has_next_page: bool
     has_previous_page: Optional[bool] = None
     start_cursor: Optional[str] = None
-    model_config = ConfigDict(extra="allow")
-        populate_by_name = True
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
 
 
 class ClipsUserMedia(BaseModel):
