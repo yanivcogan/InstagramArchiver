@@ -1,12 +1,17 @@
 # archive.py
 import datetime
 import json
+import ijson
 import os
 import shutil
 import sys
 import threading
 import time
 import traceback
+import hashlib
+import socket
+import ssl
+from urllib.parse import urlparse
 from hashlib import md5
 from pathlib import Path
 from typing import Optional
@@ -39,6 +44,14 @@ load_dotenv()
 
 
 
+class TLSCertInfo(BaseModel):
+    fingerprint_sha256: Optional[str] = None
+    subject: Optional[dict] = None
+    issuer: Optional[dict] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
+
+
 class ArchiveSessionMetadata(BaseModel):
     profile_name: str
     target_url: str
@@ -53,13 +66,61 @@ class ArchiveSessionMetadata(BaseModel):
     har_hash: Optional[str] = None
     har_fuzzy_hash: Optional[str] = None
     sanitized_har_hash: Optional[str] = None
+    video_hash: Optional[str] = None
+    video_fuzzy_hash: Optional[str] = None
+    domain_resolutions: Optional[dict] = None
+    tls_cert: Optional[TLSCertInfo] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = None
     signature: Optional[str] = None
     notes: Optional[str] = None
 
 
-def screen_record(output_path, stop_event):
+def get_tls_cert_info(hostname: str) -> Optional[TLSCertInfo]:
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((hostname, 443), timeout=10) as sock:
+            with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                cert_der = ssock.getpeercert(binary_form=True)
+                cert_dict = ssock.getpeercert()
+                info = TLSCertInfo(
+                    fingerprint_sha256=hashlib.sha256(cert_der).hexdigest(),
+                    subject=dict(item for rdn in cert_dict.get('subject', ()) for item in rdn),
+                    issuer=dict(item for rdn in cert_dict.get('issuer', ()) for item in rdn),
+                    valid_from=cert_dict.get('notBefore'),
+                    valid_to=cert_dict.get('notAfter'),
+                )
+                print(f"TLS cert fingerprint for {hostname}: {info.fingerprint_sha256}")
+                return info
+    except Exception as e:
+        print(f"TLS certificate capture failed for {hostname}: {e}")
+        return None
+
+
+def resolve_har_domains(har_path: Path) -> dict:
+    """Parse all unique hostnames from HAR requests and resolve each to an IP."""
+    resolutions = {}
+    try:
+        hostnames = set()
+        with open(har_path, 'rb') as f:
+            for entry in ijson.items(f, 'log.entries.item'):
+                url = entry.get('request', {}).get('url', '')
+                if url:
+                    hostname = urlparse(url).hostname
+                    if hostname:
+                        hostnames.add(hostname)
+        for hostname in sorted(hostnames):
+            try:
+                resolutions[hostname] = socket.getaddrinfo(hostname, None)[0][4][0]
+            except Exception:
+                resolutions[hostname] = None
+        print(f"Resolved {len(resolutions)} domains from HAR.")
+    except Exception as e:
+        print(f"Error resolving HAR domains: {e}")
+    return resolutions
+
+
+def screen_record(output_path, stop_event, frame_hashes_path=None):
     # Screen recording using OpenCV, only capturing the Playwright browser window
     window_keywords = ("Nightly")
     browser_window = None
@@ -78,6 +139,9 @@ def screen_record(output_path, stop_event):
     raw_output_path = output_path.replace(".mp4", "_raw.mp4")
     out = None
     last_size = None
+    frame_index = 0
+    last_hash_time = None
+    frame_hash_interval_seconds = 30
 
     while not stop_event.is_set():
         try:
@@ -100,6 +164,20 @@ def screen_record(output_path, stop_event):
             img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             out.write(frame)
+
+            now = time.time()
+            if frame_hashes_path and (last_hash_time is None or now - last_hash_time >= frame_hash_interval_seconds):
+                frame_hash = hashlib.sha256(frame.tobytes()).hexdigest()
+                entry = json.dumps({
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "frame_index": frame_index,
+                    "sha256": frame_hash,
+                })
+                with open(frame_hashes_path, 'a', encoding='utf-8') as fh:
+                    fh.write(entry + '\n')
+                last_hash_time = now
+
+            frame_index += 1
         except Exception:
             time.sleep(1 / fps)
             continue
@@ -129,6 +207,9 @@ The script launches a Playwright-controlled Firefox browser ({metadata.browser_b
 The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
 None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
+MD5 hash of the screen recording: {metadata.video_hash}
+At the time of archiving, the following domains were contacted and resolved to the following IP addresses: {metadata.domain_resolutions}
+The TLS certificate presented by www.instagram.com had SHA-256 fingerprint {metadata.tls_cert.fingerprint_sha256 if metadata.tls_cert else 'N/A'}, issued by {metadata.tls_cert.issuer if metadata.tls_cert else 'N/A'}, valid from {metadata.tls_cert.valid_from if metadata.tls_cert else 'N/A'} to {metadata.tls_cert.valid_to if metadata.tls_cert else 'N/A'}.
 OS and hardware details: {metadata.platform}
 Additional Notes: {metadata.notes}"""
     return affidavit
@@ -230,6 +311,44 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     if recording_thread.is_alive():
         recording_thread.join()
         print("Recording finished.")
+
+    # Hash and timestamp the screen recording
+    video_path = archive_dir / "screen_recording.mp4"
+    if video_path.exists():
+        with open(video_path, 'rb') as f:
+            video_content = f.read()
+        metadata.video_hash = md5(video_content).hexdigest()
+        metadata.video_fuzzy_hash = ppdeep.hash(video_content)
+
+        video_hash_path = archive_dir / "video_hash.txt"
+        with open(video_hash_path, 'w', encoding='utf-8') as f:
+            f.write(metadata.video_hash)
+        try:
+            timestamp_file(video_hash_path)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ Error timestamping video hash file: {e}")
+
+        video_fuzzy_hash_path = archive_dir / "fuzzy_video_hash.txt"
+        with open(video_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+            f.write(metadata.video_fuzzy_hash)
+        try:
+            timestamp_file(video_fuzzy_hash_path)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ Error timestamping video fuzzy hash file: {e}")
+
+    # Timestamp the frame hashes log
+    frame_hashes_path = archive_dir / "frame_hashes.jsonl"
+    if frame_hashes_path.exists():
+        try:
+            timestamp_file(frame_hashes_path)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ Error timestamping frame hashes file: {e}")
+
+    # Resolve all domains contacted during the session
+    metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
 
     archiving_finished_timestamp = datetime.datetime.now().isoformat()
     metadata.archiving_finished_timestamp = archiving_finished_timestamp
@@ -354,6 +473,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
     archive_dir = Path(ROOT_DIR) / "archives" / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
     my_public_ip = get_my_public_ip()
+    tls_cert = get_tls_cert_info("www.instagram.com")
 
     with open(profile_path / "state.json", "r") as f:
         storage_state = json.load(f)
@@ -372,7 +492,8 @@ def archive_instagram_content(profile: Profile, target_url: str):
             archiving_timezone=datetime.datetime.now().astimezone().tzname(),
             har_archive=archive_dir / "archive.har",
             my_ip=my_public_ip,
-            platform=get_system_info()
+            platform=get_system_info(),
+            tls_cert=tls_cert,
         )
         # Launch browser with the saved state
         browser = p.firefox.launch(headless=False)
@@ -385,9 +506,10 @@ def archive_instagram_content(profile: Profile, target_url: str):
         )
 
         page = context.new_page()
+        frame_hashes_path = archive_dir / "frame_hashes.jsonl"
         recording_thread = threading.Thread(
             target=screen_record,
-            args=(str(video_path), stop_event)
+            args=(str(video_path), stop_event, str(frame_hashes_path))
         )
         recording_thread.start()
 
