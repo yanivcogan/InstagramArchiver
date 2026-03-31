@@ -170,22 +170,22 @@ def extract_data_from_har(
 
 
 def har_data_to_entities(
-        har_path: Path,
+        archive_path: Path,
         structures: list[StructureType],
         videos: list[Video],
-        photos: list[Photo]
+        photos: list[Photo],
 ) -> ExtractedEntitiesFlattened:
-    archive_dir = har_path.parent
+    archive_dir = archive_path.parent
     local_files_map = dict()
     for video in videos:
         if video.fetched_tracks:
             for track in video.fetched_tracks.values():
-                if len(video.local_files):
+                if video.local_files and len(video.local_files):
                     local_files_map[canonical_cdn_url(track.base_url) + ".mp4"] = video.local_files[0]
-        if video.full_asset:
+        if video.full_asset and video.local_files and len(video.local_files):
             local_files_map[canonical_cdn_url(video.full_asset)] = video.local_files[0]
     for photo in photos:
-        if len(photo.local_files) > 0:
+        if photo.local_files and len(photo.local_files) > 0:
             local_files_map[canonical_cdn_url(photo.url)] = photo.local_files[0]
 
     entities = ExtractedEntitiesFlattened(
@@ -1269,7 +1269,7 @@ def manual_entity_extraction():
     # Strip leading and trailing whitespace as well as " " or " from the input
     har_file = har_file.strip().strip('"').strip("'")
     har_path = Path(har_file)
-    entities = extract_entities_from_har(
+    entities = (
         har_path,
         VideoAcquisitionConfig(
             download_missing=False,

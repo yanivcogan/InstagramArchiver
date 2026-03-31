@@ -39,6 +39,7 @@ dependencies = [
     "starlette>=0.50.0,<1.0.0",
     # capped: starlette 1.0 is a major version bump; review middleware API changes before upgrading,
     "toga>=0.5.3",
+    "warcio>=1.7.5",
 ]
 
 [tool.hatch.build.targets.wheel]
