@@ -7,7 +7,7 @@ import ijson
 
 from extractors.models_har import HarRequest
 from extractors.structures_extraction_api_v1 import extract_data_from_api_v1_entry, ApiV1Response
-from extractors.structures_extraction_graphql import extract_data_from_graphql_entry, GraphQLResponse
+from extractors.structures_extraction_graphql import extract_graphql_from_response, GraphQLResponse
 from extractors.structures_extraction_html import extract_data_from_html_entry, PageResponse
 
 StructureType = Union[GraphQLResponse, ApiV1Response, PageResponse]
@@ -24,7 +24,9 @@ def structures_from_har(har_path: Path) -> list[StructureType]:
                     res_json = entry["response"]["content"].get("text")
                     if not res_json:
                         continue
-                    structure = extract_data_from_graphql_entry(json.loads(res_json), HarRequest(**entry["request"]))
+                    req = HarRequest(**entry["request"])
+                    ctx = {p['name']: p['value'] for p in req.postData.params} if req.postData and req.postData.params else {}
+                    structure = extract_graphql_from_response(json.loads(res_json), context=ctx)
                     if structure:
                         structures.append(structure)
                 # API v1
@@ -62,7 +64,9 @@ def keep_only_requests_for_instagram_structures(har_path: Path, clean_original: 
                     res_json = entry["response"]["content"].get("text")
                     if not res_json:
                         continue
-                    structure = extract_data_from_graphql_entry(json.loads(res_json), HarRequest(**entry["request"]))
+                    req = HarRequest(**entry["request"])
+                    ctx = {p['name']: p['value'] for p in req.postData.params} if req.postData and req.postData.params else {}
+                    structure = extract_graphql_from_response(json.loads(res_json), context=ctx)
                     if structure:
                         is_relevant = True
                 # API v1

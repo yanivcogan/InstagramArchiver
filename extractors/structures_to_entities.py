@@ -25,7 +25,7 @@ from extractors.models_har import HarRequest
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 from extractors.structures_extraction import StructureType, structures_from_har
 from extractors.structures_extraction_api_v1 import ApiV1Response, ApiV1Context, extract_data_from_api_v1_entry
-from extractors.structures_extraction_graphql import GraphQLResponse, extract_data_from_graphql_entry
+from extractors.structures_extraction_graphql import extract_graphql_from_response, GraphQLResponse
 from extractors.structures_extraction_html import PageResponse, extract_data_from_html_entry
 
 
@@ -59,7 +59,9 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
                 if 'graphql/query' in url:
                     res_json = content.get('text')
                     if res_json:
-                        structure = extract_data_from_graphql_entry(json.loads(res_json), HarRequest(**entry['request']))
+                        req = HarRequest(**entry['request'])
+                        ctx = {p['name']: p['value'] for p in req.postData.params} if req.postData and req.postData.params else {}
+                        structure = extract_graphql_from_response(json.loads(res_json), context=ctx)
                         if structure:
                             structures.append(structure)
                 elif 'instagram.com/api/v1/media/' in url and not mime.startswith('text/html'):

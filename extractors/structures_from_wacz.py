@@ -16,7 +16,7 @@ from extractors.extract_videos import (
 from extractors.models_har import HarRequest
 from extractors.structures_extraction import StructureType
 from extractors.structures_extraction_api_v1 import extract_data_from_api_v1_entry
-from extractors.structures_extraction_graphql_response import extract_graphql_from_response
+from extractors.structures_extraction_graphql import extract_graphql_from_response
 from extractors.structures_extraction_html import extract_data_from_html_entry
 
 
