@@ -1,89 +1,41 @@
 # archive.py
-import os
-import sys
-import traceback
-
-import ppdeep
-import pygetwindow as gw
-import time
-import json
 import datetime
+import json
+import os
+import shutil
+import sys
+import threading
+import time
+import traceback
 from hashlib import md5
-from typing import Literal, Optional
-
-from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
-from root_anchor import ROOT_DIR
-from extractors.extract_photos import PhotoAcquisitionConfig
-from extractors.extract_videos import VideoAcquisitionConfig
-from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.commit_tracker.git_helper import ensure_committed
+from pathlib import Path
+from typing import Optional
 
 import cv2
-import pyautogui
-import threading
-import shutil
-
-from pydantic import BaseModel
-from har2warc.har2warc import har2warc
 import numpy as np
-from pathlib import Path
-from playwright.sync_api import sync_playwright, Browser, BrowserContext
+import ppdeep
+import pyautogui
+import pygetwindow as gw
 from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright, Browser, BrowserContext
+from pydantic import BaseModel
 
-from archiver.profile_selection import select_profile
-from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
+from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
 from archiver.profile_registration import Profile
+from archiver.profile_selection import select_profile
 from archiver.summarizers.entities_summary_generator import generate_entities_summary
-
+from extractors.extract_photos import PhotoAcquisitionConfig
+from extractors.extract_videos import VideoAcquisitionConfig
+from root_anchor import ROOT_DIR
+from utils.commit_tracker.git_helper import ensure_committed
+from utils.ffmpeg_installer import ensure_ffmpeg_installed
 from utils.misc import get_my_public_ip, get_system_info
+from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
 load_dotenv()
 
-def store_archive_as_warc(archive_dir: Path):
-    har_file = archive_dir / "archive.har"
-    if har_file.exists():
-        try:
-            warc_file = archive_dir / "archive.warc.gz"
-            har2warc(str(har_file), str(warc_file))
-            print(f"WARC file generated at: {warc_file}")
-        except Exception as e:
-            print(f"Error converting HAR to WARC: {e}")
-    else:
-        print("HAR file was not saved successfully.")
-
-class InstagramObject(BaseModel):
-    type: Literal["post", "story", "reel", "highlight", "profile"]
-    username: Optional[str] = None
-    url: str
-    id: str
-
-def get_instagram_object_type(item_url: str, username: Optional[str] = None) -> InstagramObject:
-    item_url = item_url.strip()
-    item_url = item_url.split("?")[0]  # Remove query parameters if any
-    item_url = item_url.rstrip("/")  # Remove trailing slash if any
-    item_url = item_url.replace("www.", "")  # Remove www. if present
-    item_url = item_url.split("://")[-1]  # Remove protocol if present
-    url_components = item_url.split("/")
-    if url_components[1] == "p":
-        return InstagramObject(type="post", url=item_url, id=item_url.split("/")[2], username=username)
-    elif url_components[1] == "reel":
-        return InstagramObject(type="reel", url=item_url, id=item_url.split("/")[2], username=username)
-    elif url_components[1] == "stories":
-        if len(url_components) > 3 and url_components[2] == "highlights":
-            return InstagramObject(type="highlight", url=item_url, id=item_url.split("/")[4], username=username)
-        else:
-            return InstagramObject(type="story", url=item_url, id=item_url.split("/")[2], username=username)
-    if username is None:
-        username = url_components[1]
-        url_stripped_of_username = item_url.replace(f"/{username}", "")
-        if len(url_stripped_of_username.split("/")) > 2:
-            return get_instagram_object_type(url_stripped_of_username, username=username)
-        else:
-            return InstagramObject(type="profile", url=item_url, id=username, username=username)
-    else:
-        return InstagramObject(type="profile", url=item_url, id=username, username=username)
 
 
 class ArchiveSessionMetadata(BaseModel):
@@ -121,7 +73,7 @@ def screen_record(output_path, stop_event):
         return
 
     fps = 20.0
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     out = None
     last_size = None
 
@@ -282,7 +234,7 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     v_download_media_not_in_structures: bool = storage_config.v_download_media_not_in_structures
     v_download_unfetched_media: bool = storage_config.v_download_unfetched_media
     v_download_full_versions_of_fetched_media: bool = storage_config.v_download_full_versions_of_fetched_media
-    v_download_highest_quality_assets_from_structures: bool = storage_config.p_download_highest_quality_assets_from_structures
+    v_download_highest_quality_assets_from_structures: bool = storage_config.v_download_highest_quality_assets_from_structures
 
     # photo downloading configuration
     p_download_missing: bool = True
