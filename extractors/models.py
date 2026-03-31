@@ -1,6 +1,6 @@
 from typing import List, Optional, Any
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 
 class InstagramCaption(BaseModel):
@@ -9,18 +9,14 @@ class InstagramCaption(BaseModel):
     pk: str
     text: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramImageCandidate(BaseModel):
     height: int
     url: str
     width: int
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ScrubberSpritesheetDefault(BaseModel):
     file_size_kb: int
@@ -36,30 +32,26 @@ class ScrubberSpritesheetDefault(BaseModel):
     total_thumbnail_num_per_sprite: int
     video_length: float
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class ScrubberSpritesheetInfoCandidates(BaseModel):
     default: Optional[ScrubberSpritesheetDefault] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class AdditionalCandidates(BaseModel):
     first_frame: Optional[InstagramImageCandidate] = None
     igtv_first_frame: Optional[InstagramImageCandidate] = None
     smart_frame: Optional[InstagramImageCandidate] = None # Assuming same structure or Any
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class InstagramImageVersions2(BaseModel):
     candidates: Optional[List[InstagramImageCandidate]] = Field(default_factory=list)
     additional_candidates: Optional[AdditionalCandidates] = None
     scrubber_spritesheet_info_candidates: Optional[ScrubberSpritesheetInfoCandidates] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class VideoVersion(BaseModel):
     id: Optional[str] = None
@@ -69,16 +61,13 @@ class VideoVersion(BaseModel):
     height: Optional[int] = None
     bandwidth: Optional[int] = None # Made optional as not always present for all types
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class InstagramSharingFrictionInfo(BaseModel):
     bloks_app_url: Optional[str] = None
     should_have_sharing_friction: bool
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramUserTagUser(BaseModel):
     full_name: str
@@ -88,24 +77,18 @@ class InstagramUserTagUser(BaseModel):
     profile_pic_url: str
     username: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramUserTag(BaseModel):
     position: List[float]
     user: InstagramUserTagUser
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramUserTags(BaseModel):
     in_field: Optional[List[InstagramUserTag]] = Field(None, alias="in")
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class InstagramCarouselMedia(BaseModel):
@@ -138,9 +121,7 @@ class InstagramCarouselMedia(BaseModel):
     video_dash_manifest: Optional[Any] = None
     video_versions: Optional[List[VideoVersion]] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramLocation(BaseModel):
     typename: Optional[str] = Field(None, alias="__typename")
@@ -150,9 +131,7 @@ class InstagramLocation(BaseModel):
     pk: Optional[int] = None
     profile_pic_url: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramFriendshipStatus(BaseModel):
     following: Optional[bool] = None
@@ -167,17 +146,13 @@ class InstagramFriendshipStatus(BaseModel):
     outgoing_request: Optional[Any] = None
     subscribed: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class InstagramHdProfilePicUrlInfo(BaseModel):
     url: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramUser(BaseModel):
     typename: Optional[str] = Field(None, alias="__typename")
@@ -201,9 +176,7 @@ class InstagramUser(BaseModel):
     live_broadcast_id: Optional[Any] = None
     live_broadcast_visibility: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class InstagramPost(BaseModel):
@@ -280,17 +253,13 @@ class InstagramPost(BaseModel):
     view_count: Optional[Any] = None
     wearable_attribution_info: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class MediaShortcode(BaseModel):
     items: List[InstagramPost]
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class PostCommentUser(BaseModel):
@@ -302,9 +271,7 @@ class PostCommentUser(BaseModel):
     profile_pic_url: Optional[str] = None
     username: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class PostComment(BaseModel):
@@ -322,26 +289,20 @@ class PostComment(BaseModel):
     text: str
     user: PostCommentUser
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class PostCommentNode(BaseModel):
     node: PostComment
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentsConnection(BaseModel):
     count: Optional[int] = None
     page_info: Optional[Any] = None # Could be a more specific PageInfo model if structure is known
     edges: List[PostCommentNode] = Field(default_factory=list)
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 # Re-using existing models if their structure matches
@@ -351,22 +312,17 @@ class IGMention(BaseModel):
     username: str
     full_name: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 class BlokStickerData(BaseModel):
     ig_mention: IGMention
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class BlokStickerInner(BaseModel):
     sticker_data: BlokStickerData
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoryBlokSticker(BaseModel):
     bloks_sticker: BlokStickerInner
@@ -376,9 +332,7 @@ class HighlightsReelUser(BaseModel):
     id: str
     interop_messaging_user_fbid: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class HighlightsReel(BaseModel):
     pk: str
@@ -440,9 +394,7 @@ class HighlightsReel(BaseModel):
     can_reshare: Optional[bool] = None
     typename: Optional[str] = Field(None, alias="__typename")
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class HighlightsReelPageInfo(BaseModel):
     end_cursor: str
@@ -450,9 +402,7 @@ class HighlightsReelPageInfo(BaseModel):
     has_previous_page: bool
     start_cursor: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class HighlightsReelUploader(BaseModel):
     pk: str
@@ -466,9 +416,7 @@ class HighlightsReelUploader(BaseModel):
     transparency_product: Optional[Any] = None
     transparency_product_enabled: bool = False
     is_private: bool = False
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class HighlightsReelWrap(BaseModel):
@@ -481,18 +429,14 @@ class HighlightsReelWrap(BaseModel):
 class HighlightsReelNode(BaseModel):
     node: HighlightsReelWrap
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class HighlightsReelConnection(BaseModel):
     id: Optional[str] = None
     edges: List[HighlightsReelNode]
     page_info: HighlightsReelPageInfo
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class TimelineItemSquareCrop(BaseModel):
@@ -501,26 +445,20 @@ class TimelineItemSquareCrop(BaseModel):
     crop_right: int
     crop_top: int
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class TimelineItemMediaCroppingInfo(BaseModel):
     square_crop: Optional[TimelineItemSquareCrop] = None
     four_by_three_crop: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class TimelineItemUser(BaseModel):
     pk: str
     username: str
     id: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class TimelineItem(BaseModel):
     pk: str
@@ -553,17 +491,13 @@ class TimelineItem(BaseModel):
     view_count: Optional[int] = None
     id: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ProfileTimeline(BaseModel):
     num_results: int
     items: List[TimelineItem]
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoryFeedMediaItem(BaseModel):
     x: float
@@ -575,34 +509,26 @@ class StoryFeedMediaItem(BaseModel):
     id: Optional[str] = None
     product_type: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class BloksStickerDataIgMention(BaseModel):
     full_name: str
     username: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class BloksStickerData(BaseModel):
     ig_mention: BloksStickerDataIgMention
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class BloksSticker(BaseModel):
     sticker_data: BloksStickerData
     id: str # e.g., "bloks_sticker_id"
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class StoryBloksStickerItem(BaseModel):
@@ -614,9 +540,7 @@ class StoryBloksStickerItem(BaseModel):
     bloks_sticker: BloksSticker
     id: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoryItem(BaseModel):
     id: str
@@ -678,16 +602,12 @@ class StoryItem(BaseModel):
     can_reshare: Optional[bool] = False
     typename: Optional[str] = Field(None, alias="__typename")
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoryUserFriendshipStatus(BaseModel):
     following: bool
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoryUser(BaseModel):
     pk: str
@@ -704,9 +624,7 @@ class StoryUser(BaseModel):
     transparency_product_enabled: Optional[bool] = None
     is_private: bool
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoriesReelMedia(BaseModel):
     id: str
@@ -719,14 +637,10 @@ class StoriesReelMedia(BaseModel):
     latest_reel_media: Optional[int] = None
     muted: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class StoriesFeed(BaseModel):
     reels_media: List[StoriesReelMedia]
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
