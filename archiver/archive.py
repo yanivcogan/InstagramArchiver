@@ -16,6 +16,7 @@ import numpy as np
 import ppdeep
 import pyautogui
 import pygetwindow as gw
+import subprocess
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, Browser, BrowserContext
 from pydantic import BaseModel
@@ -73,7 +74,8 @@ def screen_record(output_path, stop_event):
         return
 
     fps = 20.0
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    raw_output_path = output_path.replace(".mp4", "_raw.mp4")
     out = None
     last_size = None
 
@@ -92,7 +94,7 @@ def screen_record(output_path, stop_event):
             if out is None or current_size != last_size:
                 if out is not None:
                     out.release()
-                out = cv2.VideoWriter(output_path, fourcc, fps, current_size)
+                out = cv2.VideoWriter(raw_output_path, fourcc, fps, current_size)
                 last_size = current_size
 
             img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
@@ -105,7 +107,18 @@ def screen_record(output_path, stop_event):
 
     if out is not None:
         out.release()
-    print(f"Screen recording saved to {output_path}")
+
+    print("Re-encoding screen recording to H.264 for browser compatibility...")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", raw_output_path, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", output_path],
+            check=True, capture_output=True
+        )
+        os.remove(raw_output_path)
+        print(f"Screen recording saved to {output_path}")
+    except Exception as e:
+        print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
+        shutil.move(raw_output_path, output_path)
 
 
 def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
