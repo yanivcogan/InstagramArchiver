@@ -123,6 +123,112 @@ def extract_video_maps(har_path: Path) -> list[Video]:
     return videos
 
 
+def _count_complete_trun_samples(raw_data: bytes) -> Optional[int]:
+    """
+    Parse a raw fMP4 byte string and return the number of trun samples that fit
+    entirely within the available mdat bytes.
+
+    Returns None when:
+    - the file is not truncated (all samples available), OR
+    - parsing fails (caller should proceed without -frames:v).
+    Returns an integer >= 0 indicating how many complete samples exist.
+    """
+    import struct
+
+    def _iter_boxes(data: bytes, start: int, end: int):
+        pos = start
+        while pos + 8 <= end:
+            size = struct.unpack_from('>I', data, pos)[0]
+            btype = data[pos + 4:pos + 8].decode('latin-1', errors='replace')
+            if size == 0:
+                yield btype, pos, len(data), pos + 8
+                break
+            elif size == 1:
+                if pos + 16 > end:
+                    break
+                size = struct.unpack_from('>Q', data, pos + 8)[0]
+                yield btype, pos, pos + size, pos + 16
+            else:
+                yield btype, pos, pos + size, pos + 8
+            if size < 8:
+                break
+            pos += size
+
+    # Locate mdat and measure truncation
+    mdat_data_start = None
+    mdat_claimed_end = None
+    for btype, bstart, bend, dstart in _iter_boxes(raw_data, 0, len(raw_data)):
+        if btype == 'mdat':
+            mdat_data_start = dstart
+            mdat_claimed_end = bend
+            break
+
+    if mdat_data_start is None:
+        return None
+
+    available = len(raw_data) - mdat_data_start
+    claimed = mdat_claimed_end - mdat_data_start
+    if available >= claimed:
+        return None  # file is complete
+
+    # Locate moof → traf → trun
+    trun_payload: Optional[bytes] = None
+    for btype, bstart, bend, dstart in _iter_boxes(raw_data, 0, len(raw_data)):
+        if btype == 'moof':
+            for inner_type, _, inner_end, inner_dstart in _iter_boxes(raw_data, dstart, bend):
+                if inner_type == 'traf':
+                    for t2_type, _, t2_end, t2_dstart in _iter_boxes(raw_data, inner_dstart, inner_end):
+                        if t2_type == 'trun':
+                            trun_payload = raw_data[t2_dstart:t2_end]
+                            break
+                if trun_payload is not None:
+                    break
+            break
+
+    if not trun_payload or len(trun_payload) < 8:
+        return None
+
+    # Parse trun full-box header: version(1) + flags(3) + sample_count(4)
+    flags = (trun_payload[1] << 16) | (trun_payload[2] << 8) | trun_payload[3]
+    sample_count = struct.unpack_from('>I', trun_payload, 4)[0]
+
+    if not (flags & 0x200):
+        # sample_size not present per-sample — need trex default, can't determine easily
+        return None
+
+    pos = 8
+    if flags & 0x001:  # data_offset_present
+        pos += 4
+    if flags & 0x004:  # first_sample_flags_present
+        pos += 4
+
+    cumulative = 0
+    for i in range(sample_count):
+        if flags & 0x100:
+            if pos + 4 > len(trun_payload):
+                return i
+            pos += 4
+        # sample_size (flags & 0x200 is guaranteed above)
+        if pos + 4 > len(trun_payload):
+            return i
+        size = struct.unpack_from('>I', trun_payload, pos)[0]
+        pos += 4
+        if flags & 0x400:
+            if pos + 4 > len(trun_payload):
+                return i
+            pos += 4
+        if flags & 0x800:
+            if pos + 4 > len(trun_payload):
+                return i
+            pos += 4
+
+        if cumulative + size > available:
+            return i  # this sample is incomplete; i samples are complete
+        cumulative += size
+
+    return None  # all samples fit
+
+
 def clean_segments(files_to_delete):
     for file in files_to_delete:
         if os.path.exists(file):
@@ -210,28 +316,69 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
                 print("Downloaded full track data for", track_name)
                 download_type = "full_track"
         if track_data is None:
-            # Attempt to compose the track from segments
-            # sort the segments by start byte
-            track.segments.sort(key=lambda s: s.start)
-            # compose a full file out of the segments.
-            # Determine the total length needed for the track
-            max_end = max((segment.end for segment in track.segments if segment.end is not None), default=0)
-            track_data = bytearray(max_end)
+            # Sort segments by start byte (byteend in CDN URLs is the last inclusive byte).
+            track.segments.sort(key=lambda s: s.start if s.start is not None else 0)
 
+            # Find the contiguous coverage from byte 0. If the video was not played to
+            # the end, later byte ranges will be absent, leaving holes. Truncating at the
+            # last contiguous byte avoids zero-filled gaps that would corrupt the container.
+            contiguous_end = 0
             for segment in track.segments:
-                if segment.start is None:
-                    # If no start, append at the end (rare, fallback)
-                    track_data = segment.data
+                seg_start = segment.start if segment.start is not None else 0
+                # byteend is inclusive, so the exclusive Python end is end+1
+                seg_end = (segment.end + 1) if segment.end is not None else (seg_start + len(segment.data))
+                if seg_start <= contiguous_end:
+                    contiguous_end = max(contiguous_end, seg_end)
                 else:
-                    # Overwrite the region with this segment's data
-                    track_data[segment.start:segment.end] = segment.data
-            download_type = "har_segments"
+                    break  # gap in coverage — stop here
+
+            if contiguous_end == 0:
+                download_type = "har_segments"
+                track_data = b''
+            else:
+                track_data = bytearray(contiguous_end)
+                for segment in track.segments:
+                    if segment.start is None:
+                        track_data = bytearray(segment.data)
+                        break
+                    seg_start = segment.start
+                    seg_end = (segment.end + 1) if segment.end is not None else (seg_start + len(segment.data))
+                    if seg_start >= contiguous_end:
+                        break
+                    actual_end = min(seg_end, contiguous_end)
+                    track_data[seg_start:actual_end] = segment.data[:actual_end - seg_start]
+                download_type = "har_segments"
 
         source_type = "har_segments" if download_type == "har_segments" else "full_track"
         single_track_file = f"track_{xpv_asset_id}_{track_name}_{source_type}.mp4"
         if track_data is not None and len(track_data) > 0:
             with open(output_dir / single_track_file, 'wb') as f:
                 f.write(track_data)
+
+        # For partial fMP4 files (truncated DASH segments), the moov atom declares the
+        # full duration but the mdat is cut short, causing players to reject the file.
+        # Re-muxing with ffmpeg -c copy rewrites the duration to match actual content.
+        raw_path = output_dir / single_track_file
+        if raw_path.exists() and raw_path.stat().st_size > 0:
+            recovered_path = output_dir / f"_recovered_{single_track_file}"
+            try:
+                n_complete = _count_complete_trun_samples(bytes(track_data) if track_data else b'')
+                frames_args = ['-frames:v', str(n_complete)] if n_complete is not None and n_complete > 0 else []
+                result = subprocess.run(
+                    ['ffmpeg', '-y', '-i', str(raw_path), '-c', 'copy'] + frames_args + [str(recovered_path)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                if recovered_path.exists() and recovered_path.stat().st_size > 0:
+                    os.replace(str(recovered_path), str(raw_path))
+                    print(f"Recovered partial video ({n_complete or 'all'} samples): {single_track_file}")
+            except Exception as e:
+                print(f"ffmpeg recovery failed for {single_track_file}: {e}")
+            finally:
+                if recovered_path.exists():
+                    try:
+                        os.remove(recovered_path)
+                    except Exception:
+                        pass
 
         valid_file = clean_corrupted_files(output_dir / single_track_file)
         if not valid_file:

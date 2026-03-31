@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
 from archiver.profile_registration import Profile
 from archiver.profile_selection import select_profile
-from archiver.summarizers.entities_summary_generator import generate_entities_summary
+from archiver.summarizers.har_summary_generator import generate_entities_summary
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from root_anchor import ROOT_DIR
