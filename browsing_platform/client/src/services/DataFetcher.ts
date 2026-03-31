@@ -105,20 +105,36 @@ export const fetchPostLikes = async (postId: number): Promise<IPostLike[]> => {
     return await server.get(`post/${postId}/likes/`);
 }
 
-export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelation[]> => {
-    return await server.get(`account/${accountId}/relations/`);
+export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelation[] | null> => {
+    try {
+        return await server.get(`account/${accountId}/relations/`);
+    } catch {
+        return null;
+    }
 }
 
-export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions> => {
-    return await server.get(`account/${accountId}/interactions/`);
+export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions | null> => {
+    try {
+        return await server.get(`account/${accountId}/interactions/`);
+    } catch {
+        return null;
+    }
 }
 
-export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts> => {
-    return await server.get(`account/${accountId}/auxiliary-counts/`);
+export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts | null> => {
+    try {
+        return await server.get(`account/${accountId}/auxiliary-counts/`, {ignoreErrors: true});
+    } catch {
+        return null;
+    }
 }
 
-export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts> => {
-    return await server.get(`post/${postId}/auxiliary-counts/`);
+export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts | null> => {
+    try {
+        return await server.get(`post/${postId}/auxiliary-counts/`, {ignoreErrors: true});
+    } catch {
+        return null;
+    }
 }
 
 export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {

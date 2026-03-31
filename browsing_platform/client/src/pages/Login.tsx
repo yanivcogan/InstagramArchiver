@@ -30,10 +30,10 @@ export default function Login() {
         const token = cookie.get('token');
         if (token && token.length) {
             server.get("permissions/", {ignoreErrors: true}).then((res) => {
-                if (res.valid) {
+                if (res?.valid) {
                     proceedToSite();
                 }
-            });
+            }).catch(() => {});
         }
     }, []);
 

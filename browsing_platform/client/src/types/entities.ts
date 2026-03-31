@@ -161,6 +161,7 @@ export interface IArchiveSession {
     structures?: Record<string, any>;
     metadata?: Record<string, any>;
     attachments?: ISessionAttachments;
+    attachments_redacted?: string[];
     extract_algorithm_version?: number;
     archiving_timestamp?: string;
     notes?: string;

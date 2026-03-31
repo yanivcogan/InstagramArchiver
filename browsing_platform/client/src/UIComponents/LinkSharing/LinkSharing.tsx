@@ -1,7 +1,17 @@
 import React, {useEffect, useState} from 'react';
 import {toast} from "material-react-toastify";
 import TextField from '@mui/material/TextField';
-import {CircularProgress, Fab, FormControlLabel, IconButton, Stack, Switch, Tooltip, Typography,} from "@mui/material";
+import {
+    CircularProgress,
+    Divider,
+    Fab,
+    FormControlLabel,
+    IconButton,
+    Stack,
+    Switch,
+    Tooltip,
+    Typography,
+} from "@mui/material";
 import {ContentCopy, Share} from "@mui/icons-material";
 import server from "../../services/server";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -19,13 +29,18 @@ interface IProps {
 interface ShareLinkInfo {
     suffix: string;
     valid: boolean;
+    include_screen_recordings: boolean;
+    include_har: boolean;
 }
 
 export default function LinkSharing({entityType, entityId, stableSharePath}: IProps) {
     const [isFetching, setIsFetching] = useState(false);
     const [isTogglingValidity, setIsTogglingValidity] = useState(false);
+    const [isUpdatingAccess, setIsUpdatingAccess] = useState(false);
     const [shareLinkInfo, setShareLinkInfo] = useState<ShareLinkInfo | null>(null);
     const [generationError, setGenerationError] = useState<string | null>(null);
+    const [pendingIncludeRecordings, setPendingIncludeRecordings] = useState(true);
+    const [pendingIncludeHar, setPendingIncludeHar] = useState(true);
 
     const shareLinkFromSuffix = (suffix: string) => {
         const base = stableSharePath
@@ -41,9 +56,21 @@ export default function LinkSharing({entityType, entityId, stableSharePath}: IPr
         setIsFetching(true);
         server.get(`share/${entityType}/${entityId}/`).then((response: {
             link_suffix: string,
-            valid: boolean
+            valid: boolean,
+            include_screen_recordings: boolean,
+            include_har: boolean,
         } | null) => {
-            setShareLinkInfo(response ? {suffix: response.link_suffix, valid: response.valid} : null);
+            if (response) {
+                const info: ShareLinkInfo = {
+                    suffix: response.link_suffix,
+                    valid: response.valid,
+                    include_screen_recordings: response.include_screen_recordings,
+                    include_har: response.include_har,
+                };
+                setShareLinkInfo(info);
+                setPendingIncludeRecordings(info.include_screen_recordings);
+                setPendingIncludeHar(info.include_har);
+            }
             setIsFetching(false);
         });
     }, [entityType, entityId]);
@@ -54,10 +81,17 @@ export default function LinkSharing({entityType, entityId, stableSharePath}: IPr
             success: boolean, link_suffix: null | string, error: null | string
         } = await server.post(`share/`, {
             view: true,
-            shared_entity: {entity: entityType, entity_id: entityId}
+            shared_entity: {entity: entityType, entity_id: entityId},
+            include_screen_recordings: pendingIncludeRecordings,
+            include_har: pendingIncludeHar,
         });
         if (response.success && response.link_suffix) {
-            setShareLinkInfo({suffix: response.link_suffix, valid: true});
+            setShareLinkInfo({
+                suffix: response.link_suffix,
+                valid: true,
+                include_screen_recordings: pendingIncludeRecordings,
+                include_har: pendingIncludeHar,
+            });
             setGenerationError(null);
         } else {
             setGenerationError(response.error || "Unknown error");
@@ -81,6 +115,46 @@ export default function LinkSharing({entityType, entityId, stableSharePath}: IPr
         setIsTogglingValidity(false);
     };
 
+    const handleAttachmentAccessChange = async (
+        includeRecordings: boolean,
+        includeHar: boolean,
+    ) => {
+        if (!shareLinkInfo) return;
+        setIsUpdatingAccess(true);
+        await server.post(`share/${entityType}/${entityId}/attachment_access`, {
+            include_screen_recordings: includeRecordings,
+            include_har: includeHar,
+        });
+        setShareLinkInfo({...shareLinkInfo, include_screen_recordings: includeRecordings, include_har: includeHar});
+        setIsUpdatingAccess(false);
+    };
+
+    const attachmentAccessControls = (
+        includeRecordings: boolean,
+        includeHar: boolean,
+        onChangeRecordings: (v: boolean) => void,
+        onChangeHar: (v: boolean) => void,
+        disabled?: boolean,
+    ) => (
+        <Stack spacing={0.5}>
+            <Typography variant="caption" color="text.secondary">Attachment access</Typography>
+            <FormControlLabel
+                control={
+                    <Switch checked={includeRecordings} onChange={e => onChangeRecordings(e.target.checked)}
+                            size="small" disabled={disabled}/>
+                }
+                label={<Typography variant="body2">Screen recordings</Typography>}
+            />
+            <FormControlLabel
+                control={
+                    <Switch checked={includeHar} onChange={e => onChangeHar(e.target.checked)}
+                            size="small" disabled={disabled}/>
+                }
+                label={<Typography variant="body2">HAR files</Typography>}
+            />
+        </Stack>
+    );
+
     const fabColor = shareLinkInfo
         ? (shareLinkInfo.valid ? "success" : "warning")
         : "primary";
@@ -99,7 +173,8 @@ export default function LinkSharing({entityType, entityId, stableSharePath}: IPr
                         endAdornment: (
                             <InputAdornment position="end">
                                 <Tooltip title="Copy">
-                                    <IconButton size="small" onClick={copyShareLinkToClipboard} disabled={!shareLinkInfo.valid}>
+                                    <IconButton size="small" onClick={copyShareLinkToClipboard}
+                                                disabled={!shareLinkInfo.valid}>
                                         <ContentCopy fontSize="small"/>
                                     </IconButton>
                                 </Tooltip>
@@ -131,8 +206,30 @@ export default function LinkSharing({entityType, entityId, stableSharePath}: IPr
                         }
                     />
                 }
+                <Divider/>
+                {isUpdatingAccess
+                    ? <CircularProgress size={20} color="primary"/>
+                    : attachmentAccessControls(
+                        shareLinkInfo.include_screen_recordings,
+                        shareLinkInfo.include_har,
+                        (v) => handleAttachmentAccessChange(v, shareLinkInfo.include_har),
+                        (v) => handleAttachmentAccessChange(shareLinkInfo.include_screen_recordings, v),
+                    )
+                }
             </Stack>
-            : <Typography variant="body2" color="text.secondary">Generate shareable link</Typography>;
+            : <Stack spacing={1}>
+                <Typography variant="body2" color="text.secondary">Generate shareable link</Typography>
+                <Divider/>
+                {attachmentAccessControls(
+                    pendingIncludeRecordings,
+                    pendingIncludeHar,
+                    setPendingIncludeRecordings,
+                    setPendingIncludeHar,
+                )}
+                {generationError && (
+                    <Typography variant="caption" color="error">{generationError}</Typography>
+                )}
+            </Stack>;
 
     return <NoMaxWidthTooltip
         title={tooltipContent}

@@ -26,6 +26,8 @@ class EntityShareLink(EntityShare):
     created_by_user_id: int
     valid: bool
     link_suffix: str
+    include_screen_recordings: bool = True
+    include_har: bool = True
 
 
 def generate_suffix() -> str:
@@ -37,6 +39,8 @@ class SharePermissions(BaseModel):
     view: bool = False
     edit: bool = False
     censored_session_properties: Optional[list[str]] = None
+    include_screen_recordings: bool = True
+    include_har: bool = True
 
 
 class EntitySharePermissions(SharePermissions):
@@ -76,13 +80,17 @@ def create_share_link(scope: EntitySharePermissions, user_id: int) -> ShareLinkC
         suffix = generate_suffix()
         db.execute_query(
             '''INSERT INTO entity_share_link
-            (created_by_user_id, entity, entity_id, valid, link_suffix)
-            VALUES (%(created_by_user_id)s, %(entity)s, %(entity_id)s, TRUE, %(link_suffix)s)'''
+            (created_by_user_id, entity, entity_id, valid, link_suffix,
+             include_screen_recordings, include_har)
+            VALUES (%(created_by_user_id)s, %(entity)s, %(entity_id)s, TRUE, %(link_suffix)s,
+                    %(include_screen_recordings)s, %(include_har)s)'''
             , {
                 "created_by_user_id": user_id,
                 "entity": scope.shared_entity.entity,
                 "entity_id": scope.shared_entity.entity_id,
-                "link_suffix": suffix
+                "link_suffix": suffix,
+                "include_screen_recordings": int(scope.include_screen_recordings),
+                "include_har": int(scope.include_har),
             }, "none"
         )
         return ShareLinkCreationResult(
@@ -110,6 +118,21 @@ def get_existing_share_link(entity: T_Entities, entity_id: int) -> Optional[Enti
         return EntityShareLink(**link_share)
 
 
+def set_link_attachment_access(link_suffix: str, include_screen_recordings: bool, include_har: bool):
+    db.execute_query(
+        '''UPDATE entity_share_link
+           SET include_screen_recordings = %(include_screen_recordings)s,
+               include_har = %(include_har)s
+           WHERE link_suffix = %(link_suffix)s''',
+        {
+            "include_screen_recordings": int(include_screen_recordings),
+            "include_har": int(include_har),
+            "link_suffix": link_suffix,
+        },
+        "none"
+    )
+
+
 def set_link_validity(link_suffix: str, valid: bool):
     db.execute_query(
         'UPDATE entity_share_link SET valid = %(valid)s WHERE link_suffix = %(link_suffix)s',
@@ -134,10 +157,12 @@ def get_link_permissions(link_suffix: str) -> EntitySharePermissions:
             if not share_link.valid:
                 return EntitySharePermissions(view=False)
             else:
-                return EntitySharePermissions(view=True, shared_entity=EntityShare(
-                    entity=share_link.entity,
-                    entity_id=share_link.entity_id
-                ))
+                return EntitySharePermissions(
+                    view=True,
+                    shared_entity=EntityShare(entity=share_link.entity, entity_id=share_link.entity_id),
+                    include_screen_recordings=share_link.include_screen_recordings,
+                    include_har=share_link.include_har,
+                )
     except Exception:
         return EntitySharePermissions(view=False)
 

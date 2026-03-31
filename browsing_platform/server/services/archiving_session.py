@@ -26,6 +26,7 @@ class ArchiveSession(BaseModel):
     structures: Optional[dict] = None
     metadata: Optional[dict] = None
     attachments: Optional[dict[str, list[str]]] = None
+    attachments_redacted: Optional[list[str]] = None
     extract_algorithm_version: Optional[int] = None
     archiving_timestamp: Optional[datetime] = None
     notes: Optional[str] = None
@@ -61,6 +62,8 @@ class ArchivingSessionTransform(BaseModel):
     local_files_root: Optional[str] = None
     access_token: Optional[str] = None
     properties_to_censor: Optional[list[str]] = None
+    include_screen_recordings: bool = True
+    include_har: bool = True
 
 
 def get_archiving_session_structures(session_id: int) -> tuple[bool, Optional[dict]]:
@@ -108,7 +111,22 @@ def sign_archiving_session(session: ArchiveSession, transform: ArchivingSessionT
     attachments = session.attachments
     if not attachments:
         return session
-    for attachment_type in dict.keys(attachments):
+
+    # Redact attachment types the share link doesn't permit, marking them so
+    # the client can show an appropriate "no access" placeholder.
+    redacted: list[str] = []
+    _REDACT_MAP = {
+        'screen_recordings': transform.include_screen_recordings,
+        'har_archives': transform.include_har,
+    }
+    for key, allowed in _REDACT_MAP.items():
+        if not allowed and attachments.get(key):
+            redacted.append(key)
+            del attachments[key]
+    if redacted:
+        session.attachments_redacted = redacted
+
+    for attachment_type in list(attachments.keys()):
         for i in range(len(attachments.get(attachment_type, []))):
             attachment: str = attachments.get(attachment_type)[i]
             local_path = session.archive_location + "/" + attachment

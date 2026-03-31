@@ -10,6 +10,7 @@ from browsing_platform.server.services.sharing_manager import (
     create_share_link,
     entity_exists,
     get_existing_share_link,
+    set_link_attachment_access,
     set_link_validity,
 )
 
@@ -36,7 +37,12 @@ async def get_share_link(entity: T_Entities, entity_id: int) -> Any:
     existing = get_existing_share_link(entity, entity_id)
     if not existing:
         return None
-    return {"link_suffix": existing.link_suffix, "valid": existing.valid}
+    return {
+        "link_suffix": existing.link_suffix,
+        "valid": existing.valid,
+        "include_screen_recordings": existing.include_screen_recordings,
+        "include_har": existing.include_har,
+    }
 
 
 class SetValidityRequest(BaseModel):
@@ -49,5 +55,21 @@ async def patch_share_link_validity(entity: T_Entities, entity_id: int, body: Se
     if not existing:
         raise HTTPException(status_code=404, detail="No share link found for this entity")
     set_link_validity(existing.link_suffix, body.valid)
+    return {"success": True}
+
+
+class SetAttachmentAccessRequest(BaseModel):
+    include_screen_recordings: bool
+    include_har: bool
+
+
+@router.post("/{entity}/{entity_id}/attachment_access", dependencies=[Depends(auth_user_access)])
+async def patch_share_link_attachment_access(
+    entity: T_Entities, entity_id: int, body: SetAttachmentAccessRequest
+) -> Any:
+    existing = get_existing_share_link(entity, entity_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="No share link found for this entity")
+    set_link_attachment_access(existing.link_suffix, body.include_screen_recordings, body.include_har)
     return {"success": True}
 
