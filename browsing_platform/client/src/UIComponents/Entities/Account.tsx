@@ -262,34 +262,6 @@ export default function Account({
                 </Stack>
             }
 
-            {/* Posts section */}
-            <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
-                {sortedPosts.map((p, i) => {
-                    if (!pageSize || renderedIndices.has(i)) {
-                        return (
-                            <React.Fragment key={p.id ?? i}>
-                                <Post
-                                    post={p}
-                                    viewerConfig={viewerConfig}
-                                    highlightCommentId={highlightCommentId}
-                                    highlightLikeId={highlightLikeId}
-                                />
-                            </React.Fragment>
-                        );
-                    }
-                    // Placeholder for unrendered post — registers with shared observer on mount
-                    return (
-                        <div
-                            key={p.id ?? i}
-                            ref={(el) => { if (el) getObserver()?.observe(el); }}
-                            data-post-index={String(i)}
-                            style={{height: estimatedHeights[i], width: '100%', boxSizing: 'border-box'}}
-                            aria-hidden="true"
-                        />
-                    );
-                })}
-            </Stack>
-
             {/* Account relations section (on-demand) */}
             {viewerConfig?.accountRelation?.display !== 'hide' && account.id != null && (
                 <LazyCollapsible label={relationsLabel} onLoad={loadRelations} loading={loadingRelations} defaultExpanded={!!highlightRelationId}>
@@ -364,6 +336,34 @@ export default function Account({
                     <ReactJson src={account.data} enableClipboard={false} style={{wordBreak: 'break-word'}}/>
                 )}
             </LazyCollapsible>
+
+            {/* Posts section */}
+            <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
+                {sortedPosts.map((p, i) => {
+                    if (!pageSize || renderedIndices.has(i)) {
+                        return (
+                            <React.Fragment key={p.id ?? i}>
+                                <Post
+                                    post={p}
+                                    viewerConfig={viewerConfig}
+                                    highlightCommentId={highlightCommentId}
+                                    highlightLikeId={highlightLikeId}
+                                />
+                            </React.Fragment>
+                        );
+                    }
+                    // Placeholder for unrendered post — registers with shared observer on mount
+                    return (
+                        <div
+                            key={p.id ?? i}
+                            ref={(el) => { if (el) getObserver()?.observe(el); }}
+                            data-post-index={String(i)}
+                            style={{height: estimatedHeights[i], width: '100%', boxSizing: 'border-box'}}
+                            aria-hidden="true"
+                        />
+                    );
+                })}
+            </Stack>
         </Stack>
     </Paper>
 }
