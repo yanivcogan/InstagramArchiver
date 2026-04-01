@@ -494,6 +494,7 @@ export default function UploadPage() {
                 endpoint: `${config.serverPath}api/upload/tus/`,
                 chunkSize: 5 * 1024 * 1024,
                 retryDelays: [0, 1000, 3000, 5000, 10000],
+                removeFingerprintOnSuccess: true,
                 metadata: { archiveName: archive.name, uploadMode: 'tar' },
                 headers: authHeaders(),
                 onProgress: (uploadedTarBytes: number) => {

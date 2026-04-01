@@ -29,6 +29,9 @@ export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
 
     useEffect(() => {
+        // Clean up stale TUS upload fingerprints that accumulate in localStorage
+        Object.keys(localStorage).filter(k => k.startsWith('tus::')).forEach(k => localStorage.removeItem(k));
+
         function hideError(e: ErrorEvent) {
             if (e.message === 'ResizeObserver loop completed with undelivered notifications.') {
                 const resizeObserverErrDiv = document.getElementById('webpack-dev-server-client-overlay-div');
