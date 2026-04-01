@@ -36,6 +36,7 @@ export function useSearchHistory() {
 
     const getSuggestions = useCallback((mode: T_Search_Mode, prefix: string): string[] => {
         const lower = prefix.trim().toLowerCase();
+        if (!lower) return [];
         return (readHistory()[mode] ?? [])
             .filter(t => t.toLowerCase().startsWith(lower))
             .slice(0, 5);

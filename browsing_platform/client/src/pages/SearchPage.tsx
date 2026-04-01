@@ -297,13 +297,14 @@ export default function SearchPage() {
                     <Stack direction="row" spacing={2}>
                         <Autocomplete
                             freeSolo
-                            disableClearable
+                            autoHighlight={false}
                             options={getSuggestions(query.search_mode, typedSearchTerm)}
                             inputValue={typedSearchTerm}
                             onInputChange={(_, value, reason) => {
                                 if (reason !== 'reset') setTypedSearchTerm(value);
                             }}
                             onChange={(_, value) => {
+                                debugger;
                                 if (typeof value === 'string' && value) {
                                     addSearch(query.search_mode, value);
                                     performSearch({search_term: value});
@@ -345,8 +346,10 @@ export default function SearchPage() {
                                     {...params.InputProps}
                                     inputProps={params.inputProps}
                                     onKeyDown={e => {
-                                        if (e.key === 'Enter' && !isDropdownOpen.current) {
-                                            if (typedSearchTerm) addSearch(query.search_mode, typedSearchTerm);
+                                        if (e.key === 'Enter' && (!isDropdownOpen.current || typedSearchTerm === "")) {
+                                            if (typedSearchTerm !== null && typedSearchTerm !== undefined) {
+                                                addSearch(query.search_mode, typedSearchTerm);
+                                            }
                                             performSearch();
                                         }
                                     }}
