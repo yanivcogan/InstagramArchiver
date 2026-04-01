@@ -1,5 +1,5 @@
 from typing import Optional, Dict
-
+from pydantic import BaseModel
 from extractors.models import StoriesFeed, CommentsConnection
 from extractors.models_api_v1 import LikersApiV1
 from extractors.models_graphql import ProfileTimelineGraphQL, FriendsListGraphQL, ReelsMediaConnection, \
