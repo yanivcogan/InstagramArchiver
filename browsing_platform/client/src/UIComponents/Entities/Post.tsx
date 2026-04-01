@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {IComment, IPostAndAssociatedEntities, IPostAuxiliaryCounts, IPostLike} from "../../types/entities";
-import {Link, Paper, Stack, Tooltip, Typography} from "@mui/material";
-import LazyCollapsible from "../LazyCollapsible";
+import {Box, CircularProgress, Collapse, Link, Paper, Stack, Tab, Tabs, Tooltip, Typography} from "@mui/material";
 import Media from "./Media";
 import ReactJson from "react-json-view";
 import {fetchPostAuxiliaryCounts, fetchPostComments, fetchPostData, fetchPostLikes} from "../../services/DataFetcher";
@@ -15,7 +14,7 @@ import Comment from "./Comment";
 import PostLike from "./PostLike";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
-import {useLocation} from "react-router";
+import {ChatBubble, DataObject, Favorite} from "@mui/icons-material";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -102,7 +101,15 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
             .catch(() => {});
     }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const location = useLocation();
+    const [activeTab, setActiveTab] = useState<'comments' | 'likes' | 'raw' | null>(
+        highlightCommentId ? 'comments' : highlightLikeId ? 'likes' : null
+    );
+
+    useEffect(() => {
+        if (activeTab === 'comments') loadComments();
+        if (activeTab === 'likes') loadLikes();
+        if (activeTab === 'raw') fetchPostDetails();
+    }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const dateRaw = post.publication_date;
     const date = dayjs.utc(dateRaw);
@@ -157,52 +164,94 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                 {post.post_media.map((m, m_i) => <Media media={m} viewerConfig={viewerConfig} key={m_i}/>)}
             </Stack>
 
-            {/* Comments */}
-            {post.id != null && (
-                <LazyCollapsible label={commentsLabel} onLoad={loadComments} loading={loadingComments} defaultExpanded={!!highlightCommentId}>
-                    <Stack gap={0.5} sx={{mt: 0.5}}>
-                        {commentsLoaded && comments && comments.length > 0 && comments.map((c, i) => (
-                            <div
-                                key={i}
-                                ref={c.id != null ? el => { if (el) commentRefs.current.set(c.id!, el); } : undefined}
-                                style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
-                            >
-                                <Comment comment={c} postId={post.id} shareToken={shareToken}/>
-                            </div>
-                        ))}
-                        {commentsLoaded && (!comments || comments.length === 0) && (
-                            <Typography variant="caption" color="text.secondary">No comments</Typography>
-                        )}
-                    </Stack>
-                </LazyCollapsible>
-            )}
+            {/* Comments / Likes / Raw Data — tab-toggle panel */}
+            <Box>
+                <Tabs
+                    value={activeTab ?? false}
+                    onChange={(_, val) => setActiveTab(val)}
+                    variant="scrollable"
+                    scrollButtons="auto"
+                    sx={{minHeight: 32, '& .MuiTab-root': {minHeight: 32, py: 0.5, textTransform: 'none'}}}
+                >
+                    {post.id != null && (
+                        <Tab
+                            value="comments"
+                            label={commentsLabel}
+                            icon={<ChatBubble/>} iconPosition="start"
+                            onClick={() => { if (activeTab === 'comments') setActiveTab(null); }}
+                        />
+                    )}
+                    {post.id != null && (
+                        <Tab
+                            value="likes"
+                            label={likesLabel}
+                            icon={<Favorite/>} iconPosition="start"
+                            onClick={() => { if (activeTab === 'likes') setActiveTab(null); }}
+                        />
+                    )}
+                    <Tab
+                        value="raw"
+                        label="Raw Data"
+                        icon={<DataObject/>} iconPosition="start"
+                        onClick={() => { if (activeTab === 'raw') setActiveTab(null); }}
+                    />
+                </Tabs>
 
-            {/* Likes */}
-            {post.id != null && (
-                <LazyCollapsible label={likesLabel} onLoad={loadLikes} loading={loadingLikes} defaultExpanded={!!highlightLikeId}>
-                    <Stack gap={0.5} sx={{mt: 0.5}}>
-                        {likesLoaded && likes && likes.length > 0 && likes.map((l, i) => (
-                            <div
-                                key={i}
-                                ref={l.id != null ? el => { if (el) likeRefs.current.set(l.id!, el); } : undefined}
-                                style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
-                            >
-                                <PostLike like={l} postId={post.id} shareToken={shareToken}/>
-                            </div>
-                        ))}
-                        {likesLoaded && (!likes || likes.length === 0) && (
-                            <Typography variant="caption" color="text.secondary">No likes</Typography>
+                <Collapse in={activeTab !== null}>
+                    <Box sx={{mt: 1}}>
+                        {activeTab === 'comments' && (
+                            <>
+                                {loadingComments && <CircularProgress size={16}/>}
+                                {commentsLoaded && comments && comments.length > 0 && (
+                                    <Stack gap={0.5}>
+                                        {comments.map((c, i) => (
+                                            <div
+                                                key={i}
+                                                ref={c.id != null ? el => { if (el) commentRefs.current.set(c.id!, el); } : undefined}
+                                                style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
+                                            >
+                                                <Comment comment={c} postId={post.id} shareToken={shareToken}/>
+                                            </div>
+                                        ))}
+                                    </Stack>
+                                )}
+                                {commentsLoaded && (!comments || comments.length === 0) && (
+                                    <Typography variant="caption" color="text.secondary">No comments</Typography>
+                                )}
+                            </>
                         )}
-                    </Stack>
-                </LazyCollapsible>
-            )}
-
-            {/* Raw data section */}
-            <LazyCollapsible label="Raw Data" onLoad={fetchPostDetails} loading={awaitingDetailsFetch}>
-                {post.data && (
-                    <ReactJson src={post.data} enableClipboard={false} style={{wordBreak: 'break-word'}}/>
-                )}
-            </LazyCollapsible>
+                        {activeTab === 'likes' && (
+                            <>
+                                {loadingLikes && <CircularProgress size={16}/>}
+                                {likesLoaded && likes && likes.length > 0 && (
+                                    <Stack gap={0.5}>
+                                        {likes.map((l, i) => (
+                                            <div
+                                                key={i}
+                                                ref={l.id != null ? el => { if (el) likeRefs.current.set(l.id!, el); } : undefined}
+                                                style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
+                                            >
+                                                <PostLike like={l} postId={post.id} shareToken={shareToken}/>
+                                            </div>
+                                        ))}
+                                    </Stack>
+                                )}
+                                {likesLoaded && (!likes || likes.length === 0) && (
+                                    <Typography variant="caption" color="text.secondary">No likes</Typography>
+                                )}
+                            </>
+                        )}
+                        {activeTab === 'raw' && (
+                            <>
+                                {awaitingDetailsFetch && <CircularProgress size={16}/>}
+                                {post.data && (
+                                    <ReactJson src={post.data} enableClipboard={false} style={{wordBreak: 'break-word'}}/>
+                                )}
+                            </>
+                        )}
+                    </Box>
+                </Collapse>
+            </Box>
         </Stack>
     </Paper>
 }
