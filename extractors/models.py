@@ -12,9 +12,9 @@ class InstagramCaption(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class InstagramImageCandidate(BaseModel):
-    height: int
+    height: Optional[int] = None
     url: str
-    width: int
+    width: Optional[int] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -233,20 +233,20 @@ class InstagramPost(BaseModel):
     organic_tracking_token: Optional[str] = None
     original_height: Optional[int] = None
     original_width: Optional[int] = None
-    owner: InstagramUser
-    pk: str
+    owner: Optional[InstagramUser] = None
+    pk: Optional[str] = None
     preview: Optional[Any] = None
     preview_comments: Optional[List[Any]] = None # Could be List[InstagramCommentPreview] if structure known
     previous_submitter: Optional[Any] = None
     product_type: Optional[str] = None
     saved_collection_ids: Optional[Any] = None
-    sharing_friction_info: InstagramSharingFrictionInfo
+    sharing_friction_info: Optional[InstagramSharingFrictionInfo] = None
     social_context: Optional[List[Any]] = None
     sponsor_tags: Optional[Any] = None
     story_cta: Optional[Any] = None
     taken_at: Optional[int] = None
     top_likers: Optional[List[Any]] = None
-    user: InstagramUser # This seems to be the same structure as owner in the example
+    user: Optional[InstagramUser] = None
     usertags: Optional[InstagramUserTags] = None
     video_dash_manifest: Optional[Any] = None
     video_versions: Optional[List[VideoVersion]] = None # Could be List[InstagramVideoVersion] if structure known

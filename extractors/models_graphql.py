@@ -24,7 +24,7 @@ class ProfileTimelineEdge(BaseModel):
 
 class ProfileTimelineGraphQL(BaseModel):
     edges: List[ProfileTimelineEdge]
-    page_info: ProfileTimelinePageInfo
+    page_info: Optional[ProfileTimelinePageInfo] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 

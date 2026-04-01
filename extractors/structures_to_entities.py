@@ -447,6 +447,8 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
 
     for edge in structure.edges:
         item = edge.node
+        if not item.user or not (item.pk or item.id):
+            continue
         account = Account(
             id_on_platform=item.user.id,
             url=f"https://www.instagram.com/{item.user.username}/",
@@ -457,10 +459,10 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
         extracted_accounts.append(account)
         post = Post(
             id_on_platform=item.pk or item.id,
-            url="https://www.instagram.com/p/" + (item.code or media_id_to_shortcode(int(item.pk))),
+            url="https://www.instagram.com/p/" + (item.code or media_id_to_shortcode(int(item.pk or item.id))),
             account_id_on_platform=item.user.id,
             account_url=account.url,
-            publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
+            publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc) if item.taken_at else None,
             caption=item.caption.text if item.caption else None,
             data=item.model_dump()
         )
