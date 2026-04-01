@@ -12,6 +12,7 @@ from browsing_platform.server.services.media import get_media_by_posts, get_medi
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
 from browsing_platform.server.services.tag import get_tags_by_entity_ids
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post, \
     Comment, Like, TaggedAccount, AccountRelation
 from utils import db
@@ -209,6 +210,11 @@ def apply_flattened_entities_transform(
             if m.local_url is not None and m.local_url.strip() != "":
                 if m.local_url.startswith(f"{LOCAL_ARCHIVES_DIR_ALIAS}/"):
                     m.local_url = m.local_url.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+            if m.thumbnail_path is not None and m.thumbnail_path.strip() != "":
+                if m.thumbnail_path.startswith(f"{LOCAL_ARCHIVES_DIR_ALIAS}/"):
+                    m.thumbnail_path = m.thumbnail_path.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+                elif m.thumbnail_path.startswith(f"{LOCAL_THUMBNAILS_DIR_ALIAS}/"):
+                    m.thumbnail_path = m.thumbnail_path.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
     if transform.access_token is not None:
         for m in entities.media:
             if m.local_url is not None and m.local_url.strip() != "":
@@ -217,6 +223,11 @@ def apply_flattened_entities_transform(
                 qs['ft'] = generate_file_token(transform.access_token, parsed.path)
                 new_query = urlencode(qs, doseq=True)
                 m.local_url = str(urlunparse(parsed._replace(query=new_query)))
+            if m.thumbnail_path is not None and m.thumbnail_path.strip() != "":
+                parsed_t = urlparse(m.thumbnail_path)
+                qs_t = dict(parse_qsl(parsed_t.query, keep_blank_values=True))
+                qs_t['ft'] = generate_file_token(transform.access_token, parsed_t.path)
+                m.thumbnail_path = str(urlunparse(parsed_t._replace(query=urlencode(qs_t, doseq=True))))
     if transform.strip_raw_data:
         for a in entities.accounts:
             a.data = None

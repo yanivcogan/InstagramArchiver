@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {useLocation, useNavigate} from "react-router";
 import {IMediaAndAssociatedEntities,} from "../../types/entities";
 import {Box, Button, CircularProgress, Fade, IconButton, Stack, Typography} from "@mui/material";
@@ -46,6 +46,13 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
     const onMediaPage = location.pathname.startsWith('/media/');
 
     const localUrl = anchor_local_static_files(media.local_url) || undefined;
+    const thumbnailUrl = anchor_local_static_files(media.thumbnail_path) || undefined;
+    const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
+    const [mediaLoaded, setMediaLoaded] = useState(false);
+    // Reset loading states when the media source changes
+    useEffect(() => { setThumbnailLoaded(false); setMediaLoaded(false); }, [localUrl]);
+    // Skip thumbnail phase if no thumbnail available (edge case: pending generation)
+    useEffect(() => { if (!thumbnailUrl) setThumbnailLoaded(true); }, [thumbnailUrl]);
     const shareToken = getShareTokenFromHref();
 
     return <div>
@@ -60,18 +67,73 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
             }}
         >
             {
-                media.media_type === "video" ?
-                    <video
-                        src={localUrl}
-                        style={{backgroundColor: '#000', ...viewerConfig?.media?.style}}
-                        controls
-                    /> :
-                    null
+                media.media_type === "video" ? (
+                    // While thumbnail loads: 1:1 grey box. Once thumbnail ready: video with poster takes over.
+                    <Box sx={{
+                        position: 'relative', display: 'block',
+                        '@keyframes mediaPlaceholderPulse': {
+                            '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
+                        },
+                        ...viewerConfig?.media?.style,
+                        ...(!thumbnailLoaded && {
+                            aspectRatio: '1 / 1',
+                            backgroundColor: 'action.hover',
+                            animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
+                        }),
+                    }}>
+                        {/* Preloads the thumbnail in the background; onLoad fires when it's ready */}
+                        {thumbnailUrl && (
+                            <img src={thumbnailUrl} alt="" style={{display: 'none'}}
+                                 onLoad={() => setThumbnailLoaded(true)}/>
+                        )}
+                        {/* Hidden until thumbnail ready so the grey placeholder isn't obscured by a black video */}
+                        <video
+                            src={localUrl}
+                            poster={thumbnailUrl}
+                            style={{
+                                backgroundColor: '#000',
+                                ...viewerConfig?.media?.style,
+                                ...(!thumbnailLoaded && {display: 'none'}),
+                            }}
+                            controls
+                            onCanPlay={() => setMediaLoaded(true)}
+                        />
+                    </Box>
+                ) : null
             }
             {
-                media.media_type === "image" ?
-                    <img src={localUrl} alt={"photo"} style={viewerConfig?.media.style}/> :
-                    null
+                media.media_type === "image" ? (
+                    // While thumbnail loads: 1:1 grey box. Thumbnail then full-res swap in-flow.
+                    <Box sx={{
+                        position: 'relative', display: 'block',
+                        '@keyframes mediaPlaceholderPulse': {
+                            '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
+                        },
+                        ...viewerConfig?.media?.style,
+                        ...(!thumbnailLoaded && {
+                            aspectRatio: '1 / 1',
+                            backgroundColor: 'action.hover',
+                            animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
+                        }),
+                    }}>
+                        {/* Thumbnail — in-flow, sizes the box; triggers thumbnailLoaded on load */}
+                        {thumbnailUrl && !mediaLoaded && (
+                            <img src={thumbnailUrl} alt=""
+                                 style={{...viewerConfig?.media?.style, width: '100%', display: 'block'}}
+                                 onLoad={() => setThumbnailLoaded(true)}/>
+                        )}
+                        {/* Full-res — preloads silently while thumbnail shows, then becomes in-flow */}
+                        <img
+                            src={localUrl}
+                            alt="photo"
+                            style={{
+                                ...viewerConfig?.media?.style,
+                                ...(mediaLoaded ? {} : {position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0}),
+                            }}
+                            onLoad={() => setMediaLoaded(true)}
+                        />
+                    </Box>
+                ) : null
             }
             <Box
                 sx={{

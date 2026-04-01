@@ -37,6 +37,7 @@ export interface IMedia extends IEntityBase {
     post_id_on_platform?: string;
     post_url?: string;
     local_url?: string;
+    thumbnail_path?: string;
     media_type: EMediaType;
     data?: any;
 }
