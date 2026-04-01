@@ -46,9 +46,9 @@ def _is_strong_db_password(pw: str) -> bool:
     return classes >= 3
 
 
-if is_production and not _is_strong_db_password(os.getenv("DB_PASSWORD", "")):
+if is_production and not _is_strong_db_password(os.getenv("DB_PASS", "")):
     raise RuntimeError(
-        "FATAL: DB_PASSWORD does not meet minimum strength requirements "
+        "FATAL: DB_PASS does not meet minimum strength requirements "
         "(20+ characters, 3+ character classes). "
         "Refusing to start in production with a weak database password."
     )
