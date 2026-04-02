@@ -50,9 +50,14 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
     const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
     const [mediaLoaded, setMediaLoaded] = useState(false);
     // Reset loading states when the media source changes
-    useEffect(() => { setThumbnailLoaded(false); setMediaLoaded(false); }, [localUrl]);
+    useEffect(() => {
+        setThumbnailLoaded(false);
+        setMediaLoaded(false);
+    }, [localUrl]);
     // Skip thumbnail phase if no thumbnail available (edge case: pending generation)
-    useEffect(() => { if (!thumbnailUrl) setThumbnailLoaded(true); }, [thumbnailUrl]);
+    useEffect(() => {
+        if (!thumbnailUrl) setThumbnailLoaded(true);
+    }, [thumbnailUrl]);
     const shareToken = getShareTokenFromHref();
 
     return <div>
@@ -60,9 +65,19 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
             sx={{cursor: onMediaPage ? "default" : "pointer", position: "relative"}}
             onMouseEnter={() => setExpandDetails(true)}
             onMouseLeave={() => setExpandDetails(false)}
-            onDoubleClick={() => {
+            onDoubleClick={(e) => {
                 if (!onMediaPage && media.id !== undefined) {
                     navigate(`/media/${media.id}${shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : ''}`);
+                    e.preventDefault();
+                }
+            }}
+            onMouseDown={(e) => {
+                if (e.button === 1) {
+                    // middle click
+                    if (!onMediaPage && media.id !== undefined) {
+                        window?.open?.(`/media/${media.id}${shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : ''}`, '_blank')?.focus?.();
+                        e.preventDefault()
+                    }
                 }
             }}
         >
@@ -97,6 +112,11 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                             }}
                             controls
                             onCanPlay={() => setMediaLoaded(true)}
+                            onDoubleClick={(e) => {
+                                if (!onMediaPage && media.id !== undefined) {
+                                    e.preventDefault();
+                                }
+                            }}
                         />
                     </Box>
                 ) : null
@@ -128,7 +148,13 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                             alt="photo"
                             style={{
                                 ...viewerConfig?.media?.style,
-                                ...(mediaLoaded ? {} : {position: 'absolute', opacity: 0, pointerEvents: 'none', top: 0, left: 0}),
+                                ...(mediaLoaded ? {} : {
+                                    position: 'absolute',
+                                    opacity: 0,
+                                    pointerEvents: 'none',
+                                    top: 0,
+                                    left: 0
+                                }),
                             }}
                             onLoad={() => setMediaLoaded(true)}
                         />
