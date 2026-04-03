@@ -6,14 +6,18 @@ import {
     CircularProgress,
     Collapse,
     Divider,
+    IconButton,
     Stack,
     Table,
     TableBody,
     TableCell,
     TableHead,
     TableRow,
+    Tooltip,
     Typography,
 } from "@mui/material";
+import GridOnIcon from '@mui/icons-material/GridOn';
+import TableRowsIcon from "@mui/icons-material/TableRows";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchAccount, fetchArchivingSessionsAccount, fetchRelatedTagStats} from "../services/DataFetcher";
 import {ITagStat} from "../types/tags";
@@ -47,6 +51,18 @@ export default function AccountPage() {
     const hideInnerLinks = exportMode;
     const disableAnnotator = exportMode || shareMode;
     const preloadMetadata = exportMode;
+
+    const [compactMode, setCompactMode] = useState<boolean>(
+        () => localStorage.getItem('account_compact_mode') === 'true'
+    );
+
+    const toggleCompactMode = () => {
+        setCompactMode(prev => {
+            const next = !prev;
+            localStorage.setItem('account_compact_mode', String(next));
+            return next;
+        });
+    };
 
     const [data, setData] = useState<IExtractedEntitiesNested | null>(null);
     const [loadingData, setLoadingData] = useState(apiRef !== null);
@@ -152,6 +168,7 @@ export default function AccountPage() {
                     },
                     post: {
                         annotator: "disable",
+                        compactMode,
                     },
                     media: {
                         style: {
@@ -181,7 +198,14 @@ export default function AccountPage() {
                             <CircularProgress color={"primary"} size={"16"}/>
                     }
                 </Stack>
-                {isLoggedIn && dbId ? <LinkSharing entityType={"account"} entityId={dbId} stableSharePath={stableSharePath}/> : null}
+                <Stack direction={"row"} alignItems={"center"} gap={0.5} sx={{marginLeft: 'auto'}}>
+                    <Tooltip title={compactMode ? "Detailed view" : "Compact view"} arrow>
+                        <IconButton color="inherit" onClick={toggleCompactMode}>
+                            {compactMode ? <TableRowsIcon/> : <GridOnIcon/>}
+                        </IconButton>
+                    </Tooltip>
+                    {isLoggedIn && dbId ? <LinkSharing entityType={"account"} entityId={dbId} stableSharePath={stableSharePath}/> : null}
+                </Stack>
             </Stack>
         </TopNavBar>
         <div className={"page-content content-wrap"}>

@@ -59,13 +59,17 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
         if (!thumbnailUrl) setThumbnailLoaded(true);
     }, [thumbnailUrl]);
     const shareToken = getShareTokenFromHref();
+    const compactMode = !!(viewerConfig?.post?.compactMode);
 
     return <div>
         <Box
             sx={{cursor: onMediaPage ? "default" : "pointer", position: "relative"}}
             onMouseEnter={() => setExpandDetails(true)}
             onMouseLeave={() => setExpandDetails(false)}
-            onDoubleClick={(e) => {
+            onClick={(e) => {
+                if (media.media_type === "video" && !compactMode) {
+                    return
+                }
                 if (!onMediaPage && media.id !== undefined) {
                     navigate(`/media/${media.id}${shareToken ? `?${SHARE_URL_PARAM}=${shareToken}` : ''}`);
                     e.preventDefault();
@@ -83,42 +87,78 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
         >
             {
                 media.media_type === "video" ? (
-                    // While thumbnail loads: 1:1 grey box. Once thumbnail ready: video with poster takes over.
-                    <Box sx={{
-                        position: 'relative', display: 'block',
-                        '@keyframes mediaPlaceholderPulse': {
-                            '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
-                        },
-                        ...viewerConfig?.media?.style,
-                        ...(!thumbnailLoaded && {
-                            aspectRatio: '1 / 1',
-                            backgroundColor: 'action.hover',
-                            animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
-                        }),
-                    }}>
-                        {/* Preloads the thumbnail in the background; onLoad fires when it's ready */}
-                        {thumbnailUrl && (
-                            <img src={thumbnailUrl} alt="" style={{display: 'none'}}
-                                 ref={(el) => { if (el?.complete) setThumbnailLoaded(true); }}
-                                 onLoad={() => setThumbnailLoaded(true)}/>
-                        )}
-                        {/* Hidden until thumbnail ready so the grey placeholder isn't obscured by a black video */}
-                        <video
-                            src={localUrl}
-                            style={{
-                                backgroundColor: '#000',
-                                ...viewerConfig?.media?.style,
-                                ...(!thumbnailLoaded && {display: 'none'}),
-                            }}
-                            controls
-                            onCanPlay={() => setMediaLoaded(true)}
-                            onDoubleClick={(e) => {
-                                if (!onMediaPage && media.id !== undefined) {
-                                    e.preventDefault();
-                                }
-                            }}
-                        />
-                    </Box>
+                    compactMode ? (
+                        // Compact: thumbnail background + silent hover-play overlay; no controls
+                        <Box sx={{
+                            position: 'relative', display: 'block',
+                            '@keyframes mediaPlaceholderPulse': {
+                                '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
+                            },
+                            ...viewerConfig?.media?.style,
+                            ...(!thumbnailLoaded && {
+                                aspectRatio: '1 / 1',
+                                backgroundColor: 'action.hover',
+                                animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
+                            }),
+                        }}>
+                            {thumbnailUrl && (
+                                <img src={thumbnailUrl} alt=""
+                                     style={{
+                                         width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                                         ...(!thumbnailLoaded && {display: 'none'}),
+                                     }}
+                                     ref={(el) => {
+                                         if (el?.complete) setThumbnailLoaded(true);
+                                     }}
+                                     onLoad={() => setThumbnailLoaded(true)}/>
+                            )}
+                            {expandDetails && localUrl && thumbnailLoaded && (
+                                <video
+                                    src={localUrl}
+                                    autoPlay
+                                    muted
+                                    loop
+                                    playsInline
+                                    style={{
+                                        position: 'absolute', inset: 0,
+                                        width: '100%', height: '100%', objectFit: 'cover',
+                                    }}
+                                />
+                            )}
+                        </Box>
+                    ) : (
+                        // Normal: full video player with controls
+                        <Box sx={{
+                            position: 'relative', display: 'block',
+                            '@keyframes mediaPlaceholderPulse': {
+                                '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
+                            },
+                            ...viewerConfig?.media?.style,
+                            ...(!thumbnailLoaded && {
+                                aspectRatio: '1 / 1',
+                                backgroundColor: 'action.hover',
+                                animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
+                            }),
+                        }}>
+                            {thumbnailUrl && (
+                                <img src={thumbnailUrl} alt="" style={{display: 'none'}}
+                                     ref={(el) => {
+                                         if (el?.complete) setThumbnailLoaded(true);
+                                     }}
+                                     onLoad={() => setThumbnailLoaded(true)}/>
+                            )}
+                            <video
+                                src={localUrl}
+                                style={{
+                                    backgroundColor: '#000',
+                                    ...viewerConfig?.media?.style,
+                                    ...(!thumbnailLoaded && {display: 'none'}),
+                                }}
+                                controls
+                                onCanPlay={() => setMediaLoaded(true)}
+                            />
+                        </Box>
+                    )
                 ) : null
             }
             {
@@ -140,7 +180,9 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                         {thumbnailUrl && !mediaLoaded && (
                             <img src={thumbnailUrl} alt=""
                                  style={{...viewerConfig?.media?.style, width: '100%', display: 'block'}}
-                                 ref={(el) => { if (el?.complete) setThumbnailLoaded(true); }}
+                                 ref={(el) => {
+                                     if (el?.complete) setThumbnailLoaded(true);
+                                 }}
                                  onLoad={() => setThumbnailLoaded(true)}/>
                         )}
                         {/* Full-res — preloads silently while thumbnail shows, then becomes in-flow */}
@@ -157,14 +199,16 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                                     left: 0
                                 }),
                             }}
-                            ref={(el) => { if (el?.complete && el?.naturalWidth > 0) setMediaLoaded(true); }}
+                            ref={(el) => {
+                                if (el?.complete && el?.naturalWidth > 0) setMediaLoaded(true);
+                            }}
                             onLoad={() => setMediaLoaded(true)}
                             onError={() => setMediaLoaded(true)}
                         />
                     </Box>
                 ) : null
             }
-            <Box
+            {!compactMode && <Box
                 sx={{
                     position: "absolute",
                     top: 0,
@@ -243,7 +287,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                         </span>
                     </Stack>
                 </Fade>
-            </Box>
+            </Box>}
         </Box>
         {
             viewerConfig?.media?.annotator !== "hide" &&

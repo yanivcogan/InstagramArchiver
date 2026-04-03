@@ -18,6 +18,7 @@ interface IEntityViewerConfig {
     post: {
         display: IEntityDisplayOption;
         annotator: IEntityAnnotatorOption;
+        compactMode?: boolean;
     }
     media: {
         display: IEntityDisplayOption;
@@ -61,6 +62,7 @@ export class EntityViewerConfig implements IEntityViewerConfig {
     post = {
         display: "display" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
+        compactMode: false,
     };
     media = {
         display: "display" as IEntityDisplayOption,

@@ -174,6 +174,25 @@ export default function Account({
             (new Date(b.publication_date || 0).getTime()) - (new Date(a.publication_date || 0).getTime())
         ), [account.account_posts]);
 
+    const compactMode = viewerConfig?.post?.compactMode ?? false;
+
+    const effectiveConfig = useMemo(() => {
+        if (!compactMode) return viewerConfig;
+        return {
+            ...viewerConfig,
+            post: {...viewerConfig?.post, compactMode: true},
+            media: {
+                ...viewerConfig?.media,
+                style: {
+                    width: '100%',
+                    aspectRatio: '1 / 1',
+                    overflow: 'hidden',
+                    objectFit: 'cover' as const,
+                },
+            },
+        };
+    }, [compactMode, viewerConfig]);
+
     const pageSize = viewerConfig?.account?.postsPageSize ?? null;
     const mediaStyle = viewerConfig?.media?.style;
     const estimatedHeights = useMemo(
@@ -413,18 +432,20 @@ export default function Account({
             </Box>
 
             {/* Posts section */}
-            <Stack direction={"column"} sx={{width: "100%", flexGrow: 1}} gap={1}>
+            <Box sx={compactMode
+                ? {display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 1, width: '100%'}
+                : {display: 'flex', flexDirection: 'column', gap: 1, width: '100%', flexGrow: 1}
+            }>
                 {sortedPosts.map((p, i) => {
-                    if (!pageSize || renderedIndices.has(i)) {
+                    if (compactMode || !pageSize || renderedIndices.has(i)) {
                         return (
-                            <React.Fragment key={p.id ?? i}>
-                                <Post
-                                    post={p}
-                                    viewerConfig={viewerConfig}
-                                    highlightCommentId={highlightCommentId}
-                                    highlightLikeId={highlightLikeId}
-                                />
-                            </React.Fragment>
+                            <Post
+                                key={p.id ?? i}
+                                post={p}
+                                viewerConfig={effectiveConfig as EntityViewerConfig}
+                                highlightCommentId={highlightCommentId}
+                                highlightLikeId={highlightLikeId}
+                            />
                         );
                     }
                     // Placeholder for unrendered post — registers with shared observer on mount
@@ -440,7 +461,7 @@ export default function Account({
                         />
                     );
                 })}
-            </Stack>
+            </Box>
         </Stack>
     </Paper>
 }

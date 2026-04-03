@@ -14,7 +14,7 @@ import Comment from "./Comment";
 import PostLike from "./PostLike";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
-import {ChatBubble, DataObject, Favorite} from "@mui/icons-material";
+import {ChatBubble, DataObject, Favorite, Notes} from "@mui/icons-material";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -98,7 +98,8 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
         if (post.id == null) return;
         fetchPostAuxiliaryCounts(post.id)
             .then(counts => setAuxiliaryCounts(counts))
-            .catch(() => {});
+            .catch(() => {
+            });
     }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const [activeTab, setActiveTab] = useState<'comments' | 'likes' | 'raw' | null>(
@@ -125,10 +126,74 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
     const taggedAccounts = post.post_tagged_accounts || [];
     const showTaggedAccounts = viewerConfig?.taggedAccount?.display !== 'hide' && taggedAccounts.length > 0;
 
+    const compactMode = viewerConfig?.post?.compactMode;
+
+    if (compactMode) {
+        const tooltipContent = (
+            <Stack gap={0.5}>
+                <Link color={"primary"} href={postHref}>
+                    <Typography variant="caption">{dateInUTC} (UTC+0)</Typography>
+                </Link>
+                {post.caption && (
+                    <Typography variant="caption">
+                        {post.caption.length > 120 ? post.caption.slice(0, 120) + '…' : post.caption}
+                    </Typography>
+                )}
+            </Stack>
+        );
+
+        const TooltipSlotProps = {
+            tooltip: {
+                sx: {
+                    bgcolor: 'white',
+                    color: 'text.primary',
+                    boxShadow: 4,
+                    borderRadius: 2,
+                    p: 2,
+                }
+            },
+            arrow: {sx: {color: 'white'}},
+        }
+
+        if (post.post_media.length === 0) {
+            return (
+                <React.Fragment>
+                    <Tooltip title={tooltipContent} arrow slotProps={TooltipSlotProps}>
+                        <Box sx={{
+                            aspectRatio: '1 / 1',
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'action.hover',
+                            borderRadius: 1,
+                            cursor: 'default',
+                        }}>
+                            <Notes sx={{opacity: 0.4, fontSize: 40}}/>
+                        </Box>
+                    </Tooltip>
+                </React.Fragment>
+            );
+        }
+
+        return (
+            <React.Fragment>
+                {post.post_media.map((m, m_i) => (
+                    <Tooltip key={m_i} title={tooltipContent} arrow slotProps={TooltipSlotProps}>
+                        <Box sx={{width: '100%'}}>
+                            <Media media={m} viewerConfig={viewerConfig}/>
+                        </Box>
+                    </Tooltip>
+                ))}
+            </React.Fragment>
+        );
+    }
+
     return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%', backgroundColor: '#e8f0ff'}}>
         <Stack gap={0.5}>
             <Stack gap={1} direction={"row"} alignItems={"center"}>
-                <Typography variant={"subtitle2"} sx={{userSelect: "all"}} color={"textSecondary"}>{post.url}</Typography>
+                <Typography variant={"subtitle2"} sx={{userSelect: "all"}}
+                            color={"textSecondary"}>{post.url}</Typography>
             </Stack>
             <Tooltip
                 title={
@@ -178,7 +243,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                             value="comments"
                             label={commentsLabel}
                             icon={<ChatBubble/>} iconPosition="start"
-                            onClick={() => { if (activeTab === 'comments') setActiveTab(null); }}
+                            onClick={() => {
+                                if (activeTab === 'comments') setActiveTab(null);
+                            }}
                         />
                     )}
                     {post.id != null && (
@@ -186,14 +253,18 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                             value="likes"
                             label={likesLabel}
                             icon={<Favorite/>} iconPosition="start"
-                            onClick={() => { if (activeTab === 'likes') setActiveTab(null); }}
+                            onClick={() => {
+                                if (activeTab === 'likes') setActiveTab(null);
+                            }}
                         />
                     )}
                     <Tab
                         value="raw"
                         label="Raw Data"
                         icon={<DataObject/>} iconPosition="start"
-                        onClick={() => { if (activeTab === 'raw') setActiveTab(null); }}
+                        onClick={() => {
+                            if (activeTab === 'raw') setActiveTab(null);
+                        }}
                     />
                 </Tabs>
 
@@ -207,7 +278,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                                         {comments.map((c, i) => (
                                             <div
                                                 key={i}
-                                                ref={c.id != null ? el => { if (el) commentRefs.current.set(c.id!, el); } : undefined}
+                                                ref={c.id != null ? el => {
+                                                    if (el) commentRefs.current.set(c.id!, el);
+                                                } : undefined}
                                                 style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
                                             >
                                                 <Comment comment={c} postId={post.id} shareToken={shareToken}/>
@@ -228,7 +301,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                                         {likes.map((l, i) => (
                                             <div
                                                 key={i}
-                                                ref={l.id != null ? el => { if (el) likeRefs.current.set(l.id!, el); } : undefined}
+                                                ref={l.id != null ? el => {
+                                                    if (el) likeRefs.current.set(l.id!, el);
+                                                } : undefined}
                                                 style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
                                             >
                                                 <PostLike like={l} postId={post.id} shareToken={shareToken}/>
@@ -245,7 +320,8 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                             <>
                                 {awaitingDetailsFetch && <CircularProgress size={16}/>}
                                 {post.data && (
-                                    <ReactJson src={post.data} enableClipboard={false} style={{wordBreak: 'break-word'}}/>
+                                    <ReactJson src={post.data} enableClipboard={false}
+                                               style={{wordBreak: 'break-word'}}/>
                                 )}
                             </>
                         )}
