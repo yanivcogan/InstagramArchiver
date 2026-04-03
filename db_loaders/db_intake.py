@@ -7,13 +7,13 @@ from pydantic import BaseModel, ConfigDict
 
 from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media, Comment, Like, TaggedAccount, AccountRelation
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media, reconcile_comments, reconcile_likes, reconcile_tagged_accounts, reconcile_account_relations, synthesize_from_archives, reconcile_primitives
-from root_anchor import ROOT_DIR
+from root_anchor import ROOT_ARCHIVES
 from utils import db
 
 logger = logging.getLogger(__name__)
 
 LOCAL_ARCHIVES_DIR_ALIAS = 'local_archive_har'
-ROOT_ARCHIVES = Path(ROOT_DIR) / "archives"
+LOCAL_WACZ_ARCHIVES_DIR_ALIAS = "local_archive_wacz"
 EntityType = TypeVar("EntityType", bound="EntityBase")
 
 

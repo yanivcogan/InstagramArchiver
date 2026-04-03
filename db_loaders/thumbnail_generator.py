@@ -61,9 +61,9 @@ from typing import Callable, Optional
 import cv2
 from PIL import Image
 
-from db_loaders.db_intake import ROOT_ARCHIVES, LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import Media
-from root_anchor import ROOT_DIR
+from root_anchor import ROOT_DIR, ROOT_ARCHIVES
 from utils import db
 
 logger = logging.getLogger(__name__)

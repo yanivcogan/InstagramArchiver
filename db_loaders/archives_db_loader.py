@@ -128,7 +128,8 @@ from dateutil import parser
 from pytz import timezone as pytz_timezone
 from tzlocal import get_localzone_name
 
-from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, ROOT_ARCHIVES
+import root_anchor
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, LOCAL_WACZ_ARCHIVES_DIR_ALIAS
 from db_loaders.db_intake import incorporate_structures_into_db
 from db_loaders.thumbnail_generator import generate_missing_thumbnails
 from extractors.extract_photos import PhotoAcquisitionConfig
@@ -138,8 +139,6 @@ from extractors.structures_from_wacz import scan_wacz
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
 from extractors.wacz_metadata import extract_wacz_metadata
 from utils import db
-
-LOCAL_WACZ_ARCHIVES_DIR_ALIAS = "local_archive_wacz"
 
 logger = logging.getLogger(__name__)
 
@@ -769,7 +768,7 @@ def add_missing_metadata():
 if __name__ == "__main__":
     import os
     from logging.handlers import RotatingFileHandler
-    from root_anchor import ROOT_DIR
+    from root_anchor import ROOT_DIR, ROOT_ARCHIVES
 
     # Ensure logs directory exists in project root
     logs_dir = os.path.join(ROOT_DIR, "logs_db_loader")
@@ -831,8 +830,8 @@ if __name__ == "__main__":
         # Override ROOT_ARCHIVES in all modules that import it
         import db_loaders.db_intake as _db_intake
         import db_loaders.thumbnail_generator as _thumbnail_gen
-        _db_intake.ROOT_ARCHIVES = archives_path
-        _thumbnail_gen.ROOT_ARCHIVES = archives_path
+        root_anchor.ROOT_ARCHIVES = archives_path
+        root_anchor.ROOT_ARCHIVES = archives_path
         globals()['ROOT_ARCHIVES'] = archives_path
         logger.info(f"Using custom archives directory: {archives_path}")
 

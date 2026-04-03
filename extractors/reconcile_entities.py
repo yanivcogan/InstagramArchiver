@@ -1,8 +1,10 @@
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Callable, TypeVar
 
 from extractors.entity_types import Account, Post, Media, Comment, Like, TaggedAccount, AccountRelation
+from root_anchor import ROOT_DIR, ROOT_ARCHIVES
 
 T = TypeVar('T')
 
@@ -103,7 +105,12 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     existing_media.id_on_platform = reconcile_primitives(existing_media.id_on_platform, new_media.id_on_platform)
     existing_media.url = reconcile_primitives(existing_media.url, new_media.url)
     existing_media.post_url = reconcile_primitives(existing_media.post_url, new_media.post_url)
-    existing_media.local_url = reconcile_primitives(existing_media.local_url, new_media.local_url)
+    new_size = _local_url_size(new_media.local_url)
+    existing_size = _local_url_size(existing_media.local_url)
+    if new_size > existing_size:
+        existing_media.local_url = new_media.local_url
+    else:
+        existing_media.local_url = reconcile_primitives(existing_media.local_url, new_media.local_url)
     existing_media.media_type = reconcile_primitives(existing_media.media_type, new_media.media_type)
     existing_media.data = reconcile_dicts(existing_media.data, new_media.data)
     return existing_media
@@ -183,3 +190,25 @@ def synthesize_from_archives(records: list[T], reconcile_fn: Callable[[T, T], T]
     for newer in sorted_records[1:]:
         result = reconcile_fn(newer, result)  # existing=result wins over newer
     return result
+
+
+def _local_url_size(local_url: Optional[str]) -> int:
+    """
+    Return the file size in bytes of the file pointed to by a local_url alias path.
+
+    local_url format: "{alias}/{ROOT_ARCHIVES-relative-path}"
+    Both known aliases (local_archive_har, local_archive_wacz) prefix a
+    ROOT_ARCHIVES-relative path, so stripping the first segment resolves any alias.
+
+    Returns 0 if the URL is None, the path segment is malformed, or the file
+    does not exist (OSError).
+    """
+    if not local_url:
+        return 0
+    parts = local_url.split("/", 1)
+    if len(parts) < 2:
+        return 0
+    try:
+        return (ROOT_ARCHIVES / parts[1]).stat().st_size
+    except OSError:
+        return 0
