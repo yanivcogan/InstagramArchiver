@@ -1,5 +1,6 @@
 import os
 import tarfile
+import shutil
 from pathlib import Path
 from typing import Optional
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -138,5 +139,28 @@ def decompress_zst(zstd_file: Path, output_dir: Optional[Path]):
     print(f"Decompressed {zstd_file.name} to {output_dir}")
 
 
+def clean_already_packaged_archives_zstd():
+    root_archives = Path(ROOT_DIR) / "archives"
+    archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
+
+    root_zips = Path(ROOT_DIR) / "utils" / "data_transfers" / "packaged_archives"
+    packaged_list_path = root_zips / "packaged_list_zstd.txt"
+    if packaged_list_path.exists():
+        with packaged_list_path.open("r", encoding="utf-8") as f:
+            already_packaged = set(line.strip() for line in f if line.strip())
+    else:
+        already_packaged = set()
+
+    already_archived: list[Path] = [a for a in archive_dirs if a.name in already_packaged]
+
+    pre_deletion_staging = root_archives / "pre_deletion_staging"
+    if not os.path.exists(pre_deletion_staging):
+        os.makedirs(pre_deletion_staging)
+
+    for a in already_archived:
+        shutil.move(a, pre_deletion_staging)
+
+
 if __name__ == "__main__":
+    # clean_already_packaged_archives_zstd()
     package_archives_zstd(single_archive=input("Create a single batch? y/n").strip()=="y")
