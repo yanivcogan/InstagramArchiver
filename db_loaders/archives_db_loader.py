@@ -115,12 +115,6 @@ EXAMPLE WORKFLOWS:
     uv run db_loaders/archives_db_loader.py register
     uv run db_loaders/archives_db_loader.py parse
     uv run db_loaders/archives_db_loader.py extract
-
-DEPENDENCIES:
-    - MySQL database (configured in .env)
-    - archives/ directory with HAR archive folders
-    - PIL/Pillow for thumbnail generation
-    - ffmpeg for video thumbnail generation
 """
 
 import asyncio
@@ -140,8 +134,12 @@ from db_loaders.thumbnail_generator import generate_missing_thumbnails
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from extractors.session_attachments import get_session_attachments
+from extractors.structures_from_wacz import scan_wacz
 from extractors.structures_to_entities import extract_data_from_har, ExtractedHarData, har_data_to_entities
+from extractors.wacz_metadata import extract_wacz_metadata
 from utils import db
+
+LOCAL_WACZ_ARCHIVES_DIR_ALIAS = "local_archive_wacz"
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +169,7 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
     offset = 0
     while True:
         rows = db.execute_query(
-            "SELECT external_id FROM archive_session WHERE source_type = 'local_har' "
+            "SELECT external_id FROM archive_session WHERE source_type IN ('local_har', 'local_wacz') "
             "LIMIT %(limit)s OFFSET %(offset)s",
             {"limit": _REGISTER_FETCH_BATCH, "offset": offset},
             return_type="rows",
@@ -187,7 +185,20 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
     logger.info(f"Part A - {len(registered)} archives already registered in DB")
 
     # --- Step 3: determine which directories are new ---
-    to_register = [d for d in archive_dirs if f"har-{d.name}" not in registered]
+    # Each entry is (archive_dir, external_id, source_type, location_alias).
+    # HAR takes precedence if a directory contains both archive types.
+    to_register: list[tuple] = []
+    for d in archive_dirs:
+        if (d / "archive.har").exists():
+            # continue # TODO: remove this later
+            ext_id = f"har-{d.name}"
+            if ext_id not in registered:
+                to_register.append((d, ext_id, "local_har", LOCAL_ARCHIVES_DIR_ALIAS))
+        elif (d / "archive.wacz").exists():
+            ext_id = f"wacz-{d.name}"
+            if ext_id not in registered:
+                to_register.append((d, ext_id, "local_wacz", LOCAL_WACZ_ARCHIVES_DIR_ALIAS))
+
     if limit is not None:
         to_register = to_register[:limit]
     logger.info(f"Part A - {len(to_register)} new archives to register")
@@ -197,24 +208,23 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
     for batch_start in range(0, len(to_register), _REGISTER_INSERT_BATCH):
         batch = to_register[batch_start: batch_start + _REGISTER_INSERT_BATCH]
         with db.transaction_batch():
-            for archive_dir in batch:
+            for archive_dir, ext_id, source_type, location_alias in batch:
                 if cancel_check and cancel_check():
                     raise InterruptedError("Cancelled by user")
-                archive_name = archive_dir.name
-                archiving_session = f"har-{archive_name}"
                 db.execute_query(
                     """INSERT INTO archive_session
                            (external_id, archive_location, source_type)
-                       VALUES (%(external_id)s, %(archive_location)s, 'local_har')""",
+                       VALUES (%(external_id)s, %(archive_location)s, %(source_type)s)""",
                     {
-                        "external_id": archiving_session,
-                        "archive_location": f"{LOCAL_ARCHIVES_DIR_ALIAS}/{archive_name}",
+                        "external_id": ext_id,
+                        "archive_location": f"{location_alias}/{archive_dir.name}",
+                        "source_type": source_type,
                     },
                     return_type="id",
                 )
-                logger.info(f"Registered new archive: {archive_name}")
+                logger.info(f"Registered new archive: {archive_dir.name} ({source_type})")
                 if emit:
-                    emit(f"Part A — registered {archive_name}")
+                    emit(f"Part A — registered {archive_dir.name}")
                 registered_count += 1
 
     elapsed = time.time() - start_time
@@ -275,10 +285,14 @@ def strip_media_contents(data: ExtractedHarData) -> None:
 
 def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[[], bool]] = None, emit: Optional[Callable[[str], None]] = None):
     """
-     Part B of full - queries archive_session where incorporation_status = 'pending'.
-     looks for metadata.json.
-     looks for archive.har and does parsing.
-     updates archive_session - structures (lots of json), metadata
+    Part B of full — queries archive_session where incorporation_status = 'pending'
+    for both HAR (local_har) and WACZ (local_wacz) source types.
+
+    HAR path:  reads metadata.json + archive.har
+    WACZ path: reads archive.wacz, extracts metadata with extract_wacz_metadata(),
+               writes metadata.json to the archive directory, then calls scan_wacz().
+
+    Both paths converge on the same DB UPDATE (structures, metadata, archived_url, etc.).
     """
     import time
     start_time = time.time()
@@ -289,8 +303,8 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
     # Fetch the full list of unprocessed archives upfront (one query, small columns only).
     # This avoids running a repeated filter scan for every single archive.
     queue = db.execute_query(
-        "SELECT id, external_id, archive_location FROM archive_session "
-        "WHERE incorporation_status = 'pending' AND source_type = 'local_har'",
+        "SELECT id, external_id, archive_location, source_type FROM archive_session "
+        "WHERE incorporation_status = 'pending' AND source_type IN ('local_har', 'local_wacz')",
         {},
         return_type="rows",
     ) or []
@@ -302,88 +316,146 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
         if cancel_check and cancel_check():
             raise InterruptedError("Cancelled by user")
         try:
-            # Extract the archive directory name from the stored location
-            # e.g., "local_archive_har/eran_20250530_160037" -> "eran_20250530_160037"
-            archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
+            # Reconstruct the archive directory; path alias differs by source type.
+            source_type = entry.get('source_type', 'local_har')
+            if source_type == 'local_wacz':
+                archive_name = entry['archive_location'].split(f"{LOCAL_WACZ_ARCHIVES_DIR_ALIAS}/")[1]
+            else:
+                archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
+
             entry_id = entry['external_id'] or entry['id']
-            logger.info(f"Parsing archive: {entry_id}")
+            logger.info(f"Parsing archive: {entry_id} ({source_type})")
             if emit:
                 emit(f"Part B — parsing {entry_id}")
 
             archive_dir = ROOT_ARCHIVES / archive_name
 
-            # --- Step 1: Read metadata.json ---
-            logger.debug(f"Extracting metadata...")
-            # Contains target_url, notes, archiving_start_timestamp
-            metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
             archived_url = None
             notes = None
-            try:
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    metadata = json.loads(f.read())
-                archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
-                notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
-                timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
+            metadata = {}
 
-                # Convert timestamp to UTC if present
-                # Assumes local timezone if not specified in the timestamp
-                timezone = get_localzone_name()
-                if timestamp is not None:
-                    dt = parser.isoparse(timestamp)
-                    if dt.tzinfo is None:
-                        try:
-                            tz = pytz_timezone(timezone)
-                            dt = tz.localize(dt)
-                            iso_timestamp = dt.astimezone(pytz_timezone("UTC")).strftime("%Y-%m-%d %H:%M:%S")
-                        except Exception:
-                            logger.warning(f"Could not parse timezone for {entry_id}")
-                logger.debug(f"Loaded metadata for {entry_id}: url={archived_url}")
-            except Exception:
-                raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
-            logger.debug(f"Metadata for {entry_id} extracted: {metadata}")
+            if source_type == 'local_wacz':
+                # ---------------------------------------------------------- #
+                # WACZ path: extract metadata from archive.wacz, write to
+                # metadata.json, then scan the WARC records for structures.
+                # ---------------------------------------------------------- #
+                wacz_path = archive_dir / "archive.wacz"
+                if not wacz_path.exists():
+                    raise Exception(f"WACZ file {wacz_path} does not exist")
 
-            # --- Step 2: Get session attachments (screenshots, etc.) ---
-            logger.debug(f"Collecting session attachments...")
+                # --- Step 1: Extract and persist metadata ---
+                logger.debug(f"Extracting WACZ metadata for {entry_id}")
+                try:
+                    metadata = extract_wacz_metadata(wacz_path)
+                    metadata_path = archive_dir / "metadata.json"
+                    metadata_path.write_text(
+                        json.dumps(metadata, ensure_ascii=False, default=str, indent=2),
+                        encoding="utf-8",
+                    )
+                    logger.debug(f"Wrote metadata.json for {entry_id}")
+                except Exception as e:
+                    traceback.print_exc()
+                    raise Exception(f"Error extracting WACZ metadata for {entry_id}: {e}")
+
+                archived_url = metadata.get("primary_url")
+                notes = metadata.get("title")
+
+                # WACZ timestamps are always UTC ISO 8601 with Z suffix
+                created_ts = metadata.get("created")
+                if created_ts:
+                    try:
+                        dt = parser.isoparse(created_ts)
+                        iso_timestamp = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        logger.warning(f"Could not parse WACZ created timestamp for {entry_id}")
+                logger.debug(f"WACZ metadata: url={archived_url}, ts={iso_timestamp}")
+
+                # --- Step 2: Scan WACZ WARC records ---
+                logger.debug(f"Scanning WACZ records for {entry_id}")
+                try:
+                    structures, videos, photos = scan_wacz(wacz_path, archive_dir)
+                    extracted_data = ExtractedHarData(
+                        structures=structures, videos=videos, photos=photos
+                    )
+                    strip_media_contents(extracted_data)
+                    logger.debug(
+                        f"WACZ scan: {len(structures)} structures, "
+                        f"{len(videos)} videos, {len(photos)} photos"
+                    )
+                except Exception as e:
+                    traceback.print_exc()
+                    raise Exception(f"Error scanning WACZ file {wacz_path}: {e}")
+
+            else:
+                # ---------------------------------------------------------- #
+                # HAR path (existing logic, unchanged)
+                # ---------------------------------------------------------- #
+
+                # --- Step 1: Read metadata.json ---
+                logger.debug(f"Extracting metadata...")
+                metadata_path = archive_dir / "metadata.json"
+                try:
+                    with open(metadata_path, "r", encoding="utf-8") as f:
+                        metadata = json.loads(f.read())
+                    archived_url = metadata.get("target_url", None) if isinstance(metadata, dict) else None
+                    notes = metadata.get("notes", None) if isinstance(metadata, dict) else None
+                    timestamp = metadata.get("archiving_start_timestamp", None) if isinstance(metadata, dict) else None
+
+                    # Convert timestamp to UTC if present
+                    timezone = get_localzone_name()
+                    if timestamp is not None:
+                        dt = parser.isoparse(timestamp)
+                        if dt.tzinfo is None:
+                            try:
+                                tz = pytz_timezone(timezone)
+                                dt = tz.localize(dt)
+                                iso_timestamp = dt.astimezone(pytz_timezone("UTC")).strftime("%Y-%m-%d %H:%M:%S")
+                            except Exception:
+                                logger.warning(f"Could not parse timezone for {entry_id}")
+                    logger.debug(f"Loaded metadata for {entry_id}: url={archived_url}")
+                except Exception:
+                    raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
+                logger.debug(f"Metadata for {entry_id} extracted: {metadata}")
+
+                # --- Step 2: Parse the HAR file ---
+                logger.debug(f"Parsing HAR for {entry_id}")
+                har_path = archive_dir / "archive.har"
+                if not har_path.exists():
+                    raise Exception(f"HAR file {har_path} does not exist")
+                try:
+                    logger.debug(f"Extracting data from HAR file: {har_path}")
+                    extracted_data = extract_data_from_har(
+                        har_path,
+                        VideoAcquisitionConfig(
+                            download_missing=False,
+                            download_media_not_in_structures=False,
+                            download_unfetched_media=False,
+                            download_full_versions_of_fetched_media=False,
+                            download_highest_quality_assets_from_structures=False
+                        ),
+                        PhotoAcquisitionConfig(
+                            download_missing=False,
+                            download_media_not_in_structures=False,
+                            download_unfetched_media=False,
+                            download_highest_quality_assets_from_structures=False
+                        )
+                    )
+                    strip_media_contents(extracted_data)
+                    logger.debug(f"Extracted {len(extracted_data.videos)} videos, {len(extracted_data.photos)} photos")
+                except Exception as e:
+                    traceback.print_exc()
+                    raise Exception(f"Error extracting data from HAR file {har_path}: {e}")
+
+            # --- Step 3 (shared): Get session attachments (screen recordings, etc.) ---
+            logger.debug(f"Collecting session attachments for {entry_id}")
             try:
                 session_attachments = get_session_attachments(archive_dir).model_dump()
                 logger.debug(f"Found {len(session_attachments)} attachments for {entry_id}")
             except Exception as e:
-                logger.warning(f"Could not get session attachments for archive {archive_name}: {e}")
+                logger.warning(f"Could not get session attachments for {archive_name}: {e}")
                 traceback.print_exc()
                 session_attachments = dict()
-
-            # --- Step 3: Parse the HAR file ---
-            # Extract social media structures (posts, accounts, media references)
-            logger.debug(f"Parsing HAR for {entry_id}")
-            har_path = archive_dir / "archive.har"
-            if not har_path.exists():
-                raise Exception(f"HAR file {har_path} does not exist")
-            try:
-                logger.debug(f"Extracting data from HAR file: {har_path}")
-                # Configure extraction to NOT download any media - just parse what's in the HAR
-                extracted_data = extract_data_from_har(
-                    har_path,
-                    VideoAcquisitionConfig(
-                        download_missing=False,
-                        download_media_not_in_structures=False,
-                        download_unfetched_media=False,
-                        download_full_versions_of_fetched_media=False,
-                        download_highest_quality_assets_from_structures=False
-                    ),
-                    PhotoAcquisitionConfig(
-                        download_missing=False,
-                        download_media_not_in_structures=False,
-                        download_unfetched_media=False,
-                        download_highest_quality_assets_from_structures=False
-                    )
-                )
-                # Remove binary media content before storing (keeps JSON size manageable)
-                strip_media_contents(extracted_data)
-                logger.debug(f"Extracted {len(extracted_data.videos)} videos, {len(extracted_data.photos)} photos")
-            except Exception as e:
-                traceback.print_exc()
-                raise Exception(f"Error extracting data from HAR file {har_path}: {e}")
 
             # --- Step 4: Save parsed content to database ---
             try:
@@ -399,6 +471,8 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         metadata = %(metadata)s,
                         extraction_error = NULL,
                         attachments = %(attachments)s,
+                        archived_url = %(archived_url)s,
+                        archiving_timestamp = %(archiving_timestamp)s,
                         notes = %(notes)s
                     WHERE id = %(id)s
                     ''',
@@ -460,8 +534,8 @@ def extract_entities(limit: Optional[int] = None, cancel_check: Optional[Callabl
     # structures JSON can be large, so we fetch only lightweight columns here and
     # do a PK lookup per archive when we actually need the full row.
     queue = db.execute_query(
-        "SELECT id, external_id, archive_location FROM archive_session "
-        "WHERE incorporation_status = 'parsed' AND source_type = 'local_har'",
+        "SELECT id, external_id, archive_location, source_type FROM archive_session "
+        "WHERE incorporation_status = 'parsed' AND source_type IN ('local_har', 'local_wacz')",
         {},
         return_type="rows",
     ) or []
@@ -489,9 +563,15 @@ def extract_entities(limit: Optional[int] = None, cancel_check: Optional[Callabl
                 emit(f"Part C — extracting {entry_id}")
 
             # Resolve the archive directory path from the stored location
-            archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
+            source_type = entry.get('source_type', 'local_har')
+            if source_type == 'local_wacz':
+                archive_name = entry['archive_location'].split(f"{LOCAL_WACZ_ARCHIVES_DIR_ALIAS}/")[1]
+                archive_path = ROOT_ARCHIVES / archive_name / "archive.wacz"
+            else:
+                archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
+                archive_path = ROOT_ARCHIVES / archive_name / "archive.har"
             archive_dir = ROOT_ARCHIVES / archive_name
-            har_path = archive_dir / "archive.har"
+            har_path = archive_path  # name kept for compatibility with downstream calls
 
             # Step C1: Deserialize the parsed structures from Part B (stored as JSON in the DB)
             step_start = time.time()
