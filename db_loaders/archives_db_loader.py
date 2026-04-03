@@ -124,6 +124,7 @@ import sys
 import os
 import time
 import traceback
+from logging.handlers import RotatingFileHandler
 from typing import Callable, Optional
 
 from dateutil import parser
@@ -162,7 +163,7 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
 
     # --- Step 1: collect archive directories from disk ---
     archive_dirs = [d for d in root_anchor.ROOT_ARCHIVES.iterdir() if d.is_dir()]
-    logger.info(f"Part A - Found {len(archive_dirs)} archive directories in {ROOT_ARCHIVES}")
+    logger.info(f"Part A - Found {len(archive_dirs)} archive directories in {root_anchor.ROOT_ARCHIVES}")
 
     # --- Step 2: fetch all already-registered external_ids in paginated batches ---
     registered: set[str] = set()
@@ -190,7 +191,6 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
     to_register: list[tuple] = []
     for d in archive_dirs:
         if (d / "archive.har").exists():
-            # continue # TODO: remove this later
             ext_id = f"har-{d.name}"
             if ext_id not in registered:
                 to_register.append((d, ext_id, "local_har", LOCAL_ARCHIVES_DIR_ALIAS))
@@ -327,7 +327,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
             if emit:
                 emit(f"Part B — parsing {entry_id}")
 
-            archive_dir = ROOT_ARCHIVES / archive_name
+            archive_dir = root_anchor.ROOT_ARCHIVES / archive_name
 
             iso_timestamp = None
             archived_url = None
@@ -565,11 +565,11 @@ def extract_entities(limit: Optional[int] = None, cancel_check: Optional[Callabl
             source_type = entry.get('source_type', 'local_har')
             if source_type == 'local_wacz':
                 archive_name = entry['archive_location'].split(f"{LOCAL_WACZ_ARCHIVES_DIR_ALIAS}/")[1]
-                archive_path = ROOT_ARCHIVES / archive_name / "archive.wacz"
+                archive_path = root_anchor.ROOT_ARCHIVES / archive_name / "archive.wacz"
             else:
                 archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
-                archive_path = ROOT_ARCHIVES / archive_name / "archive.har"
-            archive_dir = ROOT_ARCHIVES / archive_name
+                archive_path = root_anchor.ROOT_ARCHIVES / archive_name / "archive.har"
+            archive_dir = root_anchor.ROOT_ARCHIVES / archive_name
             har_path = archive_path  # name kept for compatibility with downstream calls
 
             # Step C1: Deserialize the parsed structures from Part B (stored as JSON in the DB)
@@ -684,7 +684,7 @@ def add_missing_attachments():
         try:
             print("Adding attachments for entry", entry_id)
             archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
-            archive_dir = ROOT_ARCHIVES / archive_name
+            archive_dir = root_anchor.ROOT_ARCHIVES / archive_name
             session_attachments = get_session_attachments(archive_dir).model_dump()
             db.execute_query(
                 "UPDATE archive_session SET attachments = %(attachments)s WHERE id = %(id)s",
@@ -718,7 +718,7 @@ def add_missing_metadata():
         try:
             print("Adding metadata for entry", entry_id)
             archive_name = entry['archive_location'].split(f"{LOCAL_ARCHIVES_DIR_ALIAS}/")[1]
-            archive_dir = ROOT_ARCHIVES / archive_name
+            archive_dir = root_anchor.ROOT_ARCHIVES / archive_name
             metadata_path = archive_dir / "metadata.json"
             iso_timestamp = None
             archived_url = None
@@ -766,12 +766,9 @@ def add_missing_metadata():
 
 
 if __name__ == "__main__":
-    import os
-    from logging.handlers import RotatingFileHandler
-    from root_anchor import ROOT_DIR, ROOT_ARCHIVES
 
     # Ensure logs directory exists in project root
-    logs_dir = os.path.join(ROOT_DIR, "logs_db_loader")
+    logs_dir = os.path.join(root_anchor.ROOT_DIR, "logs_db_loader")
     os.makedirs(logs_dir, exist_ok=True)
 
     # Configure logging format (includes filename and line number)

@@ -99,12 +99,12 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                         {/* Preloads the thumbnail in the background; onLoad fires when it's ready */}
                         {thumbnailUrl && (
                             <img src={thumbnailUrl} alt="" style={{display: 'none'}}
+                                 ref={(el) => { if (el?.complete) setThumbnailLoaded(true); }}
                                  onLoad={() => setThumbnailLoaded(true)}/>
                         )}
                         {/* Hidden until thumbnail ready so the grey placeholder isn't obscured by a black video */}
                         <video
                             src={localUrl}
-                            poster={thumbnailUrl}
                             style={{
                                 backgroundColor: '#000',
                                 ...viewerConfig?.media?.style,
@@ -130,7 +130,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                             '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
                         },
                         ...viewerConfig?.media?.style,
-                        ...(!thumbnailLoaded && {
+                        ...(!(thumbnailLoaded || mediaLoaded) && {
                             aspectRatio: '1 / 1',
                             backgroundColor: 'action.hover',
                             animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
@@ -140,6 +140,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                         {thumbnailUrl && !mediaLoaded && (
                             <img src={thumbnailUrl} alt=""
                                  style={{...viewerConfig?.media?.style, width: '100%', display: 'block'}}
+                                 ref={(el) => { if (el?.complete) setThumbnailLoaded(true); }}
                                  onLoad={() => setThumbnailLoaded(true)}/>
                         )}
                         {/* Full-res — preloads silently while thumbnail shows, then becomes in-flow */}
@@ -156,7 +157,9 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                                     left: 0
                                 }),
                             }}
+                            ref={(el) => { if (el?.complete && el?.naturalWidth > 0) setMediaLoaded(true); }}
                             onLoad={() => setMediaLoaded(true)}
+                            onError={() => setMediaLoaded(true)}
                         />
                     </Box>
                 ) : null
