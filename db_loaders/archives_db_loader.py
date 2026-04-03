@@ -121,6 +121,8 @@ import asyncio
 import json
 import logging
 import sys
+import os
+import time
 import traceback
 from typing import Callable, Optional
 
@@ -156,11 +158,10 @@ def register_archives(limit: Optional[int] = None, cancel_check: Optional[Callab
     builds a set, then bulk-inserts only the new ones (also in batches).
     This avoids the previous N+1 per-archive lookup pattern.
     """
-    import time
     start_time = time.time()
 
     # --- Step 1: collect archive directories from disk ---
-    archive_dirs = [d for d in ROOT_ARCHIVES.iterdir() if d.is_dir()]
+    archive_dirs = [d for d in root_anchor.ROOT_ARCHIVES.iterdir() if d.is_dir()]
     logger.info(f"Part A - Found {len(archive_dirs)} archive directories in {ROOT_ARCHIVES}")
 
     # --- Step 2: fetch all already-registered external_ids in paginated batches ---
@@ -293,7 +294,6 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
 
     Both paths converge on the same DB UPDATE (structures, metadata, archived_url, etc.).
     """
-    import time
     start_time = time.time()
     logger.info(f"Part B - Starting archive parsing{f' (limit: {limit})' if limit else ''}")
     parsed_count = 0
