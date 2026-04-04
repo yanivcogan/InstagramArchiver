@@ -4,9 +4,23 @@ from typing import Optional, Any, Literal
 
 import re
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, computed_field
 
 from browsing_platform.server.services.tag import ITagWithType
+
+_PLATFORM_PAGE_PREFIXES = {
+    'instagram': 'https://www.instagram.com/',
+}
+_PLATFORM_CDN_PREFIXES = {
+    'instagram': 'https://scontent.cdninstagram.com/v/',
+}
+
+
+def reconstruct_url(suffix: Optional[str], platform: Optional[str], is_media: bool = False) -> Optional[str]:
+    if suffix is None:
+        return None
+    prefixes = _PLATFORM_CDN_PREFIXES if is_media else _PLATFORM_PAGE_PREFIXES
+    return prefixes.get(platform or '', '') + suffix
 
 
 class EntityBase(BaseModel):
@@ -19,11 +33,17 @@ class EntityBase(BaseModel):
 
 class Account(EntityBase):
     id_on_platform: Optional[str] = None
-    url: str = Field(..., max_length=200)
+    url_suffix: str = Field(..., max_length=200)
+    platform: Optional[str] = None
     display_name: Optional[str] = Field(None, max_length=100)
     identifiers: Optional[list] = None
     bio: Optional[str] = Field(None, max_length=200)
     data: Optional[Any] = None
+
+    @computed_field
+    @property
+    def url(self) -> Optional[str]:
+        return reconstruct_url(self.url_suffix, self.platform)
 
     @field_validator('id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -33,8 +53,8 @@ class Account(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
@@ -61,13 +81,24 @@ class Account(EntityBase):
 
 class Post(EntityBase):
     id_on_platform: Optional[str] = None
-    url: Optional[str] = Field(None, max_length=250)
+    url_suffix: Optional[str] = Field(None, max_length=250)
+    platform: Optional[str] = None
     account_id: Optional[int] = None
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
-    account_url: Optional[str] = Field(None, max_length=200)
+    account_url_suffix: Optional[str] = Field(None, max_length=200)
     publication_date: Optional[datetime] = None
     caption: Optional[str] = None
     data: Optional[Any] = None
+
+    @computed_field
+    @property
+    def url(self) -> Optional[str]:
+        return reconstruct_url(self.url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def account_url(self) -> Optional[str]:
+        return reconstruct_url(self.account_url_suffix, self.platform)
 
     @field_validator('id_on_platform', 'account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -77,8 +108,8 @@ class Post(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('url', 'account_url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('url_suffix', 'account_url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip()
             if '?story_media_id=' in v:
@@ -98,10 +129,10 @@ class Post(EntityBase):
 
     @model_validator(mode='after')
     def derive_id_on_platform_from_url(self):
-        if self.id_on_platform is None and self.url:
-            # Stories URL (trailing slash already stripped by normalize_url):
-            # https://www.instagram.com/stories/{username}/{pk}
-            m = re.search(r'/stories/[^/]+/(\d+)', self.url)
+        if self.id_on_platform is None and self.url_suffix:
+            # Stories URL suffix (trailing slash already stripped by normalize_url_suffix):
+            # stories/{username}/{pk}
+            m = re.search(r'stories/[^/]+/(\d+)', self.url_suffix)
             if m:
                 self.id_on_platform = m.group(1)
         return self
@@ -119,16 +150,27 @@ t_media_type = Literal['video', 'audio', 'image']
 
 class Media(EntityBase):
     id_on_platform: Optional[str] = None
-    url: str = Field(..., max_length=250)
+    url_suffix: str = Field(..., max_length=250)
+    platform: Optional[str] = None
     post_id: Optional[int] = None
     post_id_on_platform: Optional[str] = None
-    post_url: Optional[str] = Field(None, max_length=250)
+    post_url_suffix: Optional[str] = Field(None, max_length=250)
     local_url: Optional[str] = None
     media_type: t_media_type
     data: Optional[Any] = None
     annotation: Optional[str] = None
     thumbnail_path: Optional[str] = None
     thumbnail_status: Optional[str] = None
+
+    @computed_field
+    @property
+    def url(self) -> Optional[str]:
+        return reconstruct_url(self.url_suffix, self.platform, is_media=True)
+
+    @computed_field
+    @property
+    def post_url(self) -> Optional[str]:
+        return reconstruct_url(self.post_url_suffix, self.platform)
 
     @field_validator('id_on_platform', 'post_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -138,8 +180,8 @@ class Media(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('url', 'post_url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('url_suffix', 'post_url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
@@ -156,11 +198,12 @@ class Media(EntityBase):
 
 class Comment(EntityBase):
     id_on_platform: Optional[str] = None
-    url: Optional[str] = Field(None, max_length=250)
+    url_suffix: Optional[str] = Field(None, max_length=250)
+    platform: Optional[str] = None
     post_id_on_platform: Optional[str] = Field(None, max_length=250)
-    post_url: Optional[str] = Field(None, max_length=250)
+    post_url_suffix: Optional[str] = Field(None, max_length=250)
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
-    account_url: Optional[str] = Field(None, max_length=200)
+    account_url_suffix: Optional[str] = Field(None, max_length=200)
     account_display_name: Optional[str] = Field(None, max_length=100)
     parent_comment_id_on_platform: Optional[str] = None
     post_id: Optional[int] = None
@@ -168,6 +211,21 @@ class Comment(EntityBase):
     text: Optional[str] = None
     publication_date: Optional[datetime] = None
     data: Optional[Any] = None
+
+    @computed_field
+    @property
+    def url(self) -> Optional[str]:
+        return reconstruct_url(self.url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def post_url(self) -> Optional[str]:
+        return reconstruct_url(self.post_url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def account_url(self) -> Optional[str]:
+        return reconstruct_url(self.account_url_suffix, self.platform)
 
     @field_validator('id_on_platform', 'post_id_on_platform', 'account_id_on_platform', 'parent_comment_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -177,8 +235,8 @@ class Comment(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('url', 'post_url', 'account_url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('url_suffix', 'post_url_suffix', 'account_url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
@@ -196,13 +254,24 @@ class Comment(EntityBase):
 class Like(EntityBase):
     id_on_platform: Optional[str] = None
     post_id_on_platform: Optional[str] = None
-    post_url: Optional[str] = Field(None, max_length=250)
+    post_url_suffix: Optional[str] = Field(None, max_length=250)
+    platform: Optional[str] = None
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
-    account_url: Optional[str] = Field(None, max_length=200)
+    account_url_suffix: Optional[str] = Field(None, max_length=200)
     account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     account_id: Optional[int] = None
     data: Optional[Any] = None
+
+    @computed_field
+    @property
+    def post_url(self) -> Optional[str]:
+        return reconstruct_url(self.post_url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def account_url(self) -> Optional[str]:
+        return reconstruct_url(self.account_url_suffix, self.platform)
 
     @field_validator('post_id_on_platform', 'account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -212,8 +281,8 @@ class Like(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('post_url', 'account_url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('post_url_suffix', 'account_url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
@@ -241,14 +310,25 @@ class AccountRelation(EntityBase):
     id_on_platform: Optional[str] = None
     follower_account_id: Optional[int] = None
     follower_account_id_on_platform: Optional[str] = Field(None, max_length=100)
-    follower_account_url: Optional[str] = Field(None, max_length=200)
+    follower_account_url_suffix: Optional[str] = Field(None, max_length=200)
     follower_account_display_name: Optional[str] = Field(None, max_length=100)
     followed_account_id: Optional[int] = None
     followed_account_id_on_platform: Optional[str] = Field(None, max_length=100)
-    followed_account_url: Optional[str] = Field(None, max_length=200)
+    followed_account_url_suffix: Optional[str] = Field(None, max_length=200)
     followed_account_display_name: Optional[str] = Field(None, max_length=100)
+    platform: Optional[str] = None
     relation_type: Optional[t_relation_type] = None
     data: Optional[Any] = None
+
+    @computed_field
+    @property
+    def follower_account_url(self) -> Optional[str]:
+        return reconstruct_url(self.follower_account_url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def followed_account_url(self) -> Optional[str]:
+        return reconstruct_url(self.followed_account_url_suffix, self.platform)
 
     @field_validator('follower_account_id_on_platform', 'followed_account_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -258,8 +338,8 @@ class AccountRelation(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('follower_account_url', 'followed_account_url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('follower_account_url_suffix', 'followed_account_url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
@@ -288,17 +368,33 @@ class TaggedAccount(EntityBase):
     id_on_platform: Optional[str] = None
     tagged_account_id: Optional[int] = None
     tagged_account_id_on_platform: Optional[str] = Field(None, max_length=200)
-    tagged_account_url: Optional[str] = Field(None, max_length=250)
+    tagged_account_url_suffix: Optional[str] = Field(None, max_length=250)
     tagged_account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     media_id: Optional[int] = None
-    context_post_url: Optional[str] = Field(None, max_length=250)
-    context_media_url: Optional[str] = Field(None, max_length=250)
+    platform: Optional[str] = None
+    context_post_url_suffix: Optional[str] = Field(None, max_length=250)
+    context_media_url_suffix: Optional[str] = Field(None, max_length=250)
     context_post_id_on_platform: Optional[str] = Field(None, max_length=250)
     context_media_id_on_platform: Optional[str] = Field(None, max_length=250)
     tag_x_position: Optional[float] = None
     tag_y_position: Optional[float] = None
     data: Optional[Any] = None
+
+    @computed_field
+    @property
+    def tagged_account_url(self) -> Optional[str]:
+        return reconstruct_url(self.tagged_account_url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def context_post_url(self) -> Optional[str]:
+        return reconstruct_url(self.context_post_url_suffix, self.platform)
+
+    @computed_field
+    @property
+    def context_media_url(self) -> Optional[str]:
+        return reconstruct_url(self.context_media_url_suffix, self.platform, is_media=True)
 
     @field_validator('tagged_account_id_on_platform', 'context_post_id_on_platform', 'context_media_id_on_platform', mode='before')
     def normalize_id_on_platform(cls, v, _):
@@ -308,8 +404,8 @@ class TaggedAccount(EntityBase):
             v = str(v)
         return v
 
-    @field_validator('context_post_url', 'context_media_url', 'tagged_account_url', mode='before')
-    def normalize_url(cls, v, _):
+    @field_validator('context_post_url_suffix', 'context_media_url_suffix', 'tagged_account_url_suffix', mode='before')
+    def normalize_url_suffix(cls, v, _):
         if isinstance(v, str):
             v = v.strip().split('?')[0].rstrip('/')
         return v
