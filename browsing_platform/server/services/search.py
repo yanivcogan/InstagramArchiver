@@ -221,6 +221,12 @@ def _looks_like_url(s: str) -> bool:
     return '://' in s or s.startswith('www.')
 
 
+def _escape_like(value: str) -> str:
+    """Escape LIKE metacharacters so user input is treated as a literal string.
+    Uses '!' as the escape character (declared via ESCAPE '!' in the query)."""
+    return value.replace('!', '!!').replace('%', '!%').replace('_', '!_')
+
+
 def search_accounts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
     query_args: dict["str", Any] = {
         "limit": query.page_size,
@@ -304,8 +310,8 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
     is_url_search = bool(query.search_term and _looks_like_url(query.search_term.strip()))
     if query.search_term:
         if is_url_search:
-            query_args["url_pattern"] = query.search_term.strip() + '%'
-            where_clauses.append("url LIKE %(url_pattern)s")
+            query_args["url_pattern"] = _escape_like(query.search_term.strip()) + '%'
+            where_clauses.append("url LIKE %(url_pattern)s ESCAPE '!'")
         else:
             query_args["search_term"] = default_fulltext_query(query.search_term)
             where_clauses.append("MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
@@ -586,8 +592,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
                 arg_key = next_key(col, "like")
-                args_rec[arg_key] = f'%{v}%'
-                return f"`{col}` LIKE %({arg_key})s"
+                args_rec[arg_key] = f'%{_escape_like(v)}%'
+                return f"`{col}` LIKE %({arg_key})s ESCAPE '!'"
             elif op == "!=":
                 col, v = val
                 col_def = sanitize_column(col, table_rec)
