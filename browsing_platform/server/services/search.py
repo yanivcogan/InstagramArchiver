@@ -11,6 +11,7 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 logger = logging.getLogger(__name__)
 
 from browsing_platform.server.services.media import get_media_thumbnail_path
+from extractors.entity_types import reconstruct_url
 from utils import db
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
@@ -76,13 +77,13 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     where_clauses = []
     if query.search_term:
         query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
+        where_clauses.append("MATCH(`archived_url_suffix`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT id, archived_url, notes, archiving_timestamp
+        f"""SELECT id, archived_url_suffix, platform, notes, archiving_timestamp
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
@@ -121,7 +122,7 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
         SearchResult(
             page="archive",
             id=row["id"],
-            title=row["archived_url"] or f"Archive Session {row['id']}",
+            title=reconstruct_url(row["archived_url_suffix"], row["platform"]) or f"Archive Session {row['id']}",
             details=row["notes"] or "",
             thumbnails=session_thumbnails.get(row["id"]),
             metadata={
@@ -162,7 +163,7 @@ def string_to_instagram_account_url(s: str) -> Optional[str]:
     handle = handle.split('/')[0]
     # validate basic Instagram username rules (letters, numbers, dot, underscore; up to 30 chars)
     if re.fullmatch(r'[A-Za-z0-9._]{1,30}', handle):
-        return f"https://www.instagram.com/{handle}"
+        return f"{handle}/"
     return None
 
 
@@ -238,9 +239,9 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         insta_account = string_to_instagram_account_url(query.search_term)
         if insta_account:
             query_args["account_search_term"] = f"url_{insta_account}"
-            where_clauses.append("JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) OR MATCH(`url`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            where_clauses.append("JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) OR MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
         else:
-            where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            where_clauses.append("MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
@@ -250,11 +251,11 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         tag_filter_join, tag_filter_args = build_tag_filter_join("account", query.tag_ids, query.tag_filter_mode or "any")
         query_args.update(tag_filter_args)
     order_by = (
-        "MATCH(`url`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        "MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
         if query.search_term else "account.id DESC"
     )
     rows = db.execute_query(  # nosec B608 - tag_filter_join built from safe templates only
-        f"""SELECT account.id, account.url, account.display_name, account.bio
+        f"""SELECT account.id, account.url_suffix, account.platform, account.display_name, account.bio
            FROM account
            {tag_filter_join}
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
@@ -292,7 +293,7 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
     results = [SearchResult(
         page="account",
         id=row["id"],
-        title=row["url"] + (f" ({row['display_name']})" if row["display_name"] else ""),
+        title=(reconstruct_url(row["url_suffix"], row["platform"]) or row["url_suffix"] or "") + (f" ({row['display_name']})" if row["display_name"] else ""),
         details=row["bio"] or "",
         thumbnails=account_thumbnails.get(row["id"]),
         metadata={"media_count": account_media_count.get(row["id"], 0)},
@@ -311,10 +312,10 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
     if query.search_term:
         if is_url_search:
             query_args["url_pattern"] = _escape_like(query.search_term.strip()) + '%'
-            where_clauses.append("url LIKE %(url_pattern)s ESCAPE '!'")
+            where_clauses.append("url_suffix LIKE %(url_pattern)s ESCAPE '!'")
         else:
             query_args["search_term"] = default_fulltext_query(query.search_term)
-            where_clauses.append("MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            where_clauses.append("MATCH(`url_suffix`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
@@ -325,14 +326,14 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args.update(tag_filter_args)
     inner_where = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
     order_by = (
-        "MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        "MATCH(`url_suffix`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
         if (query.search_term and not is_url_search) else "publication_date DESC"
     )
     rows = db.execute_query(  # nosec B608 - inner_where, order_by, tag_filter_join built from safe clauses only
-        f"""SELECT p.id, p.url, p.id_on_platform, p.caption, p.publication_date,
-                   a.display_name AS account_display_name, a.url AS account_url
+        f"""SELECT p.id, p.url_suffix, p.platform, p.id_on_platform, p.caption, p.publication_date,
+                   a.display_name AS account_display_name, a.url_suffix AS account_url_suffix, a.platform AS account_platform
            FROM (
-               SELECT post.id, post.url, post.id_on_platform, post.caption, post.publication_date, post.account_id
+               SELECT post.id, post.url_suffix, post.platform, post.id_on_platform, post.caption, post.publication_date, post.account_id
                FROM post
                {tag_filter_join}
                {inner_where}
@@ -361,13 +362,13 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         SearchResult(
             page="post",
             id=row["id"],
-            title=row["url"] if row["url"] else f"item {row['id_on_platform']}",
+            title=reconstruct_url(row["url_suffix"], row["platform"]) or row["url_suffix"] or f"item {row['id_on_platform']}",
             details=(row["caption"][:100] + '...') if row["caption"] and len(row["caption"]) > 100 else (row["caption"] or ""),
             thumbnails=post_thumbnails.get(row["id"]),
             metadata={
                 "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
                 "account_display_name": row["account_display_name"],
-                "account_url": row["account_url"],
+                "account_url": reconstruct_url(row["account_url_suffix"], row["account_platform"]),
             }
         )
         for row in rows
@@ -398,7 +399,7 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
     inner_where = ' AND '.join(where_clauses)
     rows = db.execute_query(  # nosec B608 - inner_where and tag_filter_join built from safe clauses only
         f"""SELECT m.id, m.thumbnail_path, m.local_url, m.media_type, m.publication_date,
-                   a.display_name AS account_display_name, a.url AS account_url
+                   a.display_name AS account_display_name, a.url_suffix AS account_url_suffix, a.platform AS account_platform
            FROM (
                SELECT media.id, media.thumbnail_path, media.local_url, media.publication_date, media.account_id, media.media_type
                FROM media
@@ -415,7 +416,7 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         SearchResult(
             page="media",
             id=row["id"],
-            title=row["account_url"] or "",
+            title=reconstruct_url(row["account_url_suffix"], row["account_platform"]) or "",
             details="",
             thumbnails=[thumb for thumb in [
                 get_media_thumbnail_path(row["thumbnail_path"], row["local_url"]),
@@ -424,7 +425,7 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
             metadata={
                 "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
                 "account_display_name": row["account_display_name"],
-                "account_url": row["account_url"],
+                "account_url": reconstruct_url(row["account_url_suffix"], row["account_platform"]),
                 "media_type": row["media_type"],
             }
         )
@@ -478,7 +479,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("id_on_platform", "text"),
-        ("url", "text"),
+        ("url_suffix", "text"),
         ("display_name", "text"),
         ("bio", "text"),
         ("data", "text"),
@@ -490,7 +491,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("external_id", "text"),
-        ("archived_url", "text"),
+        ("archived_url_suffix", "text"),
         ("archive_location", "text"),
         ("summary_html", "text"),
         ("parse_algorithm_version", "number"),
@@ -510,7 +511,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("id_on_platform", "text"),
-        ("url", "text"),
+        ("url_suffix", "text"),
         ("account_id", "number"),
         ("publication_date", "date"),
         ("caption", "text"),
@@ -521,7 +522,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("id_on_platform", "text"),
-        ("url", "text"),
+        ("url_suffix", "text"),
         ("post_id", "number"),
         ("local_url", "text"),
         ("media_type", "text"),

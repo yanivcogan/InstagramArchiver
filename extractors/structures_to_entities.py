@@ -408,7 +408,7 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
                     )
                     extracted_media.append(Media(
                         id_on_platform=media_item.id,
-                        url=media_url,
+                        url_suffix=media_url,
                         post_id_on_platform=post.id_on_platform,
                         post_url_suffix=post.url_suffix,
                         local_url=None,
@@ -511,9 +511,10 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
             for media_item in item.carousel_media:
                 media_url = media_item.video_versions[0].url if media_item.video_versions else \
                     media_item.image_versions2.candidates[0].url
+                media_url_suffix = canonical_cdn_url(media_url)
                 extracted_media.append(Media(
                     id_on_platform=media_item.id,
-                    url_suffix=canonical_cdn_url(media_url),
+                    url_suffix=media_url_suffix,
                     post_id_on_platform=post.id_on_platform,
                     post_url_suffix=post.url_suffix,
                     local_url=None,
@@ -527,7 +528,7 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
                             tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url_suffix=f"{tag.user.username}/",
                             context_post_url_suffix=post.url_suffix,
-                            context_media_url_suffix=media_url,
+                            context_media_url_suffix=media_url_suffix,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
                             data=None,
@@ -607,7 +608,7 @@ def graphql_likes_to_entities(structure: LikersApiV1, context: Any) -> Extracted
         extracted_likes.append(like)
         extracted_accounts.append(Account(
             id_on_platform=u.pk,
-            url=like.account_url,
+            url_suffix=like.account_url_suffix,
             display_name=u.full_name,
             bio=None,
             data=u.model_dump(),
@@ -928,9 +929,10 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
                     if media_item.image_versions2 and len(media_item.image_versions2.candidates)
                     else None
                 ))
+                url_suffix = canonical_cdn_url(url) if url else None
                 extracted_media.append(Media(
                     id_on_platform=media_item.id,
-                    url_suffix=canonical_cdn_url(url),
+                    url_suffix=url_suffix,
                     post_id_on_platform=post.id_on_platform,
                     post_url_suffix=post.url_suffix,
                     local_url=None,
@@ -944,7 +946,7 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
                             tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url_suffix=f"{tag.user.username}/",
                             context_post_url_suffix=post.url_suffix,
-                            context_media_url=url,
+                            context_media_url_suffix=url_suffix,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
                             tag_x_position=tag.position[0] if tag.position else None,
@@ -1037,9 +1039,10 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
             for media_item in reel.carousel_media:
                 media_url = media_item.video_versions[0].url if media_item.video_versions else \
                     media_item.image_versions2.candidates[0].url
+                media_url_suffix = canonical_cdn_url(media_url)
                 extracted_media.append(Media(
                     id_on_platform=media_item.id,
-                    url_suffix=canonical_cdn_url(media_url),
+                    url_suffix=media_url_suffix,
                     post_id_on_platform=post.id_on_platform,
                     post_url_suffix=post.url_suffix,
                     local_url=None,
@@ -1053,7 +1056,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
                             tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url_suffix=f"{tag.user.username}/",
                             context_post_url_suffix=post.url_suffix,
-                            context_media_url_suffix=media_url,
+                            context_media_url_suffix=media_url_suffix,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
                             tag_x_position=tag.position[0] if tag.position else None,
@@ -1161,7 +1164,7 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
                             tagged_account_id_on_platform=tag.user.id,
                             tagged_account_url_suffix=f"{tag.user.username}/",
                             context_post_url_suffix=post.url_suffix,
-                            context_media_url_suffix=media_url,
+                            context_media_url_suffix=media_url_suffix,
                             context_post_id_on_platform=post.id_on_platform,
                             context_media_id_on_platform=media_item.id,
                             tag_x_position=tag.position[0] if tag.position else None,

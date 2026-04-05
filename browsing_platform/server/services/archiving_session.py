@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import Literal, Optional
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, computed_field, field_validator
 
 from browsing_platform.server.services.file_tokens import generate_file_token
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
-from extractors.entity_types import ExtractedEntitiesNested
+from extractors.entity_types import ExtractedEntitiesNested, reconstruct_url
 from utils import db
 
 SERVER_HOST = os.getenv("SERVER_HOST")
@@ -19,8 +19,14 @@ class ArchiveSession(BaseModel):
     create_date: Optional[datetime] = None
     update_date: Optional[datetime] = None
     external_id: Optional[str] = None
-    archived_url: Optional[str] = None
+    archived_url_suffix: Optional[str] = None
+    platform: Optional[str] = None
     archive_location: Optional[str] = None
+
+    @computed_field
+    @property
+    def archived_url(self) -> Optional[str]:
+        return reconstruct_url(self.archived_url_suffix, self.platform)
     summary_html: Optional[str] = None
     parse_algorithm_version: Optional[int] = None
     structures: Optional[dict] = None

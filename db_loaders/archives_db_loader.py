@@ -470,7 +470,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         metadata = %(metadata)s,
                         extraction_error = NULL,
                         attachments = %(attachments)s,
-                        archived_url = %(archived_url)s,
+                        archived_url_suffix = %(archived_url_suffix)s,
                         archiving_timestamp = %(archiving_timestamp)s,
                         notes = %(notes)s
                     WHERE id = %(id)s
@@ -481,7 +481,7 @@ def parse_archives(limit: Optional[int] = None, cancel_check: Optional[Callable[
                         "parsing_code_version": PARSING_ALGORITHM_VERSION,
                         "metadata": json.dumps(metadata, ensure_ascii=False, default=str),
                         "attachments": json.dumps(session_attachments, ensure_ascii=False, default=str),
-                        "archived_url": archived_url,
+                        "archived_url_suffix": archived_url,
                         "archiving_timestamp": iso_timestamp,
                         "notes": notes,
                     },
@@ -743,13 +743,13 @@ def add_missing_metadata():
                 raise Exception(f"Metadata file {metadata_path} is not valid JSON or does not exist")
             db.execute_query(
                 '''UPDATE archive_session SET
-                    archived_url = %(archived_url)s,
+                    archived_url_suffix = %(archived_url_suffix)s,
                     archiving_timestamp = %(archiving_timestamp)s,
                     notes = %(notes)s
                    WHERE id = %(id)s''',
                 {
                     "id": entry['id'],
-                    "archived_url": archived_url,
+                    "archived_url_suffix": archived_url,
                     "archiving_timestamp": iso_timestamp,
                     "notes": notes,
                 },

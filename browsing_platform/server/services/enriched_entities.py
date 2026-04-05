@@ -52,9 +52,10 @@ def get_comments_by_post_ids(post_ids: list[int]) -> list[Comment]:
         return []
     args, clause = _build_in_clause(post_ids)
     rows = db.execute_query(
-        f"""SELECT c.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        f"""SELECT c.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                   a.id_on_platform AS account_id_on_platform,
                    a.display_name AS account_display_name,
-                   p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                   p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
             FROM comment c
             LEFT JOIN account a ON c.account_id = a.id
             LEFT JOIN post p ON c.post_id = p.id
@@ -71,7 +72,8 @@ def get_tagged_accounts_by_post_ids(post_ids: list[int]) -> list[TaggedAccount]:
         return []
     args, clause = _build_in_clause(post_ids)
     rows = db.execute_query(
-        f"""SELECT ta.*, a.url AS tagged_account_url, a.id_on_platform AS tagged_account_id_on_platform,
+        f"""SELECT ta.*, a.url_suffix AS tagged_account_url_suffix, a.platform AS platform,
+                   a.id_on_platform AS tagged_account_id_on_platform,
                    a.display_name AS tagged_account_display_name
             FROM tagged_account ta
             LEFT JOIN account a ON ta.tagged_account_id = a.id
@@ -84,9 +86,10 @@ def get_tagged_accounts_by_post_ids(post_ids: list[int]) -> list[TaggedAccount]:
 
 def get_likes_by_post_id(post_id: int) -> list[Like]:
     rows = db.execute_query(
-        """SELECT pl.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        """SELECT pl.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
            FROM post_like pl
            LEFT JOIN account a ON pl.account_id = a.id
            LEFT JOIN post p ON pl.post_id = p.id
@@ -100,9 +103,11 @@ def get_likes_by_post_id(post_id: int) -> list[Like]:
 def get_account_relations_by_account_id(account_id: int) -> list[AccountRelation]:
     rows = db.execute_query(
         """SELECT ar.*,
-                  fa.url AS follower_account_url, fa.id_on_platform AS follower_account_id_on_platform,
+                  fa.url_suffix AS follower_account_url_suffix, fa.platform AS platform,
+                  fa.id_on_platform AS follower_account_id_on_platform,
                   fa.display_name AS follower_account_display_name,
-                  fd.url AS followed_account_url, fd.id_on_platform AS followed_account_id_on_platform,
+                  fd.url_suffix AS followed_account_url_suffix,
+                  fd.id_on_platform AS followed_account_id_on_platform,
                   fd.display_name AS followed_account_display_name
            FROM account_relation ar
            LEFT JOIN account fa ON ar.follower_account_id = fa.id
@@ -116,9 +121,10 @@ def get_account_relations_by_account_id(account_id: int) -> list[AccountRelation
 
 def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
     comment_rows = db.execute_query(
-        """SELECT c.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        """SELECT c.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
            FROM comment c
            LEFT JOIN account a ON c.account_id = a.id
            LEFT JOIN post p ON c.post_id = p.id
@@ -128,9 +134,10 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
         return_type="rows"
     )
     like_rows = db.execute_query(
-        """SELECT pl.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        """SELECT pl.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
            FROM post_like pl
            LEFT JOIN account a ON pl.account_id = a.id
            LEFT JOIN post p ON pl.post_id = p.id
@@ -139,10 +146,11 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
         return_type="rows"
     )
     tagged_rows = db.execute_query(
-        """SELECT ta.*, a.url AS tagged_account_url, a.id_on_platform AS tagged_account_id_on_platform,
+        """SELECT ta.*, a.url_suffix AS tagged_account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS tagged_account_id_on_platform,
                   a.display_name AS tagged_account_display_name,
-                  p.url AS context_post_url, p.id_on_platform AS context_post_id_on_platform,
-                  m.url AS context_media_url, m.id_on_platform AS context_media_id_on_platform
+                  p.url_suffix AS context_post_url_suffix, p.id_on_platform AS context_post_id_on_platform,
+                  m.url_suffix AS context_media_url_suffix, m.id_on_platform AS context_media_id_on_platform
            FROM tagged_account ta
            LEFT JOIN account a ON ta.tagged_account_id = a.id
            LEFT JOIN post p ON ta.post_id = p.id
@@ -395,7 +403,7 @@ def get_enriched_archiving_session_by_id(
         return None
     session = apply_sessions_transform([session], session_transform)[0]
     account_rows = db.execute_query(
-        """SELECT a.id, aa.url, aa.archive_session_id, aa.display_name, aa.bio
+        """SELECT a.id, aa.url_suffix, aa.platform, aa.archive_session_id, aa.display_name, aa.bio
            FROM account_archive AS aa
                     LEFT JOIN account AS a ON aa.canonical_id = a.id
            WHERE archive_session_id = %(id)s
@@ -404,7 +412,7 @@ def get_enriched_archiving_session_by_id(
         return_type="rows"
     )
     post_rows = db.execute_query(
-        """SELECT p.id, p.account_id, pa.url, pa.archive_session_id, pa.caption, pa.publication_date, pa.data
+        """SELECT p.id, p.account_id, pa.url_suffix, pa.platform, pa.archive_session_id, pa.caption, pa.publication_date, pa.data
            FROM post_archive AS pa
                     LEFT JOIN post AS p ON pa.canonical_id = p.id
            WHERE archive_session_id = %(id)s
@@ -413,7 +421,7 @@ def get_enriched_archiving_session_by_id(
         return_type="rows"
     )
     media_rows = db.execute_query(
-        """SELECT m.id, m.post_id, ma.url, ma.local_url, ma.archive_session_id, ma.media_type, ma.data
+        """SELECT m.id, m.post_id, ma.url_suffix, ma.platform, ma.local_url, ma.archive_session_id, ma.media_type, ma.data
            FROM media_archive AS ma
                     LEFT JOIN media AS m ON ma.canonical_id = m.id
            WHERE archive_session_id = %(id)s
@@ -467,7 +475,7 @@ def get_archiving_sessions_by_account_id(
     query_in_clause = ', '.join([f"%(post_id_{i})s" for i in range(len(post_ids))])
     session_rows = db.execute_query(
         f"""SELECT DISTINCT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
-                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                   a_s.archived_url_suffix, a_s.platform, a_s.archive_location, a_s.parse_algorithm_version,
                    a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
                    a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                    a_s.source_type, a_s.incorporation_status
@@ -492,7 +500,7 @@ def get_archiving_sessions_by_post_id(
         return []
     session_rows = db.execute_query(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
-                  a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                  a_s.archived_url_suffix, a_s.platform, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
@@ -521,7 +529,7 @@ def get_archiving_sessions_by_media_id(
         return []
     session_rows = db.execute_query(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
-                  a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                  a_s.archived_url_suffix, a_s.platform, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
