@@ -42,9 +42,20 @@ class EntityProcessingConfig(BaseModel, Generic[EntityType]):
 # Generic batch query helpers
 # ---------------------------------------------------------------------------
 
+def _is_valid_identifier(value) -> bool:
+    """Return False for null-like values that must not be used as entity-match keys.
+
+    Null-like means: Python None, empty string, or the literal string 'None' /
+    'None/' which is the f-string artifact of formatting a Python None value.
+    Matching multiple distinct entities on a shared null-like identifier would
+    incorrectly merge them into the same canonical.
+    """
+    return bool(value) and str(value).rstrip('/') != 'None'
+
+
 def batch_get_canonicals_url_and_id(entities: list, table: str, entity_class: type) -> list:
     """One batch lookup for entity types matched by url OR id_on_platform."""
-    urls = list({e.url_suffix for e in entities if getattr(e, 'url_suffix', None)})
+    urls = list({e.url_suffix for e in entities if _is_valid_identifier(getattr(e, 'url_suffix', None))})
     ids = list({e.id_on_platform for e in entities if getattr(e, 'id_on_platform', None)})
 
     rows: list = []
@@ -62,7 +73,7 @@ def batch_get_canonicals_url_and_id(entities: list, table: str, entity_class: ty
             seen.add(row['id'])
             canonicals.append(entity_class(**row))
 
-    by_url = {c.url_suffix: c for c in canonicals if getattr(c, 'url_suffix', None)}
+    by_url = {c.url_suffix: c for c in canonicals if _is_valid_identifier(getattr(c, 'url_suffix', None))}
     by_id = {c.id_on_platform: c for c in canonicals if getattr(c, 'id_on_platform', None)}
     return [by_url.get(getattr(e, 'url_suffix', None)) or by_id.get(getattr(e, 'id_on_platform', None))
             for e in entities]

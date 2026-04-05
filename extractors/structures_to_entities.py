@@ -674,12 +674,13 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
     extracted_tagged_accounts: list[TaggedAccount] = []
     extracted_media: list[Media] = []
     for item in media_info.items:
+        _username = item.user.username or item.owner.username
         account = Account(
-            id_on_platform=item.owner.id,
-            url_suffix=f"{item.owner.username}/",
-            display_name=item.owner.full_name,
+            id_on_platform=item.user.id or item.owner.id,
+            url_suffix=f"{_username}/" if _username else f"id:{item.user.id or item.owner.id}",
+            display_name=item.user.full_name or item.owner.full_name,
             bio=None,
-            data=item.owner.model_dump(),
+            data=item.user.model_dump(),
             platform="instagram"
         )
         extracted_accounts.append(account)
@@ -867,19 +868,20 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
     extracted_media: list[Media] = []
     extracted_tagged_accounts: list[TaggedAccount] = []
     for item in structure.items:
+        _username = item.user.username or item.owner.username
         account: Account = Account(
-            id_on_platform=item.owner.id,
-            url_suffix=f"{item.owner.username}/",
-            display_name=item.owner.full_name,
+            id_on_platform=item.user.id or item.owner.id,
+            url_suffix=f"{_username}/" if _username else f"id:{item.user.id or item.owner.id}",
+            display_name=item.user.full_name or item.owner.full_name,
             bio=None,
-            data=item.owner.model_dump(),
+            data=item.user.model_dump(),
             platform="instagram"
         )
         extracted_accounts.append(account)
         post = Post(
             id_on_platform=item.pk or item.id,
             url_suffix="p/" + (item.code or media_id_to_shortcode(int(item.pk))),
-            account_id_on_platform=item.owner.id,
+            account_id_on_platform=account.id_on_platform,
             account_url_suffix=account.url_suffix,
             publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
             caption=item.caption.text if item.caption else None,
@@ -887,7 +889,7 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
             platform="instagram"
         )
         extracted_posts.append(post)
-        extracted_media.append(Media(
+        first_media = Media(
             id_on_platform=item.id,
             url_suffix=canonical_cdn_url(
                 item.video_versions[0].url if item.video_versions else item.image_versions2.candidates[0].url),
@@ -897,16 +899,17 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
             media_type="video" if item.video_versions else "image",
             data=item.model_dump(exclude={'carousel_media'}),
             platform="instagram"
-        ))
+        )
+        extracted_media.append(first_media)
         if item.usertags:
             for tag in item.usertags.in_field:
                 extracted_tagged_accounts.append(TaggedAccount(
                     tagged_account_id_on_platform=tag.user.id,
                     tagged_account_url_suffix=f"{tag.user.username}/",
                     context_post_url_suffix=post.url_suffix,
-                    context_media_url_suffix=None,
+                    context_media_url_suffix=first_media.url_suffix,
                     context_post_id_on_platform=post.id_on_platform,
-                    context_media_id_on_platform=None,
+                    context_media_id_on_platform=first_media.id_on_platform,
                     tag_x_position=tag.position[0] if tag.position else None,
                     tag_y_position=tag.position[1] if tag.position and len(tag.position) > 1 else None,
                     data=None,
@@ -1148,9 +1151,10 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
             for media_item in item.carousel_media:
                 media_url = media_item.video_versions[0].url if media_item.video_versions else \
                     media_item.image_versions2.candidates[0].url
+                media_url_suffix = canonical_cdn_url(media_url)
                 extracted_media.append(Media(
                     id_on_platform=media_item.id,
-                    url_suffix=canonical_cdn_url(media_url),
+                    url_suffix=media_url_suffix,
                     post_id_on_platform=post.id_on_platform,
                     post_url_suffix=post.url_suffix,
                     local_url=None,
