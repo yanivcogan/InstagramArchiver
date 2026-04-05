@@ -30,6 +30,16 @@ def _column_exists(cur, table, column):
     return cur.fetchone()[0] > 0
 
 
+def _column_is_not_null(cur, table, column):
+    cur.execute(
+        "SELECT IS_NULLABLE FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = %s AND column_name = %s",
+        (table, column),
+    )
+    row = cur.fetchone()
+    return row is not None and row[0] == 'NO'
+
+
 def _index_exists(cur, table, index_name):
     cur.execute(
         "SELECT COUNT(*) FROM information_schema.statistics "
@@ -153,6 +163,23 @@ def _phase_a(cur):
         print("    tagged_account_archive: url columns → *_suffix + platform")
     else:
         print("    tagged_account_archive: already migrated, skipping schema")
+
+    # Make url_suffix nullable on tables where the original url column was NOT NULL.
+    # The RENAME COLUMN above preserves NOT NULL, but url_suffix must accept NULL
+    # for entities that are constructed from partial data (e.g. account referenced
+    # only by id_on_platform, media without a captured CDN URL).
+    nullable_cols = [
+        ('account',         'url_suffix', 'VARCHAR(200)'),
+        ('account_archive', 'url_suffix', 'VARCHAR(200)'),
+        ('media',           'url_suffix', 'VARCHAR(250)'),
+        ('media_archive',   'url_suffix', 'VARCHAR(250)'),
+    ]
+    for tbl, col, col_type in nullable_cols:
+        if _column_is_not_null(cur, tbl, col):
+            cur.execute(f"ALTER TABLE `{tbl}` MODIFY COLUMN `{col}` {col_type} NULL")
+            print(f"    {tbl}.{col}: made nullable")
+        else:
+            print(f"    {tbl}.{col}: already nullable, skipping")
 
 
 # ---------------------------------------------------------------------------

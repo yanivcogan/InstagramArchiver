@@ -11,6 +11,7 @@ export interface IEntityBase {
 export interface IAccount extends IEntityBase {
     id_on_platform?: string;
     url: string;
+    url_suffix: string;
     display_name?: string;
     bio?: string;
     data?: any;
@@ -20,6 +21,7 @@ export interface IAccount extends IEntityBase {
 export interface IPost extends IEntityBase {
     id_on_platform: string;
     url?: string;
+    url_suffix: string;
     account_id?: number;
     account_id_on_platform?: string;
     account_url?: string;
@@ -33,6 +35,7 @@ export type EMediaType = 'video' | 'audio' | 'image';
 export interface IMedia extends IEntityBase {
     id_on_platform?: string;
     url: string;
+    url_suffix: string;
     post_id?: number;
     post_id_on_platform?: string;
     post_url?: string;

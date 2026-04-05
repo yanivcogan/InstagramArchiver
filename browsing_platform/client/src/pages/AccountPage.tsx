@@ -194,7 +194,7 @@ export default function AccountPage() {
                     <Typography>Account Data</Typography>
                     {
                         data ?
-                            <Typography>{primaryAccount?.display_name || primaryAccount?.url}</Typography> :
+                            <Typography>{primaryAccount?.display_name || primaryAccount?.url_suffix}</Typography> :
                             <CircularProgress color={"primary"} size={"16"}/>
                     }
                 </Stack>

@@ -33,7 +33,7 @@ class EntityBase(BaseModel):
 
 class Account(EntityBase):
     id_on_platform: Optional[str] = None
-    url_suffix: str = Field(..., max_length=200)
+    url_suffix: Optional[str] = Field(None, max_length=200)
     platform: Optional[str] = None
     display_name: Optional[str] = Field(None, max_length=100)
     identifiers: Optional[list] = None
@@ -150,7 +150,7 @@ t_media_type = Literal['video', 'audio', 'image']
 
 class Media(EntityBase):
     id_on_platform: Optional[str] = None
-    url_suffix: str = Field(..., max_length=250)
+    url_suffix: Optional[str] = Field(None, max_length=250)
     platform: Optional[str] = None
     post_id: Optional[int] = None
     post_id_on_platform: Optional[str] = None

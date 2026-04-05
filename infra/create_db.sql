@@ -12,16 +12,17 @@ create table account
 (
     id             int auto_increment
         primary key,
-    create_date    timestamp default CURRENT_TIMESTAMP not null,
-    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    id_on_platform varchar(100)                        null,
-    url            varchar(200)                        not null,
-    identifiers    json                                null,
-    display_name   varchar(100)                        null,
-    bio            varchar(200)                        null,
-    data           json                                null,
-    url_parts      text                                null,
-    post_count     int          default 0              not null
+    create_date    timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date    timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    id_on_platform varchar(100)                                                                null,
+    url_suffix     varchar(200)                                                                not null,
+    identifiers    json                                                                        null,
+    display_name   varchar(100)                                                                null,
+    bio            varchar(200)                                                                null,
+    data           json                                                                        null,
+    url_parts      text                                                                        null,
+    post_count     int       default 0                                                         not null,
+    platform       enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null
 )
     engine = InnoDB;
 
@@ -37,11 +38,11 @@ create index account_id_on_platform_index
 create index account_post_count_index
     on account (post_count);
 
-create index account_url_index
-    on account (url);
+create index account_url_suffix_index
+    on account (url_suffix);
 
 create fulltext index idx_search_fulltext
-    on account (url, url_parts, display_name, bio);
+    on account (url_suffix, url_parts, display_name, bio);
 
 create table account_relation
 (
@@ -52,9 +53,9 @@ create table account_relation
     followed_account_id int                                 not null,
     follower_account_id int                                 not null,
     relation_type       varchar(30)                         null,
+    notes               text                                null,
     id_on_platform      varchar(200)                        null,
     data                json                                null,
-    notes               text                                null,
     constraint account_relation_followed_id_fk
         foreign key (followed_account_id) references account (id),
     constraint account_relation_follower_id_fk
@@ -78,7 +79,7 @@ create table archive_session
     create_date               timestamp                                                            default CURRENT_TIMESTAMP not null,
     update_date               timestamp                                                            default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     external_id               varchar(60)                                                                                    null,
-    archived_url              varchar(200)                                                                                   null,
+    archived_url_suffix       varchar(200)                                                                                   null,
     archive_location          varchar(200)                                                                                   null,
     summary_html              longtext                                                                                       null,
     parse_algorithm_version   int                                                                                            null comment 'used to track which version of the parsing code was used to populate this row, to allow reprocessing outdated rows',
@@ -86,12 +87,13 @@ create table archive_session
     metadata                  json                                                                                           null,
     extract_algorithm_version int                                                                                            null,
     archiving_timestamp       datetime                                                                                       null,
-    notes                     text                                                                                           null,
     extraction_error          varchar(500)                                                                                   null,
     source_type               enum ('AA_xlsx', 'local_har', 'local_wacz')                                                    not null,
     incorporation_status      enum ('pending', 'parse_failed', 'parsed', 'extract_failed', 'done') default 'pending'         not null,
     attachments               json                                                                                           null,
-    archived_url_parts        text                                                                                           null
+    archived_url_parts        text                                                                                           null,
+    notes                     text                                                                                           null,
+    platform                  enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads')                    null
 )
     engine = InnoDB;
 
@@ -99,21 +101,22 @@ create table account_archive
 (
     id                 int auto_increment
         primary key,
-    create_date        timestamp default CURRENT_TIMESTAMP not null,
-    update_date        timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id       int                                 null,
-    archive_session_id int                                 null,
-    id_on_platform     varchar(100)                        null,
-    url                varchar(200)                        not null,
-    display_name       varchar(100)                        null,
-    bio                varchar(200)                        null,
-    data               json                                null,
+    create_date        timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date        timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id       int                                                                         null,
+    archive_session_id int                                                                         null,
+    id_on_platform     varchar(100)                                                                null,
+    url_suffix         varchar(200)                                                                not null,
+    display_name       varchar(100)                                                                null,
+    bio                varchar(200)                                                                null,
+    data               json                                                                        null,
+    platform           enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_account_archive_canonical_session
+        unique (canonical_id, archive_session_id),
     constraint account_archive_account_id_fk
         foreign key (canonical_id) references account (id),
     constraint account_archive_archive_session_id_fk
-        foreign key (archive_session_id) references archive_session (id),
-    constraint uq_account_archive_canonical_session
-        unique (canonical_id, archive_session_id)
+        foreign key (archive_session_id) references archive_session (id)
 )
     engine = InnoDB;
 
@@ -126,30 +129,31 @@ create index account_archive_canonical_id_index
 create index account_archive_id_on_platform_index
     on account_archive (id_on_platform);
 
-create index account_archive_url_index
-    on account_archive (url);
+create index account_archive_url_suffix_index
+    on account_archive (url_suffix);
 
 create table account_relation_archive
 (
     id                              int auto_increment
         primary key,
-    create_date                     timestamp default CURRENT_TIMESTAMP not null,
-    update_date                     timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id                    int                                 null,
-    archive_session_id              int                                 null,
-    id_on_platform                  varchar(100)                        null,
-    followed_account_url            varchar(200)                        null,
-    followed_account_id_on_platform varchar(100)                        null,
-    follower_account_url            varchar(200)                        null,
-    follower_account_id_on_platform varchar(100)                        null,
-    relation_type                   varchar(30)                         null,
-    data                            json                                null,
+    create_date                     timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date                     timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id                    int                                                                         null,
+    archive_session_id              int                                                                         null,
+    id_on_platform                  varchar(100)                                                                null,
+    followed_account_url_suffix     varchar(200)                                                                null,
+    followed_account_id_on_platform varchar(100)                                                                null,
+    follower_account_url_suffix     varchar(200)                                                                null,
+    follower_account_id_on_platform varchar(100)                                                                null,
+    relation_type                   varchar(30)                                                                 null,
+    data                            json                                                                        null,
+    platform                        enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_account_relation_archive_canonical_session
+        unique (canonical_id, archive_session_id),
     constraint account_relation_archive_account_relation_id_fk
         foreign key (canonical_id) references account_relation (id),
     constraint account_relation_archive_archive_session_id_fk
-        foreign key (archive_session_id) references archive_session (id),
-    constraint uq_account_relation_archive_canonical_session
-        unique (canonical_id, archive_session_id)
+        foreign key (archive_session_id) references archive_session (id)
 )
     engine = InnoDB;
 
@@ -162,20 +166,23 @@ create index account_relation_archive_canonical_id_index
 create index account_relation_archive_followed_account_id_on_platform_index
     on account_relation_archive (followed_account_id_on_platform);
 
-create index account_relation_archive_followed_account_url_index
-    on account_relation_archive (followed_account_url);
+create index account_relation_archive_followed_account_url_suffix_index
+    on account_relation_archive (followed_account_url_suffix);
 
 create index account_relation_archive_follower_account_id_on_platform_index
     on account_relation_archive (follower_account_id_on_platform);
 
-create index account_relation_archive_follower_account_url_index
-    on account_relation_archive (follower_account_url);
+create index account_relation_archive_follower_account_url_suffix_index
+    on account_relation_archive (follower_account_url_suffix);
 
 create index account_relation_archive_id_on_platform_index
     on account_relation_archive (id_on_platform);
 
-create index archive_session_archived_url_index
-    on archive_session (archived_url);
+create index archive_session_archived_url_suffix_index
+    on archive_session (archived_url_suffix);
+
+create index archive_session_archiving_date
+    on archive_session ((cast(`archiving_timestamp` as date)));
 
 create index archive_session_archiving_timestamp_index
     on archive_session (archiving_timestamp);
@@ -187,10 +194,7 @@ create index idx_incorporation_queue
     on archive_session (source_type, incorporation_status);
 
 create fulltext index idx_search_fulltext
-    on archive_session (archived_url, archived_url_parts, notes);
-
-create index archive_session_archiving_date
-    on archive_session ((DATE(archiving_timestamp)));
+    on archive_session (archived_url_suffix, archived_url_parts, notes);
 
 create table error_log
 (
@@ -222,42 +226,122 @@ create table post
 (
     id               int auto_increment
         primary key,
-    create_date      timestamp default CURRENT_TIMESTAMP not null,
-    update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    id_on_platform   varchar(100)                        null,
-    url              varchar(250)                        not null,
-    account_id       int                                 null,
-    publication_date datetime                            null,
-    caption          text                                null,
-    data             json                                null,
+    create_date      timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date      timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    id_on_platform   varchar(100)                                                                null,
+    url_suffix       varchar(250)                                                                null,
+    account_id       int                                                                         null,
+    publication_date datetime                                                                    null,
+    caption          text                                                                        null,
+    data             json                                                                        null,
+    platform         enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
     constraint post_account_id_fk
         foreign key (account_id) references account (id)
 )
     engine = InnoDB;
 
-create table media
+create table comment
 (
-    id             int auto_increment
+    id                            int auto_increment
         primary key,
-    create_date    timestamp default CURRENT_TIMESTAMP not null,
-    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    id_on_platform varchar(100)                        null,
-    url            varchar(250)                        not null,
-    post_id        int                                 null,
-    local_url      varchar(500)                        null,
-    media_type     enum ('video', 'audio', 'image')    not null,
-    data           json                                null,
-    annotation     text                                null,
-    thumbnail_path   varchar(200)                                                null,
-    thumbnail_status enum ('pending', 'generated', 'not_needed', 'error') not null default 'pending',
-    publication_date datetime                                                    null,
-    account_id       int                                                         null,
-    constraint media_post_id_fk
-        foreign key (post_id) references post (id),
-    constraint media_account_id_fk
-        foreign key (account_id) references account (id)
+    create_date                   timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date                   timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    id_on_platform                varchar(100)                                                                null,
+    url_suffix                    varchar(250)                                                                null,
+    post_id                       int                                                                         null,
+    account_id                    int                                                                         null,
+    parent_comment_id_on_platform varchar(100)                                                                null,
+    text                          text                                                                        null,
+    publication_date              datetime                                                                    null,
+    data                          json                                                                        null,
+    notes                         text                                                                        null,
+    platform                      enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint comment_account_id_fk
+        foreign key (account_id) references account (id),
+    constraint comment_post_id_fk
+        foreign key (post_id) references post (id)
 )
     engine = InnoDB;
+
+create index comment_account_id_index
+    on comment (account_id);
+
+create index comment_id_on_platform_index
+    on comment (id_on_platform);
+
+create index comment_post_id_index
+    on comment (post_id);
+
+create index comment_url_suffix_index
+    on comment (url_suffix);
+
+create table comment_archive
+(
+    id                            int auto_increment
+        primary key,
+    create_date                   timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date                   timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id                  int                                                                         null,
+    archive_session_id            int                                                                         null,
+    id_on_platform                varchar(100)                                                                null,
+    url_suffix                    varchar(250)                                                                null,
+    post_url_suffix               varchar(250)                                                                null,
+    post_id_on_platform           varchar(100)                                                                null,
+    account_id_on_platform        varchar(100)                                                                null,
+    account_url_suffix            varchar(200)                                                                null,
+    parent_comment_id_on_platform varchar(100)                                                                null,
+    text                          text                                                                        null,
+    publication_date              datetime                                                                    null,
+    data                          json                                                                        null,
+    platform                      enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_comment_archive_canonical_session
+        unique (canonical_id, archive_session_id),
+    constraint comment_archive_canonical_fk
+        foreign key (canonical_id) references comment (id),
+    constraint comment_archive_session_fk
+        foreign key (archive_session_id) references archive_session (id)
+)
+    engine = InnoDB;
+
+create index comment_archive_canonical_id_index
+    on comment_archive (canonical_id);
+
+create index comment_archive_id_on_platform_index
+    on comment_archive (id_on_platform);
+
+create index comment_archive_post_id_on_platform_index
+    on comment_archive (post_id_on_platform);
+
+create index comment_archive_session_id_index
+    on comment_archive (archive_session_id);
+
+create table media
+(
+    id               int auto_increment
+        primary key,
+    create_date      timestamp                                            default CURRENT_TIMESTAMP not null,
+    update_date      timestamp                                            default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    id_on_platform   varchar(100)                                                                   null,
+    url_suffix       varchar(250)                                                                   not null,
+    post_id          int                                                                            null,
+    local_url        varchar(500)                                                                   null,
+    media_type       enum ('video', 'audio', 'image')                                               not null,
+    data             json                                                                           null,
+    annotation       text                                                                           null,
+    thumbnail_path   varchar(200)                                                                   null,
+    thumbnail_status enum ('pending', 'generated', 'not_needed', 'error') default 'pending'         not null,
+    publication_date datetime                                                                       null,
+    account_id       int                                                                            null,
+    platform         enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads')    null,
+    constraint media_account_id_fk
+        foreign key (account_id) references account (id),
+    constraint media_post_id_fk
+        foreign key (post_id) references post (id)
+)
+    engine = InnoDB;
+
+create index media_account_id_index
+    on media (account_id);
 
 create index media_id_on_platform_index
     on media (id_on_platform);
@@ -271,23 +355,20 @@ create index media_media_type_index
 create index media_post_id_index
     on media (post_id);
 
+create index media_publication_date_date
+    on media ((cast(`publication_date` as date)));
+
+create index media_publication_date_index
+    on media (publication_date);
+
 create index media_thumbnail_path_index
     on media (thumbnail_path);
 
 create index media_thumbnail_status_index
     on media (thumbnail_status);
 
-create index media_account_id_index
-    on media (account_id);
-
-create index media_publication_date_index
-    on media (publication_date);
-
-create index media_publication_date_date
-    on media ((DATE(publication_date)));
-
-create index media_url_index
-    on media (url);
+create index media_url_suffix_index
+    on media (url_suffix);
 
 create fulltext index search_idx_fulltext
     on media (annotation);
@@ -296,23 +377,24 @@ create table media_archive
 (
     id                  int auto_increment
         primary key,
-    create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id        int                                 null,
-    archive_session_id  int                                 null,
-    id_on_platform      varchar(100)                        null,
-    url                 varchar(250)                        not null,
-    post_url            varchar(250)                        null,
-    post_id_on_platform varchar(100)                        null,
-    local_url           varchar(500)                        null,
-    media_type          enum ('video', 'audio', 'image')    not null,
-    data                json                                null,
+    create_date         timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date         timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id        int                                                                         null,
+    archive_session_id  int                                                                         null,
+    id_on_platform      varchar(100)                                                                null,
+    url_suffix          varchar(250)                                                                not null,
+    post_url_suffix     varchar(250)                                                                null,
+    post_id_on_platform varchar(100)                                                                null,
+    local_url           varchar(500)                                                                null,
+    media_type          enum ('video', 'audio', 'image')                                            not null,
+    data                json                                                                        null,
+    platform            enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_media_archive_canonical_session
+        unique (canonical_id, archive_session_id),
     constraint media_archive_archive_session_id_fk
         foreign key (archive_session_id) references archive_session (id),
     constraint media_archive_media_id_fk
-        foreign key (canonical_id) references media (id),
-    constraint uq_media_archive_canonical_session
-        unique (canonical_id, archive_session_id)
+        foreign key (canonical_id) references media (id)
 )
     engine = InnoDB;
 
@@ -328,11 +410,11 @@ create index media_archive_id_on_platform_index
 create index media_archive_post_id_on_platform_index
     on media_archive (post_id_on_platform);
 
-create index media_archive_post_url_index
-    on media_archive (post_url);
+create index media_archive_post_url_suffix_index
+    on media_archive (post_url_suffix);
 
-create index media_archive_url_index
-    on media_archive (url);
+create index media_archive_url_suffix_index
+    on media_archive (url_suffix);
 
 create table media_part
 (
@@ -353,7 +435,7 @@ create index media_part_media_id_index
     on media_part (media_id);
 
 create fulltext index idx_search_fulltext
-    on post (caption, url);
+    on post (caption, url_suffix);
 
 create index post_account_id_index
     on post (account_id);
@@ -361,44 +443,45 @@ create index post_account_id_index
 create index post_id_on_platform_index
     on post (id_on_platform);
 
+create index post_publication_date_date
+    on post ((cast(`publication_date` as date)));
+
 create index post_publication_date_index
     on post (publication_date);
 
-create index post_publication_date_date
-    on post ((DATE(publication_date)));
-
-create index post_url_index
-    on post (url);
+create index post_url_suffix_index
+    on post (url_suffix);
 
 create table post_archive
 (
     id                     int auto_increment
         primary key,
-    create_date            timestamp default CURRENT_TIMESTAMP not null,
-    update_date            timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id           int                                 null,
-    archive_session_id     int                                 null,
-    id_on_platform         varchar(100)                        null,
-    url                    varchar(250)                        not null,
-    account_url            varchar(200)                        null,
-    account_id_on_platform varchar(100)                        null,
-    publication_date       datetime                            null,
-    caption                text                                null,
-    data                   json                                null,
+    create_date            timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date            timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id           int                                                                         null,
+    archive_session_id     int                                                                         null,
+    id_on_platform         varchar(100)                                                                null,
+    url_suffix             varchar(250)                                                                null,
+    account_url_suffix     varchar(200)                                                                null,
+    account_id_on_platform varchar(100)                                                                null,
+    publication_date       datetime                                                                    null,
+    caption                text                                                                        null,
+    data                   json                                                                        null,
+    platform               enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_post_archive_canonical_session
+        unique (canonical_id, archive_session_id),
     constraint post_archive_archive_session_id_fk
         foreign key (archive_session_id) references archive_session (id),
     constraint post_archive_post_id_fk
-        foreign key (canonical_id) references post (id),
-    constraint uq_post_archive_canonical_session
-        unique (canonical_id, archive_session_id)
+        foreign key (canonical_id) references post (id)
 )
     engine = InnoDB;
 
 create index post_archive_account_id_on_platform_index
     on post_archive (account_id_on_platform);
 
-create index post_archive_account_url_index
-    on post_archive (account_url);
+create index post_archive_account_url_suffix_index
+    on post_archive (account_url_suffix);
 
 create index post_archive_archive_session_id_index
     on post_archive (archive_session_id);
@@ -409,78 +492,8 @@ create index post_archive_canonical_id_index
 create index post_archive_id_on_platform_index
     on post_archive (id_on_platform);
 
-create index post_archive_url_index
-    on post_archive (url);
-
-create table comment
-(
-    id                            int auto_increment
-        primary key,
-    create_date                   timestamp default CURRENT_TIMESTAMP not null,
-    update_date                   timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    id_on_platform                varchar(100)                        null,
-    url                           varchar(250)                        null,
-    post_id                       int                                 null,
-    account_id                    int                                 null,
-    parent_comment_id_on_platform varchar(100)                        null,
-    text                          text                                null,
-    publication_date              datetime                            null,
-    data                          json                                null,
-    notes                         text                                null,
-    constraint comment_post_id_fk
-        foreign key (post_id) references post (id),
-    constraint comment_account_id_fk
-        foreign key (account_id) references account (id)
-)
-    engine = InnoDB;
-
-create index comment_id_on_platform_index
-    on comment (id_on_platform);
-
-create index comment_post_id_index
-    on comment (post_id);
-
-create index comment_account_id_index
-    on comment (account_id);
-
-create table comment_archive
-(
-    id                            int auto_increment
-        primary key,
-    create_date                   timestamp default CURRENT_TIMESTAMP not null,
-    update_date                   timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id                  int                                 null,
-    archive_session_id            int                                 null,
-    id_on_platform                varchar(100)                        null,
-    url                           varchar(250)                        null,
-    post_url                      varchar(250)                        null,
-    post_id_on_platform           varchar(100)                        null,
-    account_id_on_platform        varchar(100)                        null,
-    account_url                   varchar(200)                        null,
-    parent_comment_id_on_platform varchar(100)                        null,
-    text                          text                                null,
-    publication_date              datetime                            null,
-    data                          json                                null,
-    constraint comment_archive_canonical_fk
-        foreign key (canonical_id) references comment (id),
-    constraint comment_archive_session_fk
-        foreign key (archive_session_id) references archive_session (id),
-    constraint uq_comment_archive_canonical_session
-        unique (canonical_id, archive_session_id)
-)
-    engine = InnoDB;
-
-create index comment_archive_canonical_id_index
-    on comment_archive (canonical_id);
-
-create index comment_archive_session_id_index
-    on comment_archive (archive_session_id);
-
-create index comment_archive_id_on_platform_index
-    on comment_archive (id_on_platform);
-
-create index comment_archive_post_id_on_platform_index
-    on comment_archive (post_id_on_platform);
+create index post_archive_url_suffix_index
+    on post_archive (url_suffix);
 
 create table post_like
 (
@@ -493,12 +506,15 @@ create table post_like
     account_id     int                                 null,
     data           json                                null,
     notes          text                                null,
-    constraint post_like_post_id_fk
-        foreign key (post_id) references post (id),
     constraint post_like_account_id_fk
-        foreign key (account_id) references account (id)
+        foreign key (account_id) references account (id),
+    constraint post_like_post_id_fk
+        foreign key (post_id) references post (id)
 )
     engine = InnoDB;
+
+create index post_like_account_id_index
+    on post_like (account_id);
 
 create index post_like_id_on_platform_index
     on post_like (id_on_platform);
@@ -506,43 +522,50 @@ create index post_like_id_on_platform_index
 create index post_like_post_id_index
     on post_like (post_id);
 
-create index post_like_account_id_index
-    on post_like (account_id);
-
 create table post_like_archive
 (
     id                     int auto_increment
         primary key,
-    create_date            timestamp default CURRENT_TIMESTAMP not null,
-    update_date            timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id           int                                 null,
-    archive_session_id     int                                 null,
-    id_on_platform         varchar(200)                        null,
-    post_id_on_platform    varchar(100)                        null,
-    post_url               varchar(250)                        null,
-    account_id_on_platform varchar(100)                        null,
-    account_url            varchar(200)                        null,
-    data                   json                                null,
+    create_date            timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date            timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id           int                                                                         null,
+    archive_session_id     int                                                                         null,
+    id_on_platform         varchar(200)                                                                null,
+    post_id_on_platform    varchar(100)                                                                null,
+    post_url_suffix        varchar(250)                                                                null,
+    account_id_on_platform varchar(100)                                                                null,
+    account_url_suffix     varchar(200)                                                                null,
+    data                   json                                                                        null,
+    platform               enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_post_like_archive_canonical_session
+        unique (canonical_id, archive_session_id),
     constraint post_like_archive_canonical_fk
         foreign key (canonical_id) references post_like (id),
     constraint post_like_archive_session_fk
-        foreign key (archive_session_id) references archive_session (id),
-    constraint uq_post_like_archive_canonical_session
-        unique (canonical_id, archive_session_id)
+        foreign key (archive_session_id) references archive_session (id)
 )
     engine = InnoDB;
 
 create index post_like_archive_canonical_id_index
     on post_like_archive (canonical_id);
 
-create index post_like_archive_session_id_index
-    on post_like_archive (archive_session_id);
-
 create index post_like_archive_id_on_platform_index
     on post_like_archive (id_on_platform);
 
 create index post_like_archive_post_id_on_platform_index
     on post_like_archive (post_id_on_platform);
+
+create index post_like_archive_session_id_index
+    on post_like_archive (archive_session_id);
+
+create table schema_migration
+(
+    version     int                                not null
+        primary key,
+    description varchar(200)                       not null,
+    applied_at  datetime default CURRENT_TIMESTAMP not null
+)
+    engine = InnoDB;
 
 create table tag_type
 (
@@ -559,14 +582,14 @@ create table tag_type
 
 create table tag
 (
-    id          int auto_increment
+    id           int auto_increment
         primary key,
-    create_date timestamp default CURRENT_TIMESTAMP not null,
-    update_date timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    name         varchar(200)                        not null,
-    description  text                                null,
-    tag_type_id  int                                 null,
-    quick_access tinyint(1)  default 0              not null,
+    create_date  timestamp  default CURRENT_TIMESTAMP not null,
+    update_date  timestamp  default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    name         varchar(200)                         not null,
+    description  text                                 null,
+    tag_type_id  int                                  null,
+    quick_access tinyint(1) default 0                 not null,
     constraint name
         unique (name, tag_type_id),
     constraint tag_tag_type_id_fk
@@ -592,6 +615,9 @@ create table account_tag
 )
     engine = InnoDB;
 
+create index idx_account_tag_tag_id
+    on account_tag (tag_id);
+
 create table media_part_tag
 (
     id            int auto_increment
@@ -609,6 +635,9 @@ create table media_part_tag
         foreign key (tag_id) references tag (id)
 )
     engine = InnoDB;
+
+create index idx_media_part_tag_tag_id
+    on media_part_tag (tag_id);
 
 create table media_tag
 (
@@ -628,79 +657,8 @@ create table media_tag
 )
     engine = InnoDB;
 
-create table tagged_account
-(
-    id                int auto_increment
-        primary key,
-    create_date       timestamp default CURRENT_TIMESTAMP not null,
-    update_date       timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    id_on_platform    varchar(300)                        null,
-    tagged_account_id int                                 null,
-    post_id           int                                 null,
-    media_id          int                                 null,
-    tag_x_position    float                               null,
-    tag_y_position    float                               null,
-    data              json                                null,
-    notes             text                                null,
-    constraint tagged_account_account_id_fk
-        foreign key (tagged_account_id) references account (id),
-    constraint tagged_account_post_id_fk
-        foreign key (post_id) references post (id),
-    constraint tagged_account_media_id_fk
-        foreign key (media_id) references media (id)
-)
-    engine = InnoDB;
-
-create index tagged_account_id_on_platform_index
-    on tagged_account (id_on_platform);
-
-create index tagged_account_tagged_account_id_index
-    on tagged_account (tagged_account_id);
-
-create index tagged_account_post_id_index
-    on tagged_account (post_id);
-
-create index tagged_account_media_id_index
-    on tagged_account (media_id);
-
-create table tagged_account_archive
-(
-    id                             int auto_increment
-        primary key,
-    create_date                    timestamp default CURRENT_TIMESTAMP not null,
-    update_date                    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    canonical_id                   int                                 null,
-    archive_session_id             int                                 null,
-    id_on_platform                 varchar(300)                        null,
-    tagged_account_id_on_platform  varchar(100)                        null,
-    tagged_account_url             varchar(250)                        null,
-    context_post_url               varchar(250)                        null,
-    context_media_url              varchar(250)                        null,
-    context_post_id_on_platform    varchar(100)                        null,
-    context_media_id_on_platform   varchar(100)                        null,
-    tag_x_position                 float                               null,
-    tag_y_position                 float                               null,
-    data                           json                                null,
-    constraint tagged_account_archive_canonical_fk
-        foreign key (canonical_id) references tagged_account (id),
-    constraint tagged_account_archive_session_fk
-        foreign key (archive_session_id) references archive_session (id),
-    constraint uq_tagged_account_archive_canonical_session
-        unique (canonical_id, archive_session_id)
-)
-    engine = InnoDB;
-
-create index tagged_account_archive_canonical_id_index
-    on tagged_account_archive (canonical_id);
-
-create index tagged_account_archive_session_id_index
-    on tagged_account_archive (archive_session_id);
-
-create index tagged_account_archive_id_on_platform_index
-    on tagged_account_archive (id_on_platform);
-
-create index tagged_account_archive_tagged_id_on_platform_index
-    on tagged_account_archive (tagged_account_id_on_platform);
+create index idx_media_tag_tag_id
+    on media_tag (tag_id);
 
 create table post_tag
 (
@@ -720,15 +678,18 @@ create table post_tag
 )
     engine = InnoDB;
 
+create index idx_post_tag_tag_id
+    on post_tag (tag_id);
+
 create table tag_hierarchy
 (
-    id                  int auto_increment
+    id           int auto_increment
         primary key,
-    create_date         timestamp default CURRENT_TIMESTAMP not null,
-    update_date         timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    super_tag_id        int                                 not null,
-    sub_tag_id          int                                 not null,
-    notes               text                                null,
+    create_date  timestamp default CURRENT_TIMESTAMP not null,
+    update_date  timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    super_tag_id int                                 not null,
+    sub_tag_id   int                                 not null,
+    notes        text                                null,
     constraint super_tag_id
         unique (super_tag_id, sub_tag_id),
     constraint tag_hierarchy_sub_tag_id_fk
@@ -738,20 +699,83 @@ create table tag_hierarchy
 )
     engine = InnoDB;
 
-create index idx_account_tag_tag_id
-    on account_tag (tag_id);
-
-create index idx_post_tag_tag_id
-    on post_tag (tag_id);
-
-create index idx_media_tag_tag_id
-    on media_tag (tag_id);
-
-create index idx_media_part_tag_tag_id
-    on media_part_tag (tag_id);
-
 create index idx_tag_hierarchy_sub_tag_id
     on tag_hierarchy (sub_tag_id);
+
+create table tagged_account
+(
+    id                int auto_increment
+        primary key,
+    create_date       timestamp default CURRENT_TIMESTAMP not null,
+    update_date       timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    id_on_platform    varchar(300)                        null,
+    tagged_account_id int                                 null,
+    post_id           int                                 null,
+    media_id          int                                 null,
+    tag_x_position    float                               null,
+    tag_y_position    float                               null,
+    data              json                                null,
+    notes             text                                null,
+    constraint tagged_account_account_id_fk
+        foreign key (tagged_account_id) references account (id),
+    constraint tagged_account_media_id_fk
+        foreign key (media_id) references media (id),
+    constraint tagged_account_post_id_fk
+        foreign key (post_id) references post (id)
+)
+    engine = InnoDB;
+
+create index tagged_account_id_on_platform_index
+    on tagged_account (id_on_platform);
+
+create index tagged_account_media_id_index
+    on tagged_account (media_id);
+
+create index tagged_account_post_id_index
+    on tagged_account (post_id);
+
+create index tagged_account_tagged_account_id_index
+    on tagged_account (tagged_account_id);
+
+create table tagged_account_archive
+(
+    id                            int auto_increment
+        primary key,
+    create_date                   timestamp default CURRENT_TIMESTAMP                                         not null,
+    update_date                   timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
+    canonical_id                  int                                                                         null,
+    archive_session_id            int                                                                         null,
+    id_on_platform                varchar(300)                                                                null,
+    tagged_account_id_on_platform varchar(100)                                                                null,
+    tagged_account_url_suffix     varchar(250)                                                                null,
+    context_post_url_suffix       varchar(250)                                                                null,
+    context_media_url_suffix      varchar(250)                                                                null,
+    context_post_id_on_platform   varchar(100)                                                                null,
+    context_media_id_on_platform  varchar(100)                                                                null,
+    tag_x_position                float                                                                       null,
+    tag_y_position                float                                                                       null,
+    data                          json                                                                        null,
+    platform                      enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') null,
+    constraint uq_tagged_account_archive_canonical_session
+        unique (canonical_id, archive_session_id),
+    constraint tagged_account_archive_canonical_fk
+        foreign key (canonical_id) references tagged_account (id),
+    constraint tagged_account_archive_session_fk
+        foreign key (archive_session_id) references archive_session (id)
+)
+    engine = InnoDB;
+
+create index tagged_account_archive_canonical_id_index
+    on tagged_account_archive (canonical_id);
+
+create index tagged_account_archive_id_on_platform_index
+    on tagged_account_archive (id_on_platform);
+
+create index tagged_account_archive_session_id_index
+    on tagged_account_archive (archive_session_id);
+
+create index tagged_account_archive_tagged_id_on_platform_index
+    on tagged_account_archive (tagged_account_id_on_platform);
 
 create table user
 (
@@ -776,15 +800,17 @@ create table user
 
 create table entity_share_link
 (
-    id                 int auto_increment
+    id                        int auto_increment
         primary key,
-    create_date        timestamp default CURRENT_TIMESTAMP                                  null,
-    update_date        timestamp default CURRENT_TIMESTAMP                                  null on update CURRENT_TIMESTAMP,
-    created_by_user_id int                                                                  not null,
-    valid              tinyint   default 1                                                  not null,
-    entity             enum ('archiving_session', 'account', 'post', 'media', 'media_part') not null,
-    entity_id          int                                                                  null,
-    link_suffix        varchar(100)                                                         not null,
+    create_date               timestamp default CURRENT_TIMESTAMP                                  null,
+    update_date               timestamp default CURRENT_TIMESTAMP                                  null on update CURRENT_TIMESTAMP,
+    created_by_user_id        int                                                                  not null,
+    valid                     tinyint   default 1                                                  not null,
+    entity                    enum ('archiving_session', 'account', 'post', 'media', 'media_part') not null,
+    entity_id                 int                                                                  null,
+    link_suffix               varchar(100)                                                         not null,
+    include_screen_recordings tinyint   default 1                                                  not null,
+    include_har               tinyint   default 1                                                  not null,
     constraint entity_share_link_pk
         unique (link_suffix),
     constraint entity_share_link_user_id_fk

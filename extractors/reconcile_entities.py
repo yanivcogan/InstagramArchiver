@@ -80,7 +80,7 @@ def reconcile_accounts(new_account: Account, existing_account: Optional[Account]
     if existing_account is None:
         return new_account
     existing_account.id_on_platform = reconcile_primitives(existing_account.id_on_platform, new_account.id_on_platform)
-    existing_account.url = reconcile_primitives(existing_account.url, new_account.url)
+    existing_account.url_suffix = reconcile_primitives(existing_account.url_suffix, new_account.url_suffix)
     existing_account.display_name = reconcile_primitives(existing_account.display_name, new_account.display_name)
     existing_account.bio = reconcile_primitives(existing_account.bio, new_account.bio)
     existing_account.data = reconcile_dicts(existing_account.data, new_account.data)
@@ -91,8 +91,8 @@ def reconcile_posts(new_post: Post, existing_post: Optional[Post]) -> Post:
     if existing_post is None:
         return new_post
     existing_post.id_on_platform = reconcile_primitives(existing_post.id_on_platform, new_post.id_on_platform)
-    existing_post.url = reconcile_primitives(existing_post.url, new_post.url)
-    existing_post.account_url = reconcile_primitives(existing_post.account_url, new_post.account_url)
+    existing_post.url_suffix = reconcile_primitives(existing_post.url_suffix, new_post.url_suffix)
+    existing_post.account_url_suffix = reconcile_primitives(existing_post.account_url_suffix, new_post.account_url_suffix)
     existing_post.publication_date = reconcile_primitives(existing_post.publication_date, new_post.publication_date)
     existing_post.caption = reconcile_primitives(existing_post.caption, new_post.caption)
     existing_post.data = reconcile_dicts(existing_post.data, new_post.data)
@@ -103,8 +103,8 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     if existing_media is None:
         return new_media
     existing_media.id_on_platform = reconcile_primitives(existing_media.id_on_platform, new_media.id_on_platform)
-    existing_media.url = reconcile_primitives(existing_media.url, new_media.url)
-    existing_media.post_url = reconcile_primitives(existing_media.post_url, new_media.post_url)
+    existing_media.url_suffix = reconcile_primitives(existing_media.url_suffix, new_media.url_suffix)
+    existing_media.post_url_suffix = reconcile_primitives(existing_media.post_url_suffix, new_media.post_url_suffix)
     new_size = _local_url_size(new_media.local_url)
     existing_size = _local_url_size(existing_media.local_url)
     if new_size > existing_size:
@@ -120,11 +120,11 @@ def reconcile_comments(new_comment: Comment, existing_comment: Optional[Comment]
     if existing_comment is None:
         return new_comment
     existing_comment.id_on_platform = reconcile_primitives(existing_comment.id_on_platform, new_comment.id_on_platform)
-    existing_comment.url = reconcile_primitives(existing_comment.url, new_comment.url)
+    existing_comment.url_suffix = reconcile_primitives(existing_comment.url_suffix, new_comment.url_suffix)
     existing_comment.post_id_on_platform = reconcile_primitives(existing_comment.post_id_on_platform, new_comment.post_id_on_platform)
-    existing_comment.post_url = reconcile_primitives(existing_comment.post_url, new_comment.post_url)
+    existing_comment.post_url_suffix = reconcile_primitives(existing_comment.post_url_suffix, new_comment.post_url_suffix)
     existing_comment.account_id_on_platform = reconcile_primitives(existing_comment.account_id_on_platform, new_comment.account_id_on_platform)
-    existing_comment.account_url = reconcile_primitives(existing_comment.account_url, new_comment.account_url)
+    existing_comment.account_url_suffix = reconcile_primitives(existing_comment.account_url_suffix, new_comment.account_url_suffix)
     existing_comment.parent_comment_id_on_platform = reconcile_primitives(existing_comment.parent_comment_id_on_platform, new_comment.parent_comment_id_on_platform)
     existing_comment.text = reconcile_primitives(existing_comment.text, new_comment.text)
     existing_comment.publication_date = reconcile_primitives(existing_comment.publication_date, new_comment.publication_date)
@@ -137,9 +137,9 @@ def reconcile_likes(new_like: Like, existing_like: Optional[Like]) -> Like:
         return new_like
     existing_like.id_on_platform = reconcile_primitives(existing_like.id_on_platform, new_like.id_on_platform)
     existing_like.post_id_on_platform = reconcile_primitives(existing_like.post_id_on_platform, new_like.post_id_on_platform)
-    existing_like.post_url = reconcile_primitives(existing_like.post_url, new_like.post_url)
+    existing_like.post_url_suffix = reconcile_primitives(existing_like.post_url_suffix, new_like.post_url_suffix)
     existing_like.account_id_on_platform = reconcile_primitives(existing_like.account_id_on_platform, new_like.account_id_on_platform)
-    existing_like.account_url = reconcile_primitives(existing_like.account_url, new_like.account_url)
+    existing_like.account_url_suffix = reconcile_primitives(existing_like.account_url_suffix, new_like.account_url_suffix)
     existing_like.data = reconcile_dicts(existing_like.data, new_like.data)
     return existing_like
 
@@ -149,9 +149,9 @@ def reconcile_tagged_accounts(new_ta: TaggedAccount, existing_ta: Optional[Tagge
         return new_ta
     existing_ta.id_on_platform = reconcile_primitives(existing_ta.id_on_platform, new_ta.id_on_platform)
     existing_ta.tagged_account_id_on_platform = reconcile_primitives(existing_ta.tagged_account_id_on_platform, new_ta.tagged_account_id_on_platform)
-    existing_ta.tagged_account_url = reconcile_primitives(existing_ta.tagged_account_url, new_ta.tagged_account_url)
-    existing_ta.context_post_url = reconcile_primitives(existing_ta.context_post_url, new_ta.context_post_url)
-    existing_ta.context_media_url = reconcile_primitives(existing_ta.context_media_url, new_ta.context_media_url)
+    existing_ta.tagged_account_url_suffix = reconcile_primitives(existing_ta.tagged_account_url_suffix, new_ta.tagged_account_url_suffix)
+    existing_ta.context_post_url_suffix = reconcile_primitives(existing_ta.context_post_url_suffix, new_ta.context_post_url_suffix)
+    existing_ta.context_media_url_suffix = reconcile_primitives(existing_ta.context_media_url_suffix, new_ta.context_media_url_suffix)
     existing_ta.context_post_id_on_platform = reconcile_primitives(existing_ta.context_post_id_on_platform, new_ta.context_post_id_on_platform)
     existing_ta.context_media_id_on_platform = reconcile_primitives(existing_ta.context_media_id_on_platform, new_ta.context_media_id_on_platform)
     existing_ta.tag_x_position = reconcile_primitives(existing_ta.tag_x_position, new_ta.tag_x_position)
@@ -165,9 +165,9 @@ def reconcile_account_relations(new_ar: AccountRelation, existing_ar: Optional[A
         return new_ar
     existing_ar.id_on_platform = reconcile_primitives(existing_ar.id_on_platform, new_ar.id_on_platform)
     existing_ar.follower_account_id_on_platform = reconcile_primitives(existing_ar.follower_account_id_on_platform, new_ar.follower_account_id_on_platform)
-    existing_ar.follower_account_url = reconcile_primitives(existing_ar.follower_account_url, new_ar.follower_account_url)
+    existing_ar.follower_account_url_suffix = reconcile_primitives(existing_ar.follower_account_url_suffix, new_ar.follower_account_url_suffix)
     existing_ar.followed_account_id_on_platform = reconcile_primitives(existing_ar.followed_account_id_on_platform, new_ar.followed_account_id_on_platform)
-    existing_ar.followed_account_url = reconcile_primitives(existing_ar.followed_account_url, new_ar.followed_account_url)
+    existing_ar.followed_account_url_suffix = reconcile_primitives(existing_ar.followed_account_url_suffix, new_ar.followed_account_url_suffix)
     existing_ar.relation_type = reconcile_primitives(existing_ar.relation_type, new_ar.relation_type)
     existing_ar.data = reconcile_dicts(existing_ar.data, new_ar.data)
     return existing_ar
