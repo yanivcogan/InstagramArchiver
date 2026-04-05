@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Literal, Optional, Any
 from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
 
@@ -11,7 +12,7 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 logger = logging.getLogger(__name__)
 
 from browsing_platform.server.services.media import get_media_thumbnail_path
-from extractors.entity_types import reconstruct_url
+from extractors.entity_types import reconstruct_url, parse_search_url
 from utils import db
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
@@ -76,8 +77,15 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     }
     where_clauses = []
     if query.search_term:
-        query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`archived_url_suffix`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
+        parsed_url = parse_search_url(query.search_term)
+        if parsed_url:
+            # Full platform URL → exact suffix + platform match
+            query_args["p_suffix"]   = parsed_url.suffix
+            query_args["p_platform"] = parsed_url.platform
+            where_clauses.append("archived_url_suffix = %(p_suffix)s AND platform = %(p_platform)s")
+        else:
+            query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
+            where_clauses.append("MATCH(`archived_url_suffix`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
@@ -136,34 +144,25 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     return results
 
 
-def string_to_instagram_account_url(s: str) -> Optional[str]:
-    """complete s to https://www.instagram.com/{handle} format if it looks like it could fit it; otherwise return None"""
+def extract_account_handle(s: str) -> Optional[str]:
+    """Return the bare Instagram handle if s looks like '@handle' or 'handle' (no URL prefix).
+    Does not parse full URLs — call parse_search_url first for those.
+    Returns the handle string without trailing slash, or None."""
     if not s:
         return None
-    import re
     s = s.strip()
     if s.startswith('@'):
         s = s[1:]
-    # try extract handle from full URL (with or without scheme/www)
-    m = re.search(r'(?:https?://)?(?:www\.)?instagram\.com/([^/?#\s]+)', s, flags=re.I)
-    if m:
-        handle = m.group(1).strip('/')
-    else:
-        # remove query/fragment and any scheme/www prefix
-        s_no_q = re.split(r'[?#]', s, 1)[0]
-        s_no_q = re.sub(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', '', s_no_q)
-        if s_no_q.lower().startswith('www.'):
-            s_no_q = s_no_q[4:]
-        if s_no_q.lower().startswith('instagram.com/'):
-            handle = s_no_q.split('/', 1)[1].strip('/')
-        else:
-            handle = s_no_q.strip('/ ')
+    # Reject anything that looks like a URL — parse_search_url handles those
+    if '://' in s or s.lower().startswith('www.') or '.' in s.split('/')[0]:
+        return None
+    # Strip any trailing path/query noise and take only the first segment
+    handle = s.split('/')[0].split('?')[0].split('#')[0].strip()
     if not handle:
         return None
-    handle = handle.split('/')[0]
-    # validate basic Instagram username rules (letters, numbers, dot, underscore; up to 30 chars)
+    # Validate basic Instagram username rules: letters, numbers, dot, underscore; up to 30 chars
     if re.fullmatch(r'[A-Za-z0-9._]{1,30}', handle):
-        return f"{handle}/"
+        return handle
     return None
 
 
@@ -218,10 +217,6 @@ def build_tag_filter_join(entity: str, tag_ids: list[int], tag_filter_mode: str)
     return sql, args
 
 
-def _looks_like_url(s: str) -> bool:
-    return '://' in s or s.startswith('www.')
-
-
 def _escape_like(value: str) -> str:
     """Escape LIKE metacharacters so user input is treated as a literal string.
     Uses '!' as the escape character (declared via ESCAPE '!' in the query)."""
@@ -234,14 +229,36 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         "offset": (query.page_number - 1) * query.page_size,
     }
     where_clauses = []
+    has_fulltext = False
     if query.search_term:
-        query_args["search_term"] = default_fulltext_query(query.search_term)
-        insta_account = string_to_instagram_account_url(query.search_term)
-        if insta_account:
-            query_args["account_search_term"] = f"url_{insta_account}"
-            where_clauses.append("JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) OR MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        parsed_url = parse_search_url(query.search_term)
+        if parsed_url:
+            # Full platform URL → exact suffix + platform match, plus identifier fallback
+            query_args["p_suffix"]     = parsed_url.suffix
+            query_args["p_platform"]   = parsed_url.platform
+            query_args["p_identifier"] = f"url_{parsed_url.suffix}"
+            where_clauses.append(
+                "(url_suffix = %(p_suffix)s AND platform = %(p_platform)s) "
+                "OR JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(p_identifier)s))"
+            )
         else:
-            where_clauses.append("MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            handle = extract_account_handle(query.search_term)
+            if handle:
+                # Bare handle / @handle → identifier lookup + fulltext on handle token
+                query_args["search_term"]         = default_fulltext_query(handle)
+                query_args["account_search_term"] = f"url_{handle}/"
+                where_clauses.append(
+                    "JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) "
+                    "OR MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)"
+                )
+                has_fulltext = True
+            else:
+                # Free text → fulltext only
+                query_args["search_term"] = default_fulltext_query(query.search_term)
+                where_clauses.append(
+                    "MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)"
+                )
+                has_fulltext = True
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
@@ -252,7 +269,7 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         query_args.update(tag_filter_args)
     order_by = (
         "MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
-        if query.search_term else "account.id DESC"
+        if has_fulltext else "account.id DESC"
     )
     rows = db.execute_query(  # nosec B608 - tag_filter_join built from safe templates only
         f"""SELECT account.id, account.url_suffix, account.platform, account.display_name, account.bio
@@ -308,14 +325,18 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         "offset": (query.page_number - 1) * query.page_size,
     }
     where_clauses = []
-    is_url_search = bool(query.search_term and _looks_like_url(query.search_term.strip()))
+    has_fulltext = False
     if query.search_term:
-        if is_url_search:
-            query_args["url_pattern"] = _escape_like(query.search_term.strip()) + '%'
-            where_clauses.append("url_suffix LIKE %(url_pattern)s ESCAPE '!'")
+        parsed_url = parse_search_url(query.search_term)
+        if parsed_url:
+            # Full platform URL → exact suffix + platform match
+            query_args["p_suffix"]   = parsed_url.suffix
+            query_args["p_platform"] = parsed_url.platform
+            where_clauses.append("url_suffix = %(p_suffix)s AND platform = %(p_platform)s")
         else:
             query_args["search_term"] = default_fulltext_query(query.search_term)
             where_clauses.append("MATCH(`url_suffix`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            has_fulltext = True
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
@@ -327,7 +348,7 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
     inner_where = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
     order_by = (
         "MATCH(`url_suffix`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
-        if (query.search_term and not is_url_search) else "publication_date DESC"
+        if has_fulltext else "publication_date DESC"
     )
     rows = db.execute_query(  # nosec B608 - inner_where, order_by, tag_filter_join built from safe clauses only
         f"""SELECT p.id, p.url_suffix, p.platform, p.id_on_platform, p.caption, p.publication_date,
@@ -382,12 +403,20 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
     }
-    where_clauses = [
-        "local_url IS NOT NULL"
-    ]
     if query.search_term:
-        query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`annotation`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        parsed_url = parse_search_url(query.search_term)
+    else:
+        parsed_url = None
+    if parsed_url:
+        # CDN URL → exact suffix + platform match (no local_url requirement)
+        query_args["p_suffix"]   = parsed_url.suffix
+        query_args["p_platform"] = parsed_url.platform
+        where_clauses = ["url_suffix = %(p_suffix)s AND platform = %(p_platform)s"]
+    else:
+        where_clauses = ["local_url IS NOT NULL"]
+        if query.search_term:
+            query_args["search_term"] = default_fulltext_query(query.search_term)
+            where_clauses.append("MATCH(`annotation`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "media")
         where_clauses.append(general_filter)

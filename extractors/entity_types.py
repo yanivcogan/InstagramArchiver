@@ -1,4 +1,5 @@
 import json
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Any, Literal
 
@@ -21,6 +22,77 @@ def reconstruct_url(suffix: Optional[str], platform: Optional[str], is_media: bo
         return None
     prefixes = _PLATFORM_CDN_PREFIXES if is_media else _PLATFORM_PAGE_PREFIXES
     return prefixes.get(platform or '', '') + suffix
+
+
+@dataclass
+class ParsedSearchUrl:
+    platform: str  # e.g. 'instagram'
+    suffix: str    # exactly what is stored in the DB url_suffix column
+
+
+# Each entry: (compiled_regex, platform, post_processor_fn)
+# The regex must have one capture group that yields the raw suffix candidate.
+# post_processor_fn receives the captured string and returns the normalised suffix,
+# or None if the match should be rejected.
+def _instagram_page_suffix(raw: str) -> Optional[str]:
+    """Normalise a captured Instagram page path to a stored suffix.
+    Mirrors the normalize_url_suffix field validator: strip query string, strip trailing slash."""
+    raw = raw.lstrip('/')
+    if not raw:
+        return None
+    # Strip query string and fragment, then strip trailing slash — same as the entity validator
+    raw = raw.split('?')[0].split('#')[0].rstrip('/')
+    return raw if raw else None
+
+
+def _instagram_cdn_suffix(raw: str) -> Optional[str]:
+    """Normalise a captured CDN path to a stored suffix (filename only, no query params)."""
+    # raw already excludes query params due to [^?]+ in the regex
+    raw = raw.strip('/')
+    return raw if raw else None
+
+
+_URL_PARSE_RULES: list[tuple[re.Pattern, str, Any]] = [
+    # Instagram page URLs: https://www.instagram.com/{path} (or without scheme/www)
+    (
+        re.compile(r'(?:https?://)?(?:www\.)?instagram\.com/(.+)', re.I | re.S),
+        'instagram',
+        _instagram_page_suffix,
+    ),
+    # Instagram CDN media URLs: https://scontent*.cdninstagram.com/v/{filename}
+    (
+        re.compile(r'(?:https?://)?scontent[^/]*\.cdninstagram\.com/v/([^?]+)', re.I),
+        'instagram',
+        _instagram_cdn_suffix,
+    ),
+]
+
+
+def parse_search_url(s: str) -> Optional[ParsedSearchUrl]:
+    """
+    Parse a URL string into (platform, suffix) if it matches a known platform pattern.
+
+    Only recognises strings that look like URLs — i.e. contain '://', start with 'www.',
+    or start with a known platform domain name.  Returns None for bare handles, @handles,
+    and free-text search terms.
+
+    The returned suffix matches exactly what is stored in the DB url_suffix column.
+    """
+    if not s:
+        return None
+    s = s.strip()
+    # Quick gate: must look like a URL before we try expensive regexes
+    if '://' not in s and not s.lower().startswith('www.') and not any(
+        kw in s.lower() for kw in ('instagram.com', 'cdninstagram.com')
+    ):
+        return None
+    for pattern, platform, post_process in _URL_PARSE_RULES:
+        m = pattern.match(s)
+        if m:
+            suffix = post_process(m.group(1))
+            if suffix:
+                return ParsedSearchUrl(platform=platform, suffix=suffix)
+    return None
 
 
 class EntityBase(BaseModel):
