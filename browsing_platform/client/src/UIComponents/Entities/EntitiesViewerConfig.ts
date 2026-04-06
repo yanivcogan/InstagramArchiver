@@ -1,3 +1,4 @@
+// fallow-ignore-file unused-class-members
 import React from "react";
 
 type IEntityDisplayOption = "display" | "hide" | "collapse";
@@ -51,44 +52,54 @@ interface IEntityViewerConfig {
 }
 
 export class EntityViewerConfig implements IEntityViewerConfig {
+    // fallow-ignore-next-line unused-class-members
     all = {
         hideInnerLinks: false
     }
+    // fallow-ignore-next-line unused-class-members
     account = {
         display: "display" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
         postsPageSize: null
     };
+    // fallow-ignore-next-line unused-class-members
     post = {
         display: "display" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
         compactMode: false,
     };
+    // fallow-ignore-next-line unused-class-members
     media = {
         display: "display" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
         style: {} as React.CSSProperties,
     };
+    // fallow-ignore-next-line unused-class-members
     mediaPart = {
         display: "hide" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
         style: {} as React.CSSProperties,
     };
+    // fallow-ignore-next-line unused-class-members
     archivingSession = {
         display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
+    // fallow-ignore-next-line unused-class-members
     comment = {
         display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
+    // fallow-ignore-next-line unused-class-members
     postLike = {
         display: "hide" as IEntityDisplayOption,
         annotator: "hide" as IEntityAnnotatorOption,
     };
+    // fallow-ignore-next-line unused-class-members
     taggedAccount = {
         display: "display" as IEntityDisplayOption,
     };
+    // fallow-ignore-next-line unused-class-members
     accountRelation = {
         display: "display" as IEntityDisplayOption,
     };

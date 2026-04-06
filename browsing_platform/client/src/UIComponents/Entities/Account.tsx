@@ -92,6 +92,82 @@ const HIGHLIGHT_STYLE: React.CSSProperties = {
     marginLeft: -4,
 };
 
+function AccountRelationsPanel({loadingRelations, relations, highlightRelationId, relationRefs, contextAccountId}: {
+    loadingRelations: boolean;
+    relations: IAccountRelation[] | null;
+    highlightRelationId?: number;
+    relationRefs: React.MutableRefObject<Map<number, HTMLElement>>;
+    contextAccountId?: number;
+}) {
+    return (
+        <>
+            {loadingRelations && <CircularProgress size={16}/>}
+            {relations && relations.length === 0 && (
+                <Typography variant="caption" color="text.secondary">No relations found</Typography>
+            )}
+            {relations && relations.length > 0 && (
+                <Stack gap={0.5}>
+                    {relations.map((r, i) => (
+                        <div
+                            key={i}
+                            ref={r.id != null ? el => {
+                                if (el) relationRefs.current.set(r.id!, el);
+                            } : undefined}
+                            style={r.id != null && r.id === highlightRelationId ? HIGHLIGHT_STYLE : undefined}
+                        >
+                            <AccountRelation relation={r} contextAccountId={contextAccountId}/>
+                        </div>
+                    ))}
+                </Stack>
+            )}
+        </>
+    );
+}
+
+function AccountInteractionsPanel({loadingInteractions, interactions}: {
+    loadingInteractions: boolean;
+    interactions: IAccountInteractions | null;
+}) {
+    return (
+        <>
+            {loadingInteractions && <CircularProgress size={16}/>}
+            {interactions && (
+                <Stack gap={1}>
+                    {interactions.comments.length > 0 && (
+                        <Stack gap={0.5}>
+                            <Typography variant="caption" color="text.secondary">
+                                Comments ({interactions.comments.length})
+                            </Typography>
+                            {interactions.comments.map((c, i) => <Comment key={i} comment={c}/>)}
+                        </Stack>
+                    )}
+                    {interactions.likes.length > 0 && (
+                        <Stack gap={0.5}>
+                            <Typography variant="caption" color="text.secondary">
+                                Likes ({interactions.likes.length})
+                            </Typography>
+                            {interactions.likes.map((l, i) => <PostLike key={i} like={l}/>)}
+                        </Stack>
+                    )}
+                    {interactions.tagged_in.length > 0 && (
+                        <Stack gap={0.5}>
+                            <Typography variant="caption" color="text.secondary">
+                                Tagged in ({interactions.tagged_in.length})
+                            </Typography>
+                            <Stack direction="row" gap={0.5} flexWrap="wrap">
+                                {interactions.tagged_in.map((ta, i) => <TaggedAccountChip key={i} taggedAccount={ta}/>)}
+                            </Stack>
+                        </Stack>
+                    )}
+                    {interactions.comments.length === 0 && interactions.likes.length === 0 && interactions.tagged_in.length === 0 && (
+                        <Typography variant="caption" color="text.secondary">No interactions found</Typography>
+                    )}
+                </Stack>
+            )}
+        </>
+    );
+}
+
 interface IProps {
     account: IAccountAndAssociatedEntities
     viewerConfig?: EntityViewerConfig
@@ -356,67 +432,19 @@ export default function Account({
                 <Collapse in={activeTab !== null}>
                     <Box sx={{mt: 1}}>
                         {activeTab === 'relations' && (
-                            <>
-                                {loadingRelations && <CircularProgress size={16}/>}
-                                {relations && relations.length === 0 && (
-                                    <Typography variant="caption" color="text.secondary">No relations found</Typography>
-                                )}
-                                {relations && relations.length > 0 && (
-                                    <Stack gap={0.5}>
-                                        {relations.map((r, i) => (
-                                            <div
-                                                key={i}
-                                                ref={r.id != null ? el => {
-                                                    if (el) relationRefs.current.set(r.id!, el);
-                                                } : undefined}
-                                                style={r.id != null && r.id === highlightRelationId ? HIGHLIGHT_STYLE : undefined}
-                                            >
-                                                <AccountRelation relation={r} contextAccountId={account.id}/>
-                                            </div>
-                                        ))}
-                                    </Stack>
-                                )}
-                            </>
+                            <AccountRelationsPanel
+                                loadingRelations={loadingRelations}
+                                relations={relations}
+                                highlightRelationId={highlightRelationId}
+                                relationRefs={relationRefs}
+                                contextAccountId={account.id}
+                            />
                         )}
                         {activeTab === 'interactions' && (
-                            <>
-                                {loadingInteractions && <CircularProgress size={16}/>}
-                                {interactions && (
-                                    <Stack gap={1}>
-                                        {interactions.comments.length > 0 && (
-                                            <Stack gap={0.5}>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Comments ({interactions.comments.length})
-                                                </Typography>
-                                                {interactions.comments.map((c, i) => <Comment key={i} comment={c}/>)}
-                                            </Stack>
-                                        )}
-                                        {interactions.likes.length > 0 && (
-                                            <Stack gap={0.5}>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Likes ({interactions.likes.length})
-                                                </Typography>
-                                                {interactions.likes.map((l, i) => <PostLike key={i} like={l}/>)}
-                                            </Stack>
-                                        )}
-                                        {interactions.tagged_in.length > 0 && (
-                                            <Stack gap={0.5}>
-                                                <Typography variant="caption" color="text.secondary">
-                                                    Tagged in ({interactions.tagged_in.length})
-                                                </Typography>
-                                                <Stack direction="row" gap={0.5} flexWrap="wrap">
-                                                    {interactions.tagged_in.map((ta, i) => <TaggedAccountChip key={i}
-                                                                                                              taggedAccount={ta}/>)}
-                                                </Stack>
-                                            </Stack>
-                                        )}
-                                        {interactions.comments.length === 0 && interactions.likes.length === 0 && interactions.tagged_in.length === 0 && (
-                                            <Typography variant="caption" color="text.secondary">No interactions
-                                                found</Typography>
-                                        )}
-                                    </Stack>
-                                )}
-                            </>
+                            <AccountInteractionsPanel
+                                loadingInteractions={loadingInteractions}
+                                interactions={interactions}
+                            />
                         )}
                         {activeTab === 'raw' && (
                             <>

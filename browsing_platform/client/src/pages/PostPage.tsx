@@ -1,6 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {useMatch, useParams, useSearchParams} from "react-router";
-import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
+import {CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchArchivingSessionsPost, fetchPost} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
@@ -8,6 +8,7 @@ import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
 import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
 import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
+import DataLoadGuard from "./DataLoadGuard";
 import cookie from "js-cookie";
 import {getShareTokenFromHref} from "../services/linkSharing";
 
@@ -94,41 +95,32 @@ export default function PostPage() {
         }
     }, [loadingData, data]);
 
-    const renderData = () => {
-        if (loadingData) {
-            return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
-                <CircularProgress/>
-            </Box>
-        }
-        if (fetchError) {
-            return <Typography color="text.secondary">{fetchError}</Typography>
-        }
-        if (!data) {
-            return <div>No data</div>
-        }
-        return <EntitiesViewer
-            entities={data}
-            highlightCommentId={highlightCommentId}
-            highlightLikeId={highlightLikeId}
-            viewerConfig={
-                new EntityViewerConfig({
-                    account: {
-                        annotator: "disable"
-                    },
-                    post: {
-                        annotator: disableAnnotator ? "disable" : "show"
-                    },
-                    media: {
-                        annotator: "disable",
-                        style: {
-                            maxWidth: '100%',
-                            maxHeight: '40vh',
+    const renderData = () => (
+        <DataLoadGuard loadingData={loadingData} fetchError={fetchError} data={data}>
+            <EntitiesViewer
+                entities={data!}
+                highlightCommentId={highlightCommentId}
+                highlightLikeId={highlightLikeId}
+                viewerConfig={
+                    new EntityViewerConfig({
+                        account: {
+                            annotator: "disable"
+                        },
+                        post: {
+                            annotator: disableAnnotator ? "disable" : "show"
+                        },
+                        media: {
+                            annotator: "disable",
+                            style: {
+                                maxWidth: '100%',
+                                maxHeight: '40vh',
+                            }
                         }
-                    }
-                })
-            }
-        />
-    };
+                    })
+                }
+            />
+        </DataLoadGuard>
+    );
 
     const primaryPost = data?.accounts?.[0]?.account_posts?.[0];
     const stableSharePath = primaryPost?.id_on_platform ? `/post/pk/${primaryPost.id_on_platform}` : undefined;

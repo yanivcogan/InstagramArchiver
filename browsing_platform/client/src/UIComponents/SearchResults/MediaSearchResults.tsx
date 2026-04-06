@@ -4,7 +4,57 @@ import dayjs from 'dayjs';
 import {SearchResult} from '../../services/DataFetcher';
 import {ITagWithType} from '../../types/tags';
 import {anchor_local_static_files} from '../../services/server';
-import {SearchResultsProps} from './index';
+import {SearchResultsProps} from './types';
+
+function MediaHoverOverlay({accountName, pubDate, tags}: {
+    accountName: string | null;
+    pubDate: string | null;
+    tags: ITagWithType[];
+}) {
+    return (
+        <Box
+            sx={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                width: '100%',
+                boxSizing: 'border-box',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: '#fff',
+                p: 1,
+                zIndex: 1,
+            }}
+        >
+            {accountName && (
+                <Typography variant="caption" display="block" noWrap>
+                    {accountName}
+                </Typography>
+            )}
+            {pubDate && (
+                <Typography variant="caption" display="block" noWrap>
+                    {pubDate}
+                </Typography>
+            )}
+            {tags.length > 0 && (
+                <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{mt: 0.5}}>
+                    {tags.map(t => (
+                        <Chip
+                            key={t.id}
+                            label={t.name}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                                fontSize: '0.65rem', height: 18, color: '#fff',
+                                borderColor: 'rgba(255,255,255,0.5)',
+                                '& .MuiChip-label': {px: 0.75},
+                            }}
+                        />
+                    ))}
+                </Stack>
+            )}
+        </Box>
+    );
+}
 
 interface CellProps {
     result: SearchResult;
@@ -99,47 +149,7 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellP
                         )
                     )}
                     <Fade in={hovered} timeout={300}>
-                        <Box
-                            sx={{
-                                position: 'absolute',
-                                bottom: 0,
-                                left: 0,
-                                width: '100%',
-                                boxSizing: 'border-box',
-                                backgroundColor: 'rgba(0,0,0,0.7)',
-                                color: '#fff',
-                                p: 1,
-                                zIndex: 1,
-                            }}
-                        >
-                            {accountName && (
-                                <Typography variant="caption" display="block" noWrap>
-                                    {accountName}
-                                </Typography>
-                            )}
-                            {pubDate && (
-                                <Typography variant="caption" display="block" noWrap>
-                                    {pubDate}
-                                </Typography>
-                            )}
-                            {tags.length > 0 && (
-                                <Stack direction="row" gap={0.5} flexWrap="wrap" sx={{mt: 0.5}}>
-                                    {tags.map(t => (
-                                        <Chip
-                                            key={t.id}
-                                            label={t.name}
-                                            size="small"
-                                            variant="outlined"
-                                            sx={{
-                                                fontSize: '0.65rem', height: 18, color: '#fff',
-                                                borderColor: 'rgba(255,255,255,0.5)',
-                                                '& .MuiChip-label': {px: 0.75},
-                                            }}
-                                        />
-                                    ))}
-                                </Stack>
-                            )}
-                        </Box>
+                        <MediaHoverOverlay accountName={accountName} pubDate={pubDate} tags={tags}/>
                     </Fade>
                 </Box>
             </a>

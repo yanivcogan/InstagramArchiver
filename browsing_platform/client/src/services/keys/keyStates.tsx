@@ -1,17 +1,17 @@
 import React, {createContext, useContext, useEffect, useState} from 'react';
 
 // Define the shape of the key state context
-export interface KeyStatesContextType {
+interface KeyStatesContextType {
   shiftKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
 }
 
 // Create the context
-export const KeyStatesContext = createContext<KeyStatesContextType | undefined>(undefined);
+const KeyStatesContext = createContext<KeyStatesContextType | undefined>(undefined);
 
 // Custom hook to use the KeyStatesContext
-export const useKeyStates = () => {
+const useKeyStates = () => {
   const context = useContext(KeyStatesContext);
   if (context === undefined) {
     throw new Error('useKeyStates must be used within a KeyStatesProvider');

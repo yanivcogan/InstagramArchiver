@@ -19,6 +19,53 @@ import {anchor_local_static_files} from "../../services/server";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import {deleteMediaPart, saveMediaPart} from "../../services/DataSaver";
 
+function CropOverlayMedia({mediaType, localUrl, videoRef, imageRef, cropArea, onLoaded}: {
+    mediaType: string;
+    localUrl: string | undefined;
+    videoRef: React.RefObject<HTMLVideoElement | null>;
+    imageRef: React.RefObject<HTMLImageElement | null>;
+    cropArea: number[] | undefined;
+    onLoaded: () => void;
+}) {
+    return (
+        <Box
+            sx={{
+                cursor: "pointer", position: "relative", overflow: "hidden",
+                "::after": {
+                    content: '""',
+                    position: 'absolute',
+                    top: `${100 - (cropArea?.[3] || 0)}%`,
+                    left: `${cropArea?.[0]}%`,
+                    height: `${(cropArea?.[3] || 0) - (cropArea?.[2] || 0)}%`,
+                    width: `${(cropArea?.[1] || 0) - (cropArea?.[0] || 0)}%`,
+                    pointerEvents: 'none',
+                    boxShadow: "0 0 0 9999px rgba(0, 100, 200, 0.4)"
+                },
+            }}
+        >
+            {mediaType === "video" && (
+                <video
+                    ref={videoRef}
+                    src={localUrl}
+                    style={{backgroundColor: '#000'}}
+                    controls
+                    width={300}
+                    onLoadedMetadata={onLoaded}
+                />
+            )}
+            {mediaType === "image" && (
+                <img
+                    ref={imageRef}
+                    src={localUrl}
+                    alt="photo"
+                    width={300}
+                    onLoad={onLoaded}
+                />
+            )}
+        </Box>
+    );
+}
+
 interface IProps {
     media: IMedia
     mediaPart: IMediaPart
@@ -105,45 +152,14 @@ export default function MediaPart({media, mediaPart: mediaPartProp, refetchMedia
             sx={{height: `calc(${mediaHeight}px + 2.2em)`}}
         >
             <Stack direction={"column"} gap={1}>
-                <Box
-                    sx={{
-                        cursor: "pointer", position: "relative", overflow: "hidden",
-                        "::after": {
-                            content: '""',
-                            position: 'absolute',
-                            top: `${100 - (mediaPart.crop_area?.[3] || 0)}%`,
-                            left: `${mediaPart.crop_area?.[0]}%`,
-                            height: `${(mediaPart.crop_area?.[3] || 0) - (mediaPart.crop_area?.[2] || 0)}%`,
-                            width: `${(mediaPart.crop_area?.[1] || 0) - (mediaPart.crop_area?.[0] || 0)}%`,
-                            pointerEvents: 'none',
-                            boxShadow: "0 0 0 9999px rgba(0, 100, 200, 0.4)"
-                        },
-                    }}
-                >
-                    {
-                        media.media_type === "video" ?
-                            <video
-                                ref={videoRef}
-                                src={localUrl}
-                                style={{backgroundColor: '#000'}}
-                                controls
-                                width={300}
-                                onLoadedMetadata={handleMediaLoaded}
-                            /> :
-                            null
-                    }
-                    {
-                        media.media_type === "image" ?
-                            <img
-                                ref={imageRef}
-                                src={localUrl}
-                                alt={"photo"}
-                                width={300}
-                                onLoad={handleMediaLoaded}
-                            /> :
-                            null
-                    }
-                </Box>
+                <CropOverlayMedia
+                    mediaType={media.media_type}
+                    localUrl={localUrl}
+                    videoRef={videoRef}
+                    imageRef={imageRef}
+                    cropArea={mediaPart.crop_area}
+                    onLoaded={handleMediaLoaded}
+                />
                 <Slider
                     value={[mediaPart.crop_area?.[0] || 0, mediaPart.crop_area?.[1] || 100]}
                     onChange={(_, value) => {

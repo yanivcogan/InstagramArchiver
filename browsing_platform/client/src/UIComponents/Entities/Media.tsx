@@ -61,6 +61,19 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
     const shareToken = getShareTokenFromHref();
     const compactMode = !!(viewerConfig?.post?.compactMode);
 
+    const videoContainerSx = {
+        position: 'relative', display: 'block',
+        '@keyframes mediaPlaceholderPulse': {
+            '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
+        },
+        ...viewerConfig?.media?.style,
+        ...(!thumbnailLoaded && {
+            aspectRatio: '1 / 1',
+            backgroundColor: 'action.hover',
+            animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
+        }),
+    };
+
     return <div>
         <Box
             sx={{cursor: onMediaPage ? "default" : "pointer", position: "relative"}}
@@ -89,18 +102,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                 media.media_type === "video" ? (
                     compactMode ? (
                         // Compact: thumbnail background + silent hover-play overlay; no controls
-                        <Box sx={{
-                            position: 'relative', display: 'block',
-                            '@keyframes mediaPlaceholderPulse': {
-                                '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
-                            },
-                            ...viewerConfig?.media?.style,
-                            ...(!thumbnailLoaded && {
-                                aspectRatio: '1 / 1',
-                                backgroundColor: 'action.hover',
-                                animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
-                            }),
-                        }}>
+                        <Box sx={videoContainerSx}>
                             {thumbnailUrl && (
                                 <img src={thumbnailUrl} alt=""
                                      style={{
@@ -128,18 +130,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                         </Box>
                     ) : (
                         // Normal: full video player with controls
-                        <Box sx={{
-                            position: 'relative', display: 'block',
-                            '@keyframes mediaPlaceholderPulse': {
-                                '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
-                            },
-                            ...viewerConfig?.media?.style,
-                            ...(!thumbnailLoaded && {
-                                aspectRatio: '1 / 1',
-                                backgroundColor: 'action.hover',
-                                animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
-                            }),
-                        }}>
+                        <Box sx={videoContainerSx}>
                             {thumbnailUrl && (
                                 <img src={thumbnailUrl} alt="" style={{display: 'none'}}
                                      ref={(el) => {

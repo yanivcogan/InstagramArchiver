@@ -1,7 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {useMatch, useParams, useSearchParams} from "react-router";
 import {
-    Box,
     Button,
     CircularProgress,
     Collapse,
@@ -26,6 +25,7 @@ import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
 import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
 import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
+import DataLoadGuard from "./DataLoadGuard";
 import cookie from "js-cookie";
 import {getShareTokenFromHref} from "../services/linkSharing";
 
@@ -144,44 +144,35 @@ export default function AccountPage() {
         if (next) loadTagStats();
     };
 
-    const renderData = () => {
-        if (loadingData) {
-            return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
-                <CircularProgress/>
-            </Box>
-        }
-        if (fetchError) {
-            return <Typography color="text.secondary">{fetchError}</Typography>
-        }
-        if (!data) {
-            return <div>No data</div>
-        }
-        return <EntitiesViewer
-            entities={data}
-            highlightRelationId={highlightRelationId}
-            viewerConfig={
-                new EntityViewerConfig({
-                    all: {hideInnerLinks},
-                    account: {
-                        annotator: disableAnnotator ? "disable" : "show",
-                        postsPageSize: showAllPosts ? null : 10,
-                    },
-                    post: {
-                        annotator: "disable",
-                        compactMode,
-                    },
-                    media: {
-                        style: {
-                            maxWidth: '100%',
-                            maxHeight: '40vh',
-                            minHeight: '300px'
+    const renderData = () => (
+        <DataLoadGuard loadingData={loadingData} fetchError={fetchError} data={data}>
+            <EntitiesViewer
+                entities={data!}
+                highlightRelationId={highlightRelationId}
+                viewerConfig={
+                    new EntityViewerConfig({
+                        all: {hideInnerLinks},
+                        account: {
+                            annotator: disableAnnotator ? "disable" : "show",
+                            postsPageSize: showAllPosts ? null : 10,
                         },
-                        annotator: "disable",
-                    }
-                })
-            }
-        />
-    };
+                        post: {
+                            annotator: "disable",
+                            compactMode,
+                        },
+                        media: {
+                            style: {
+                                maxWidth: '100%',
+                                maxHeight: '40vh',
+                                minHeight: '300px'
+                            },
+                            annotator: "disable",
+                        }
+                    })
+                }
+            />
+        </DataLoadGuard>
+    );
 
     const primaryAccount = data?.accounts?.[0];
     const stableSharePath = primaryAccount?.id_on_platform ? `/account/pk/${primaryAccount.id_on_platform}` : undefined;

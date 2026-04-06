@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {useParams} from "react-router";
-import {Box, CircularProgress, Divider, Stack, Typography,} from "@mui/material";
+import {CircularProgress, Divider, Stack, Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchArchivingSession} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
@@ -9,6 +9,7 @@ import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsLis
 import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
 import cookie from "js-cookie";
 import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
+import DataLoadGuard from "./DataLoadGuard";
 import {getShareTokenFromHref} from "../services/linkSharing";
 
 export default function SessionPage() {
@@ -54,29 +55,20 @@ export default function SessionPage() {
         }
     }, [loadingData, id]);
 
-    const renderData = () => {
-        if (loadingData) {
-            return <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", height: "100%"}}>
-                <CircularProgress/>
-            </Box>
-        }
-        if (fetchError) {
-            return <Typography color="text.secondary">{fetchError}</Typography>
-        }
-        if (!data) {
-            return <div>No data</div>
-        }
-        return <EntitiesViewer
-            entities={data}
-            viewerConfig={
-                new EntityViewerConfig({
-                    media: {
-                        style: {maxWidth: '100%', maxHeight: '50vh'},
-                    }
-                })
-            }
-        />
-    };
+    const renderData = () => (
+        <DataLoadGuard loadingData={loadingData} fetchError={fetchError} data={data}>
+            <EntitiesViewer
+                entities={data!}
+                viewerConfig={
+                    new EntityViewerConfig({
+                        media: {
+                            style: {maxWidth: '100%', maxHeight: '50vh'},
+                        }
+                    })
+                }
+            />
+        </DataLoadGuard>
+    );
 
     const isLoggedIn = !!(cookie.get("token"));
     return <div className={"page-wrap"}>

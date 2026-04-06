@@ -17,12 +17,12 @@ export enum HTTP_METHODS {
     patch,
 }
 
-export interface IRequestOptions {
+interface IRequestOptions {
     ignoreErrors?: boolean,
     abortSignal?: AbortSignal,
 }
 
-export class ServerError extends Error {
+class ServerError extends Error {
     status: number;
 
     constructor(status: number, message: string) {

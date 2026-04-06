@@ -83,39 +83,32 @@ const getEmptyTree = (search_mode: T_Search_Mode): ImmutableTree => {
     })
 };
 
+const parseSearchMode = (raw: string | null): T_Search_Mode => {
+    const mode = raw || "accounts";
+    return SEARCH_MODES.map(m => m.key).includes(mode) ? mode as T_Search_Mode : "accounts";
+};
+
+const parseAdvancedFilters = (raw: string | null): JsonLogicFunction | null => {
+    if (!raw) return null;
+    try { return rison.decode(raw); } catch { return null; }
+};
+
+const parsePageInt = (raw: string | null, fallback: number, min: number): number => {
+    const n = parseInt(raw || String(fallback));
+    return isNaN(n) || n < min ? fallback : n;
+};
+
 const extractQueryFromParams = (searchParams: URLSearchParams): ISearchQuery => {
-    const search_term = searchParams.get("s") || "";
-    let search_mode = searchParams.get("sm") || "accounts";
-    if (!SEARCH_MODES.map(m => m.key).includes(search_mode)) {
-        search_mode = "accounts";
-    }
-    const advanced_filters_rison = searchParams.get("f") || null;
-    let advanced_filters: JsonLogicFunction | null = null;
-    if (advanced_filters_rison) {
-        try {
-            advanced_filters = rison.decode(advanced_filters_rison);
-        } catch (e) {
-            advanced_filters = null;
-        }
-    }
-    let page_number = parseInt(searchParams.get("p") || "1");
-    page_number = isNaN(page_number) || page_number < 1 ? 1 : page_number;
-    const modeDefault = defaultPageSize(search_mode as T_Search_Mode);
-    let page_size = parseInt(searchParams.get("ps") || String(modeDefault));
-    page_size = isNaN(page_size) || page_size < 20 ? modeDefault : page_size;
-    const tag_ids_raw = searchParams.get("t") || "";
-    const tag_ids = tag_ids_raw
-        ? tag_ids_raw.split(",").map(Number).filter(n => !isNaN(n) && n > 0)
-        : [];
-    const tag_filter_mode = (searchParams.get("tm") === "all" ? "all" : "any") as "any" | "all";
+    const search_mode = parseSearchMode(searchParams.get("sm"));
+    const modeDefault = defaultPageSize(search_mode);
     return {
-        search_term,
-        advanced_filters,
-        page_number,
-        page_size,
-        search_mode: search_mode as T_Search_Mode,
-        tag_ids,
-        tag_filter_mode,
+        search_term: searchParams.get("s") || "",
+        search_mode,
+        advanced_filters: parseAdvancedFilters(searchParams.get("f")),
+        page_number: parsePageInt(searchParams.get("p"), 1, 1),
+        page_size: parsePageInt(searchParams.get("ps"), modeDefault, 20),
+        tag_ids: (searchParams.get("t") || "").split(",").map(Number).filter(n => !isNaN(n) && n > 0),
+        tag_filter_mode: (searchParams.get("tm") === "all" ? "all" : "any") as "any" | "all",
     };
 };
 

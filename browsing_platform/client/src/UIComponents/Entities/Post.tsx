@@ -26,6 +26,74 @@ const HIGHLIGHT_STYLE: React.CSSProperties = {
     marginLeft: -4,
 };
 
+function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlightCommentId, commentRefs, postId, shareToken}: {
+    loadingComments: boolean;
+    commentsLoaded: boolean;
+    comments: IComment[] | null;
+    highlightCommentId?: number;
+    commentRefs: React.MutableRefObject<Map<number, HTMLElement>>;
+    postId?: number;
+    shareToken: string | null;
+}) {
+    return (
+        <>
+            {loadingComments && <CircularProgress size={16}/>}
+            {commentsLoaded && comments && comments.length > 0 && (
+                <Stack gap={0.5}>
+                    {comments.map((c, i) => (
+                        <div
+                            key={i}
+                            ref={c.id != null ? el => {
+                                if (el) commentRefs.current.set(c.id!, el);
+                            } : undefined}
+                            style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
+                        >
+                            <Comment comment={c} postId={postId} shareToken={shareToken}/>
+                        </div>
+                    ))}
+                </Stack>
+            )}
+            {commentsLoaded && (!comments || comments.length === 0) && (
+                <Typography variant="caption" color="text.secondary">No comments</Typography>
+            )}
+        </>
+    );
+}
+
+function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, likeRefs, postId, shareToken}: {
+    loadingLikes: boolean;
+    likesLoaded: boolean;
+    likes: IPostLike[] | null;
+    highlightLikeId?: number;
+    likeRefs: React.MutableRefObject<Map<number, HTMLElement>>;
+    postId?: number;
+    shareToken: string | null;
+}) {
+    return (
+        <>
+            {loadingLikes && <CircularProgress size={16}/>}
+            {likesLoaded && likes && likes.length > 0 && (
+                <Stack gap={0.5}>
+                    {likes.map((l, i) => (
+                        <div
+                            key={i}
+                            ref={l.id != null ? el => {
+                                if (el) likeRefs.current.set(l.id!, el);
+                            } : undefined}
+                            style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
+                        >
+                            <PostLike like={l} postId={postId} shareToken={shareToken}/>
+                        </div>
+                    ))}
+                </Stack>
+            )}
+            {likesLoaded && (!likes || likes.length === 0) && (
+                <Typography variant="caption" color="text.secondary">No likes</Typography>
+            )}
+        </>
+    );
+}
+
 interface IProps {
     post: IPostAndAssociatedEntities
     viewerConfig?: EntityViewerConfig
@@ -271,50 +339,26 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                 <Collapse in={activeTab !== null}>
                     <Box sx={{mt: 1}}>
                         {activeTab === 'comments' && (
-                            <>
-                                {loadingComments && <CircularProgress size={16}/>}
-                                {commentsLoaded && comments && comments.length > 0 && (
-                                    <Stack gap={0.5}>
-                                        {comments.map((c, i) => (
-                                            <div
-                                                key={i}
-                                                ref={c.id != null ? el => {
-                                                    if (el) commentRefs.current.set(c.id!, el);
-                                                } : undefined}
-                                                style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
-                                            >
-                                                <Comment comment={c} postId={post.id} shareToken={shareToken}/>
-                                            </div>
-                                        ))}
-                                    </Stack>
-                                )}
-                                {commentsLoaded && (!comments || comments.length === 0) && (
-                                    <Typography variant="caption" color="text.secondary">No comments</Typography>
-                                )}
-                            </>
+                            <PostCommentsPanel
+                                loadingComments={loadingComments}
+                                commentsLoaded={commentsLoaded}
+                                comments={comments}
+                                highlightCommentId={highlightCommentId}
+                                commentRefs={commentRefs}
+                                postId={post.id}
+                                shareToken={shareToken}
+                            />
                         )}
                         {activeTab === 'likes' && (
-                            <>
-                                {loadingLikes && <CircularProgress size={16}/>}
-                                {likesLoaded && likes && likes.length > 0 && (
-                                    <Stack gap={0.5}>
-                                        {likes.map((l, i) => (
-                                            <div
-                                                key={i}
-                                                ref={l.id != null ? el => {
-                                                    if (el) likeRefs.current.set(l.id!, el);
-                                                } : undefined}
-                                                style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
-                                            >
-                                                <PostLike like={l} postId={post.id} shareToken={shareToken}/>
-                                            </div>
-                                        ))}
-                                    </Stack>
-                                )}
-                                {likesLoaded && (!likes || likes.length === 0) && (
-                                    <Typography variant="caption" color="text.secondary">No likes</Typography>
-                                )}
-                            </>
+                            <PostLikesPanel
+                                loadingLikes={loadingLikes}
+                                likesLoaded={likesLoaded}
+                                likes={likes}
+                                highlightLikeId={highlightLikeId}
+                                likeRefs={likeRefs}
+                                postId={post.id}
+                                shareToken={shareToken}
+                            />
                         )}
                         {activeTab === 'raw' && (
                             <>

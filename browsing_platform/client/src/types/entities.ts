@@ -1,6 +1,6 @@
 import {ITagWithType} from "./tags";
 
-export interface IEntityBase {
+interface IEntityBase {
     id?: number;
     created_at?: string; // ISO date string
     updated_at?: string;
@@ -8,7 +8,7 @@ export interface IEntityBase {
     tags?: ITagWithType[];
 }
 
-export interface IAccount extends IEntityBase {
+interface IAccount extends IEntityBase {
     id_on_platform?: string;
     url: string;
     url_suffix: string;
@@ -18,7 +18,7 @@ export interface IAccount extends IEntityBase {
     identifiers?: string[]
 }
 
-export interface IPost extends IEntityBase {
+interface IPost extends IEntityBase {
     id_on_platform: string;
     url?: string;
     url_suffix: string;
@@ -30,7 +30,7 @@ export interface IPost extends IEntityBase {
     data?: any;
 }
 
-export type EMediaType = 'video' | 'audio' | 'image';
+type EMediaType = 'video' | 'audio' | 'image';
 
 export interface IMedia extends IEntityBase {
     id_on_platform?: string;
@@ -109,7 +109,7 @@ export interface ITaggedAccount extends IEntityBase {
     data?: any;
 }
 
-export interface IExtractedEntitiesFlattened {
+interface IExtractedEntitiesFlattened {
     accounts: IAccount[];
     posts: IPost[];
     media: IMedia[];
@@ -143,7 +143,7 @@ export interface IExtractedEntitiesNested {
     media: IMediaAndAssociatedEntities[];
 }
 
-export interface ISessionAttachments {
+interface ISessionAttachments {
     screen_recordings: string[];
     screen_shots: string[];
     wacz_archives: string[];
@@ -189,7 +189,7 @@ export interface IAccountInteractions {
     tagged_in: ITaggedAccount[];
 }
 
-export interface IAccountInteractionCounts {
+interface IAccountInteractionCounts {
     comments_count: number;
     likes_count: number;
     tagged_in_count: number;

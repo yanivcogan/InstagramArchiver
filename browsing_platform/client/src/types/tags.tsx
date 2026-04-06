@@ -23,7 +23,7 @@ export interface ITagType {
     entity_affinity?: string[] | null;
 }
 
-export interface ITagParent {
+interface ITagParent {
     id: number;
     name: string;
 }

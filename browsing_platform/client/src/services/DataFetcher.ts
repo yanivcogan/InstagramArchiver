@@ -31,32 +31,24 @@ interface EntitiesTransformConfig {
     nested_entities_transform?: NestedEntitiesTransform | null;
 }
 
+const appendIfDefined = (params: URLSearchParams, key: string, value: string | boolean | null | undefined) => {
+    if (value !== undefined) params.append(key, value === null ? "" : String(value));
+};
+
 const transformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
     const params = new URLSearchParams();
     const shareToken = getShareTokenFromHref();
-    if (shareToken) {
-        params.append("st", shareToken);
+    if (shareToken) params.append("st", shareToken);
+    const f = config.flattened_entities_transform;
+    if (f) {
+        appendIfDefined(params, "lfr", f.local_files_root);
+        appendIfDefined(params, "mwf", f.retain_only_media_with_local_files);
+        appendIfDefined(params, "srd", f.strip_raw_data !== undefined ? (f.strip_raw_data ? "1" : "0") : undefined);
     }
-    if (config.flattened_entities_transform) {
-        const f = config.flattened_entities_transform;
-        if (f.local_files_root !== undefined) {
-            params.append("lfr", f.local_files_root || "");
-        }
-        if (f.retain_only_media_with_local_files !== undefined) {
-            params.append("mwf", String(f.retain_only_media_with_local_files));
-        }
-        if (f.strip_raw_data !== undefined) {
-            params.append("srd", f.strip_raw_data ? "1" : "0");
-        }
-    }
-    if (config.nested_entities_transform) {
-        const n = config.nested_entities_transform;
-        if (n.retain_only_posts_with_media !== undefined) {
-            params.append("pwm", String(n.retain_only_posts_with_media));
-        }
-        if (n.retain_only_accounts_with_posts !== undefined) {
-            params.append("awp", String(n.retain_only_accounts_with_posts));
-        }
+    const n = config.nested_entities_transform;
+    if (n) {
+        appendIfDefined(params, "pwm", n.retain_only_posts_with_media);
+        appendIfDefined(params, "awp", n.retain_only_accounts_with_posts);
     }
     return params.toString();
 }
@@ -91,10 +83,6 @@ export const fetchMediaData = async (mediaId: number): Promise<Record<string, un
 
 export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> => {
     return await server.get(`media/parts/${mediaId}/`);
-}
-
-export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<Record<string, unknown>> => {
-    return await server.get(`archiving_session/data/${archivingSessionId}/`);
 }
 
 export const fetchPostComments = async (postId: number): Promise<IComment[]> => {
