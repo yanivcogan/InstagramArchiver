@@ -16,6 +16,9 @@ from hashlib import md5
 from pathlib import Path
 from typing import Optional
 
+import base64
+import zipfile
+
 import cv2
 import numpy as np
 import ppdeep
@@ -185,18 +188,7 @@ def screen_record(output_path, stop_event, frame_hashes_path=None):
 
     if out is not None:
         out.release()
-
-    print("Re-encoding screen recording to H.264 for browser compatibility...")
-    try:
-        subprocess.run(
-            ["ffmpeg", "-i", raw_output_path, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", output_path],
-            check=True, capture_output=True
-        )
-        os.remove(raw_output_path)
-        print(f"Screen recording saved to {output_path}")
-    except Exception as e:
-        print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
-        shutil.move(raw_output_path, output_path)
+    print("Frame capture stopped.")
 
 
 def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
@@ -302,17 +294,98 @@ def get_storage_config() -> Optional[StorageConfig]:
     return StorageConfig(**storage_config_dict)
 
 
+def merge_har_attachments(har_path: Path) -> None:
+    """
+    Playwright's record_har_content="attach" mode writes response bodies to a
+    companion zip file instead of inlining them in the HAR JSON.  This avoids
+    the V8 "Invalid string length" crash for large sessions.  Call this after
+    context.close() to reconstruct a standard self-contained HAR and remove
+    the zip.  No-op if the zip does not exist.
+    """
+    zip_path = Path(str(har_path) + ".zip")
+    if not zip_path.exists():
+        return
+
+    print("Merging HAR attachments into self-contained HAR...")
+    temp_path = har_path.with_suffix('.tmp.har')
+
+    # Read the small header fields (version, creator, browser, pages) via
+    # separate streaming passes.  These sections are always tiny regardless of
+    # session length; only the entries array grows large.
+    with open(har_path, 'rb') as f:
+        version = next(ijson.items(f, 'log.version'), '1.2')
+    with open(har_path, 'rb') as f:
+        creator = next(ijson.items(f, 'log.creator'), {})
+    with open(har_path, 'rb') as f:
+        browser = next(ijson.items(f, 'log.browser'), None)
+    with open(har_path, 'rb') as f:
+        pages = list(ijson.items(f, 'log.pages.item'))
+
+    # Stream entries one-by-one and write the merged HAR incrementally so that
+    # neither the reader nor the writer needs the full document in memory at once.
+    with open(har_path, 'rb') as har_f, \
+         zipfile.ZipFile(zip_path, 'r') as zf, \
+         open(temp_path, 'w', encoding='utf-8') as out_f:
+
+        out_f.write('{"log":{')
+        out_f.write(f'"version":{json.dumps(version)}')
+        out_f.write(f',"creator":{json.dumps(creator, ensure_ascii=False)}')
+        if browser is not None:
+            out_f.write(f',"browser":{json.dumps(browser, ensure_ascii=False)}')
+        out_f.write(f',"pages":{json.dumps(pages, ensure_ascii=False)}')
+        out_f.write(',"entries":[')
+
+        first = True
+        for entry in ijson.items(har_f, 'log.entries.item'):
+            content = entry.get('response', {}).get('content', {})
+            file_ref = content.pop('_file', None)
+            if file_ref is not None:
+                try:
+                    body_bytes = zf.read(file_ref)
+                    mime = content.get('mimeType', '')
+                    is_text = (
+                        mime.startswith('text/') or
+                        'json' in mime or
+                        'xml' in mime or
+                        'javascript' in mime
+                    )
+                    if is_text:
+                        try:
+                            content['text'] = body_bytes.decode('utf-8')
+                        except UnicodeDecodeError:
+                            content['text'] = base64.b64encode(body_bytes).decode('ascii')
+                            content['encoding'] = 'base64'
+                    else:
+                        content['text'] = base64.b64encode(body_bytes).decode('ascii')
+                        content['encoding'] = 'base64'
+                except KeyError:
+                    pass
+
+            if not first:
+                out_f.write(',')
+            out_f.write(json.dumps(entry, ensure_ascii=False))
+            first = False
+
+        out_f.write(']}}')
+
+    har_path.unlink()
+    temp_path.rename(har_path)
+    zip_path.unlink()
+    print("HAR merge complete.")
+
+
 def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
     context.close()
     browser.close()
 
+    # Stop the recording loop. The thread now exits quickly (no FFmpeg inside it).
     if stop_event is not None:
         stop_event.set()
     if recording_thread.is_alive():
         recording_thread.join()
-        print("Recording finished.")
 
-    # archive signing dialog
+    # Show the dialog immediately — screen recording has stopped so the form
+    # won't be captured.
     storage_config = get_storage_config()
 
     if storage_config is None:
@@ -321,8 +394,25 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
             shutil.rmtree(archive_dir)
         return
 
-    # Hash and timestamp the screen recording
+    # Re-encode the raw screen recording to H.264 (was previously done inside
+    # the recording thread; moved here so the dialog could appear sooner).
     video_path = archive_dir / "screen_recording.mp4"
+    raw_video_path = archive_dir / "screen_recording_raw.mp4"
+    if raw_video_path.exists():
+        print("Re-encoding screen recording to H.264 for browser compatibility...")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-i", str(raw_video_path), "-c:v", "libx264",
+                 "-pix_fmt", "yuv420p", "-y", str(video_path)],
+                check=True, capture_output=True
+            )
+            raw_video_path.unlink()
+            print(f"Screen recording saved to {video_path}")
+        except Exception as e:
+            print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
+            shutil.move(str(raw_video_path), str(video_path))
+
+    # Hash and timestamp the screen recording
     if video_path.exists():
         with open(video_path, 'rb') as f:
             video_content = f.read()
@@ -355,6 +445,10 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
         except Exception as e:
             traceback.print_exc()
             print(f"❌ Error timestamping frame hashes file: {e}")
+
+    # Inline any response bodies that were written to a companion zip by
+    # record_har_content="attach", producing a standard self-contained HAR.
+    merge_har_attachments(metadata.har_archive)
 
     # Resolve all domains contacted during the session
     metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
@@ -503,6 +597,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
         context = browser.new_context(
             storage_state=storage_state,
             record_har_path=metadata.har_archive,
+            record_har_content="attach",
             record_video_dir=archive_dir / "screen_recordings",
         )
 
