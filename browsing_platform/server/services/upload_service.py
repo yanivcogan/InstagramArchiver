@@ -143,6 +143,12 @@ def _extract_and_verify_tar(archive_name: str) -> dict:
     tar_path = archive_dir / "_upload.tar"
 
     if not tar_path.exists():
+        state_dir = archive_dir / _TUS_STATE_DIR
+        state_count = len(list(state_dir.glob("*.json"))) if state_dir.exists() else 0
+        logger.error(
+            "_upload.tar missing for archive '%s'. archive_dir exists: %s, staging state files: %d",
+            archive_name, archive_dir.exists(), state_count,
+        )
         return {"status": "fail", "results": [{"path": "_upload.tar", "status": "missing"}]}
 
     try:

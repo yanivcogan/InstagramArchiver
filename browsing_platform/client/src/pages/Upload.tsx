@@ -297,6 +297,23 @@ function buildTarBlob(
 }
 
 const ITEMS_PER_PAGE = 10;
+const MAX_CONCURRENT_UPLOADS = 10;
+
+async function runConcurrently<T>(
+    tasks: (() => Promise<T>)[],
+    limit: number,
+): Promise<PromiseSettledResult<T>[]> {
+    const results: Promise<T>[] = [];
+    const executing = new Set<Promise<T>>();
+    for (const task of tasks) {
+        const p = Promise.resolve().then(task);
+        results.push(p);
+        executing.add(p);
+        p.finally(() => executing.delete(p));
+        if (executing.size >= limit) await Promise.race(executing).catch(() => {});
+    }
+    return Promise.allSettled(results);
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -566,9 +583,7 @@ export default function UploadPage() {
             if (cancelledRef.current) return;
             setArchiveStatus(archive.name, { status: 'uploading' });
 
-            if (archive.hasConflict && archive.resolution === 'overwrite') {
-                await apiDelete(`upload/staging/${archive.name}`).catch(() => {});
-            }
+            await apiDelete(`upload/staging/${archive.name}`).catch(() => {});
 
             try {
                 await uploadArchiveAsTar(archive);
@@ -596,7 +611,7 @@ export default function UploadPage() {
             }
         };
 
-        await Promise.allSettled(archivesToUpload.map(processArchive));
+        await runConcurrently(archivesToUpload.map(a => () => processArchive(a)), MAX_CONCURRENT_UPLOADS);
 
         if (elapsedIntervalRef.current) {
             clearInterval(elapsedIntervalRef.current);
@@ -637,6 +652,20 @@ export default function UploadPage() {
     // -----------------------------------------------------------------------
     // Retry failed archives
     // -----------------------------------------------------------------------
+
+    const cleanupFailed = async () => {
+        const failedArchives = archives.filter(a => a.status === 'failed');
+        await Promise.allSettled(
+            failedArchives.map(a => apiDelete(`upload/staging/${a.name}`).catch(() => {}))
+        );
+        const remaining = archives.filter(a => a.status !== 'failed');
+        if (remaining.length === 0 || remaining.every(a => a.status === 'skipped')) {
+            setArchives([]);
+            setPhase('idle');
+        } else {
+            setArchives(remaining);
+        }
+    };
 
     const retryFailed = () => {
         dragCounterRef.current = 0;
@@ -1092,9 +1121,14 @@ export default function UploadPage() {
                                         Upload more
                                     </Button>
                                     {failed > 0 && (
-                                        <Button variant="contained" color="warning" onClick={retryFailed}>
-                                            Retry failed
-                                        </Button>
+                                        <>
+                                            <Button variant="outlined" color="error" onClick={cleanupFailed}>
+                                                Clean up failed
+                                            </Button>
+                                            <Button variant="contained" color="warning" onClick={retryFailed}>
+                                                Retry failed
+                                            </Button>
+                                        </>
                                     )}
                                 </Stack>
                             </Stack>
