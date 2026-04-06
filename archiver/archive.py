@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Optional
 
 import base64
-import zipfile
 
 import cv2
 import numpy as np
@@ -294,37 +293,37 @@ def get_storage_config() -> Optional[StorageConfig]:
     return StorageConfig(**storage_config_dict)
 
 
-def merge_har_attachments(har_path: Path) -> None:
+def merge_har_attachments(har_path: Path) -> Path:
     """
-    Playwright's record_har_content="attach" mode writes response bodies to a
-    companion zip file instead of inlining them in the HAR JSON.  This avoids
-    the V8 "Invalid string length" crash for large sessions.  Call this after
-    context.close() to reconstruct a standard self-contained HAR and remove
-    the zip.  No-op if the zip does not exist.
+    Playwright's record_har_content="attach" mode writes each response body as
+    a separate file (named by content hash) in the same directory as the HAR,
+    and stores a "_file" reference in the HAR entry instead of an inline "text"
+    field.  This function inlines those bodies back into the HAR to produce a
+    standard self-contained file at har_path.parent.parent / "archive.har",
+    then removes the entire har_path.parent workspace directory.
+    Returns the path of the merged HAR.
+    If the HAR contains no "_file" references it is moved as-is and the
+    workspace is still removed.
     """
-    zip_path = Path(str(har_path) + ".zip")
-    if not zip_path.exists():
-        return
+    workspace_dir = har_path.parent
+    final_path = workspace_dir.parent / "archive.har"
+    temp_path = workspace_dir / "archive.tmp.har"
 
-    print("Merging HAR attachments into self-contained HAR...")
-    temp_path = har_path.with_suffix('.tmp.har')
+    # Read small header fields via separate streaming passes.  These sections
+    # are always tiny; only the entries array grows large.
+    with open(har_path, 'rb') as f:
+        version = next(ijson.items(f, 'log.version', use_float=True), '1.2')
+    with open(har_path, 'rb') as f:
+        creator = next(ijson.items(f, 'log.creator', use_float=True), {})
+    with open(har_path, 'rb') as f:
+        browser = next(ijson.items(f, 'log.browser', use_float=True), None)
+    with open(har_path, 'rb') as f:
+        pages = list(ijson.items(f, 'log.pages.item', use_float=True))
 
-    # Read the small header fields (version, creator, browser, pages) via
-    # separate streaming passes.  These sections are always tiny regardless of
-    # session length; only the entries array grows large.
-    with open(har_path, 'rb') as f:
-        version = next(ijson.items(f, 'log.version'), '1.2')
-    with open(har_path, 'rb') as f:
-        creator = next(ijson.items(f, 'log.creator'), {})
-    with open(har_path, 'rb') as f:
-        browser = next(ijson.items(f, 'log.browser'), None)
-    with open(har_path, 'rb') as f:
-        pages = list(ijson.items(f, 'log.pages.item'))
-
-    # Stream entries one-by-one and write the merged HAR incrementally so that
-    # neither the reader nor the writer needs the full document in memory at once.
+    # Stream entries one-by-one so neither reader nor writer needs the full
+    # document in memory at once.
+    attachment_count = 0
     with open(har_path, 'rb') as har_f, \
-         zipfile.ZipFile(zip_path, 'r') as zf, \
          open(temp_path, 'w', encoding='utf-8') as out_f:
 
         out_f.write('{"log":{')
@@ -336,12 +335,14 @@ def merge_har_attachments(har_path: Path) -> None:
         out_f.write(',"entries":[')
 
         first = True
-        for entry in ijson.items(har_f, 'log.entries.item'):
+        for entry in ijson.items(har_f, 'log.entries.item', use_float=True):
             content = entry.get('response', {}).get('content', {})
             file_ref = content.pop('_file', None)
             if file_ref is not None:
-                try:
-                    body_bytes = zf.read(file_ref)
+                attachment_count += 1
+                attachment_path = workspace_dir / file_ref
+                if attachment_path.exists():
+                    body_bytes = attachment_path.read_bytes()
                     mime = content.get('mimeType', '')
                     is_text = (
                         mime.startswith('text/') or
@@ -358,8 +359,6 @@ def merge_har_attachments(har_path: Path) -> None:
                     else:
                         content['text'] = base64.b64encode(body_bytes).decode('ascii')
                         content['encoding'] = 'base64'
-                except KeyError:
-                    pass
 
             if not first:
                 out_f.write(',')
@@ -368,10 +367,12 @@ def merge_har_attachments(har_path: Path) -> None:
 
         out_f.write(']}}')
 
-    har_path.unlink()
-    temp_path.rename(har_path)
-    zip_path.unlink()
+    # Move the merged HAR to the archive root and delete the whole workspace.
+    print(f"Merging HAR attachments into self-contained HAR ({attachment_count} attachments)...")
+    temp_path.rename(final_path)
+    shutil.rmtree(workspace_dir)
     print("HAR merge complete.")
+    return final_path
 
 
 def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
@@ -446,9 +447,9 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
             traceback.print_exc()
             print(f"❌ Error timestamping frame hashes file: {e}")
 
-    # Inline any response bodies that were written to a companion zip by
-    # record_har_content="attach", producing a standard self-contained HAR.
-    merge_har_attachments(metadata.har_archive)
+    # Inline response bodies from the har_workspace into a single self-contained
+    # HAR at archive_dir / "archive.har", then remove the workspace directory.
+    metadata.har_archive = merge_har_attachments(metadata.har_archive)
 
     # Resolve all domains contacted during the session
     metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
@@ -585,7 +586,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
             archiving_start_timestamp=archiving_start_timestamp,
             recording_start_timestamp=recording_start_timestamp,
             archiving_timezone=datetime.datetime.now().astimezone().tzname(),
-            har_archive=archive_dir / "archive.har",
+            har_archive=archive_dir / "har_workspace" / "archive.har",
             my_ip=my_public_ip,
             platform=get_system_info(),
             tls_cert=tls_cert,
