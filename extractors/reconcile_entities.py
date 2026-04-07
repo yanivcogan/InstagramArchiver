@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, TypeVar
+from typing import Optional, Callable, TypeVar, Any
 
 from extractors.entity_types import Account, Post, Media, Comment, Like, TaggedAccount, AccountRelation
 from root_anchor import ROOT_DIR, ROOT_ARCHIVES
@@ -9,7 +9,7 @@ from root_anchor import ROOT_DIR, ROOT_ARCHIVES
 T = TypeVar('T')
 
 
-def is_empty(value: Optional[any]) -> bool:
+def is_empty(value: Optional[Any]) -> bool:
     if value is None:
         return True
     if isinstance(value, (list, dict)):
@@ -19,7 +19,7 @@ def is_empty(value: Optional[any]) -> bool:
     return False
 
 
-def reconcile_primitives(a: Optional[any], b: Optional[any]) -> Optional[any]:
+def reconcile_primitives(a: Optional[Any], b: Optional[Any]) -> Optional[Any]:
     """Return the first non-empty value; prefer a over b."""
     is_empty_a = is_empty(a)
     is_empty_b = is_empty(b)
