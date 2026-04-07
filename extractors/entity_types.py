@@ -16,6 +16,8 @@ _PLATFORM_CDN_PREFIXES = {
     'instagram': 'https://scontent.cdninstagram.com/v/',
 }
 
+t_platform = Literal['instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads']
+
 
 def reconstruct_url(suffix: Optional[str], platform: Optional[str], is_media: bool = False) -> Optional[str]:
     if suffix is None:
@@ -106,7 +108,7 @@ class EntityBase(BaseModel):
 class Account(EntityBase):
     id_on_platform: Optional[str] = None
     url_suffix: Optional[str] = Field(None, max_length=200)
-    platform: Optional[str] = None
+    platform: t_platform
     display_name: Optional[str] = Field(None, max_length=100)
     identifiers: Optional[list] = None
     bio: Optional[str] = Field(None, max_length=200)
@@ -154,7 +156,7 @@ class Account(EntityBase):
 class Post(EntityBase):
     id_on_platform: Optional[str] = None
     url_suffix: Optional[str] = Field(None, max_length=250)
-    platform: Optional[str] = None
+    platform: t_platform
     account_id: Optional[int] = None
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url_suffix: Optional[str] = Field(None, max_length=200)
@@ -223,7 +225,7 @@ t_media_type = Literal['video', 'audio', 'image']
 class Media(EntityBase):
     id_on_platform: Optional[str] = None
     url_suffix: Optional[str] = Field(None, max_length=250)
-    platform: Optional[str] = None
+    platform: t_platform
     post_id: Optional[int] = None
     post_id_on_platform: Optional[str] = None
     post_url_suffix: Optional[str] = Field(None, max_length=250)
@@ -232,7 +234,7 @@ class Media(EntityBase):
     data: Optional[Any] = None
     annotation: Optional[str] = None
     thumbnail_path: Optional[str] = None
-    thumbnail_status: Optional[str] = None
+    thumbnail_status: Literal['pending', 'generated', 'not_needed', 'error'] = "pending"
 
     @computed_field
     @property
@@ -271,7 +273,7 @@ class Media(EntityBase):
 class Comment(EntityBase):
     id_on_platform: Optional[str] = None
     url_suffix: Optional[str] = Field(None, max_length=250)
-    platform: Optional[str] = None
+    platform: t_platform
     post_id_on_platform: Optional[str] = Field(None, max_length=250)
     post_url_suffix: Optional[str] = Field(None, max_length=250)
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
@@ -327,7 +329,7 @@ class Like(EntityBase):
     id_on_platform: Optional[str] = None
     post_id_on_platform: Optional[str] = None
     post_url_suffix: Optional[str] = Field(None, max_length=250)
-    platform: Optional[str] = None
+    platform: t_platform
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url_suffix: Optional[str] = Field(None, max_length=200)
     account_display_name: Optional[str] = Field(None, max_length=100)
@@ -388,7 +390,7 @@ class AccountRelation(EntityBase):
     followed_account_id_on_platform: Optional[str] = Field(None, max_length=100)
     followed_account_url_suffix: Optional[str] = Field(None, max_length=200)
     followed_account_display_name: Optional[str] = Field(None, max_length=100)
-    platform: Optional[str] = None
+    platform: t_platform
     relation_type: Optional[t_relation_type] = None
     data: Optional[Any] = None
 
@@ -444,7 +446,7 @@ class TaggedAccount(EntityBase):
     tagged_account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     media_id: Optional[int] = None
-    platform: Optional[str] = None
+    platform: t_platform
     context_post_url_suffix: Optional[str] = Field(None, max_length=250)
     context_media_url_suffix: Optional[str] = Field(None, max_length=250)
     context_post_id_on_platform: Optional[str] = Field(None, max_length=250)
