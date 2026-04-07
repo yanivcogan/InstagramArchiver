@@ -7,12 +7,17 @@ streamed, the resulting fMP4 file contained a truncated mdat whose declared
 size exceeded the bytes actually available, making the file unplayable.
 
 This migration:
-  1. Scans all media_archive rows that reference a .mp4 local_url
+  1. Scans all media_archive rows that reference a .mp4 local_url (in batches
+     of 1,000 to avoid loading the full table into memory)
   2. Checks each file for the specific corruption signature: an mdat box whose
      declared size exceeds the remaining file bytes (pure-Python, no ffmpeg)
   3. For each broken file, moves it to a _broken_videos/ subdirectory (preserves
      it for rollback), then re-runs the HAR-based extraction for that video
   4. Updates media_archive.local_url if the new file has a different name
+  5. Resets incorporation_status to 'pending' for every affected archive session
+     so entity extraction re-runs with the fixed files on the next full pipeline run
+  6. Resets thumbnail_status / thumbnail_path for every affected canonical media
+     entry so thumbnails regenerate from the fixed files
 """
 
 import os
@@ -24,6 +29,9 @@ from typing import Optional
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.extract_videos import extract_video_maps, save_fetched_asset
 from root_anchor import ROOT_ARCHIVES
+
+
+SCAN_BATCH = 1_000   # rows per page when scanning media_archive
 
 
 # ---------------------------------------------------------------------------
@@ -103,40 +111,48 @@ def run(cnx):
     cur = cnx.cursor()
     try:
         # ------------------------------------------------------------------ #
-        # Step 1: Find all media_archive rows with a .mp4 local_url
+        # Step 1: Scan media_archive in batches, detect broken files
         # ------------------------------------------------------------------ #
-        cur.execute(
-            """SELECT ma.id, ma.local_url, ma.archive_session_id,
-                      s.archive_location
-               FROM media_archive ma
-               JOIN archive_session s ON s.id = ma.archive_session_id
-               WHERE ma.local_url IS NOT NULL
-                 AND ma.local_url LIKE '%.mp4%'
-                 AND s.source_type = 'local_har'"""
-        )
-        rows = cur.fetchall()
-        print(f"    V021: checking {len(rows)} media_archive video entries")
-
-        # ------------------------------------------------------------------ #
-        # Step 2: Detect broken files and group by archive_session_id
-        # ------------------------------------------------------------------ #
-        # broken_by_session: session_id -> list of (ma_id, local_url, archive_location, asset_id)
+        # broken_by_session: session_id -> [(ma_id, local_url, archive_location, asset_id, canonical_id)]
         broken_by_session: dict[int, list] = defaultdict(list)
+        offset = 0
+        total_scanned = 0
 
-        for row in rows:
-            ma_id, local_url, session_id, archive_location = row
-            file_path = _resolve_local_url(local_url)
-            if file_path is None or not file_path.exists():
-                continue
-            if _is_fmp4_truncated(file_path):
-                asset_id = _extract_asset_id(file_path.name)
-                if asset_id:
-                    broken_by_session[session_id].append(
-                        (ma_id, local_url, archive_location, asset_id)
-                    )
+        while True:
+            cur.execute(
+                """SELECT ma.id, ma.local_url, ma.archive_session_id,
+                          s.archive_location, ma.canonical_id
+                   FROM media_archive ma
+                   JOIN archive_session s ON s.id = ma.archive_session_id
+                   WHERE ma.local_url IS NOT NULL
+                     AND ma.local_url LIKE '%.mp4%'
+                     AND s.source_type = 'local_har'
+                   ORDER BY ma.id
+                   LIMIT %s OFFSET %s""",
+                (SCAN_BATCH, offset),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                break
+
+            for ma_id, local_url, session_id, archive_location, canonical_id in rows:
+                file_path = _resolve_local_url(local_url)
+                if file_path is None or not file_path.exists():
+                    continue
+                if _is_fmp4_truncated(file_path):
+                    asset_id = _extract_asset_id(file_path.name)
+                    if asset_id:
+                        broken_by_session[session_id].append(
+                            (ma_id, local_url, archive_location, asset_id, canonical_id)
+                        )
+
+            total_scanned += len(rows)
+            print(f"    V021: scanned {total_scanned} entries so far …")
+            offset += SCAN_BATCH
 
         total_broken = sum(len(v) for v in broken_by_session.values())
-        print(f"    V021: found {total_broken} broken video file(s) across "
+        print(f"    V021: scanned {total_scanned} total entries; "
+              f"found {total_broken} broken video file(s) across "
               f"{len(broken_by_session)} archive session(s)")
 
         if not broken_by_session:
@@ -144,14 +160,15 @@ def run(cnx):
             return
 
         # ------------------------------------------------------------------ #
-        # Step 3: Per session — parse HAR once, re-extract broken videos
+        # Step 2: Per session — parse HAR once, re-extract broken videos
         # ------------------------------------------------------------------ #
         fixed_count = 0
         skipped_count = 0
+        affected_session_ids: set[int] = set()
+        affected_canonical_ids: set[int] = set()
 
         for session_id, broken_entries in broken_by_session.items():
-            # Resolve archive directory and HAR path from the first entry's
-            # archive_location (all entries in this session share it)
+            # All entries in this session share the same archive_location
             archive_location = broken_entries[0][2]
             archive_location_parts = archive_location.split("/", 1)
             if len(archive_location_parts) < 2:
@@ -174,12 +191,10 @@ def run(cnx):
                 skipped_count += len(broken_entries)
                 continue
 
-            # Build a lookup: asset_id -> Video
             video_by_asset_id = {v.xpv_asset_id: v for v in har_videos}
-
             broken_dir = archive_dir / "_broken_videos"
 
-            for ma_id, local_url, _, asset_id in broken_entries:
+            for ma_id, local_url, _, asset_id, canonical_id in broken_entries:
                 video = video_by_asset_id.get(asset_id)
                 if video is None:
                     print(f"    V021: asset {asset_id} not found in HAR (may have been a full download), skipping")
@@ -193,7 +208,6 @@ def run(cnx):
                 for candidate in list(archive_dir.iterdir()):
                     if candidate.is_file() and _extract_asset_id(candidate.name) == asset_id:
                         dest = broken_dir / candidate.name
-                        # Avoid overwriting a previously preserved copy
                         if dest.exists():
                             dest = broken_dir / (candidate.stem + "_dup" + candidate.suffix)
                         os.rename(candidate, dest)
@@ -225,12 +239,42 @@ def run(cnx):
                     )
                     print(f"    V021: updated media_archive {ma_id}: {local_url} → {new_local_url}")
 
+                affected_session_ids.add(session_id)
+                affected_canonical_ids.add(canonical_id)
                 fixed_count += 1
 
             # Commit after each session so progress survives partial failures
             cnx.commit()
 
-        print(f"    V021: done — fixed {fixed_count}, skipped {skipped_count}")
+        print(f"    V021: re-extraction done — fixed {fixed_count}, skipped {skipped_count}")
+
+        # ------------------------------------------------------------------ #
+        # Step 3: Reset incorporation_status for affected archive sessions
+        # ------------------------------------------------------------------ #
+        if affected_session_ids:
+            ph = ','.join(['%s'] * len(affected_session_ids))
+            cur.execute(
+                f"UPDATE archive_session SET incorporation_status = 'pending' WHERE id IN ({ph})",
+                list(affected_session_ids),
+            )
+            cnx.commit()
+            print(f"    V021: reset incorporation_status to 'pending' for {cur.rowcount} session(s)")
+
+        # ------------------------------------------------------------------ #
+        # Step 4: Reset thumbnail status for affected canonical media entries
+        # ------------------------------------------------------------------ #
+        if affected_canonical_ids:
+            ph = ','.join(['%s'] * len(affected_canonical_ids))
+            cur.execute(
+                f"""UPDATE media
+                    SET thumbnail_status = 'pending', thumbnail_path = NULL
+                    WHERE id IN ({ph})""",
+                list(affected_canonical_ids),
+            )
+            cnx.commit()
+            print(f"    V021: reset thumbnail_status to 'pending' for {cur.rowcount} media entry/entries")
+
+        print("    V021: done")
 
     finally:
         cur.close()
