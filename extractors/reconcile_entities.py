@@ -109,6 +109,8 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     existing_size = _local_url_size(existing_media.local_url)
     if new_size > existing_size:
         existing_media.local_url = new_media.local_url
+        existing_media.thumbnail_path = None
+        existing_media.thumbnail_status = 'pending'
     else:
         existing_media.local_url = reconcile_primitives(existing_media.local_url, new_media.local_url)
     existing_media.media_type = reconcile_primitives(existing_media.media_type, new_media.media_type)
