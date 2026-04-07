@@ -173,6 +173,9 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
     const [activeTab, setActiveTab] = useState<'comments' | 'likes' | 'raw' | null>(
         highlightCommentId ? 'comments' : highlightLikeId ? 'likes' : null
     );
+    const handleTabToggle = (tab: 'comments' | 'likes' | 'raw') => () => {
+        if (activeTab === tab) setActiveTab(null);
+    };
 
     useEffect(() => {
         if (activeTab === 'comments') loadComments();
@@ -311,9 +314,7 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                             value="comments"
                             label={commentsLabel}
                             icon={<ChatBubble/>} iconPosition="start"
-                            onClick={() => {
-                                if (activeTab === 'comments') setActiveTab(null);
-                            }}
+                            onClick={handleTabToggle('comments')}
                         />
                     )}
                     {post.id != null && (
@@ -321,18 +322,14 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                             value="likes"
                             label={likesLabel}
                             icon={<Favorite/>} iconPosition="start"
-                            onClick={() => {
-                                if (activeTab === 'likes') setActiveTab(null);
-                            }}
+                            onClick={handleTabToggle('likes')}
                         />
                     )}
                     <Tab
                         value="raw"
                         label="Raw Data"
                         icon={<DataObject/>} iconPosition="start"
-                        onClick={() => {
-                            if (activeTab === 'raw') setActiveTab(null);
-                        }}
+                        onClick={handleTabToggle('raw')}
                     />
                 </Tabs>
 

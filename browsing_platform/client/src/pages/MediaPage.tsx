@@ -1,9 +1,8 @@
 import React, {useEffect, useMemo} from 'react';
 import {useParams} from "react-router";
-import {CircularProgress, Divider, Stack, Typography,} from "@mui/material";
+import {Typography,} from "@mui/material";
 import {fetchArchivingSessionsMedia, fetchMedia} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
-import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
 import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
 import cookie from "js-cookie";
@@ -11,6 +10,7 @@ import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
 import DataLoadGuard from "./DataLoadGuard";
 import {getShareTokenFromHref} from "../services/linkSharing";
 import {useEntityPageState} from "./useEntityPageState";
+import PageShell, {PageSubtitleLoading} from "./PageShell";
 
 export default function MediaPage() {
     const {id: idParam, platformId} = useParams();
@@ -76,27 +76,16 @@ export default function MediaPage() {
 
     const primaryMedia = data?.accounts?.[0]?.account_posts?.[0]?.post_media?.[0];
     const stableSharePath = primaryMedia?.id_on_platform ? `/media/pk/${primaryMedia.id_on_platform}` : undefined;
-
     const isLoggedIn = !!(cookie.get("token"));
-    return <div className={"page-wrap"}>
-        <TopNavBar hideMenuButton={hideHeader}>
-            <Stack direction={"row"} alignItems={"center"} justifyContent={"space-between"} gap={1} sx={{width: '100%'}}>
-                <Stack direction={"row"} alignItems={"center"} gap={1}>
-                    <Typography>Media Data</Typography>
-                    {
-                        data ?
-                            <Typography>{primaryMedia?.url}</Typography> :
-                            <CircularProgress color={"primary"} size={"16"}/>
-                    }
-                </Stack>
-                {isLoggedIn && dbId ? <LinkSharing entityType={"media"} entityId={dbId} stableSharePath={stableSharePath}/> : null}
-            </Stack>
-        </TopNavBar>
-        <div className={"page-content content-wrap"}>
-            <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
-                {renderData()}
-                {!fetchError && <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>}
-            </Stack>
-        </div>
-    </div>
+    return (
+        <PageShell
+            hideMenu={hideHeader}
+            title="Media Data"
+            subtitle={<PageSubtitleLoading data={data}><Typography>{primaryMedia?.url}</Typography></PageSubtitleLoading>}
+            headerRight={isLoggedIn && dbId ? <LinkSharing entityType={"media"} entityId={dbId} stableSharePath={stableSharePath}/> : undefined}
+        >
+            {renderData()}
+            {!fetchError && <ArchivingSessionsList sessions={sessions} loadingSessions={loadingSessions}/>}
+        </PageShell>
+    );
 }

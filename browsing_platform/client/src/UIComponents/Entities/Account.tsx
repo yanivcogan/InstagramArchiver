@@ -208,6 +208,9 @@ export default function Account({
     const [activeTab, setActiveTab] = useState<'relations' | 'interactions' | 'raw' | null>(
         highlightRelationId ? 'relations' : null
     );
+    const handleTabToggle = (tab: 'relations' | 'interactions' | 'raw') => () => {
+        if (activeTab === tab) setActiveTab(null);
+    };
 
     const [auxiliaryCounts, setAuxiliaryCounts] = useState<IAccountAuxiliaryCounts | null>(null);
 
@@ -404,9 +407,7 @@ export default function Account({
                             value="relations"
                             label={relationsLabel}
                             icon={<People/>} iconPosition="start"
-                            onClick={() => {
-                                if (activeTab === 'relations') setActiveTab(null);
-                            }}
+                            onClick={handleTabToggle('relations')}
                         />
                     )}
                     {account.id != null && (
@@ -414,18 +415,14 @@ export default function Account({
                             value="interactions"
                             label={interactionsLabel}
                             icon={<AddReaction/>} iconPosition="start"
-                            onClick={() => {
-                                if (activeTab === 'interactions') setActiveTab(null);
-                            }}
+                            onClick={handleTabToggle('interactions')}
                         />
                     )}
                     <Tab
                         value="raw"
                         label="Raw Data"
                         icon={<DataObject/>} iconPosition="start"
-                        onClick={() => {
-                            if (activeTab === 'raw') setActiveTab(null);
-                        }}
+                        onClick={handleTabToggle('raw')}
                     />
                 </Tabs>
 

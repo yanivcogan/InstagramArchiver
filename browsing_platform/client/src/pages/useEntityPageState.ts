@@ -1,5 +1,17 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
+import {useMatch} from 'react-router';
 import {IArchiveSession, IExtractedEntitiesNested} from '../types/entities';
+
+export function useEntityApiRef(urlMatchPath: string, idParam: string | undefined, platformId: string | undefined): number | string | null {
+    const urlMatch = useMatch(urlMatchPath);
+    const urlParam = urlMatch?.params["*"];
+    return useMemo(() => {
+        if (platformId) return `pk/${platformId}`;
+        if (urlParam) return `url/${urlParam}`;
+        if (idParam) return parseInt(idParam);
+        return null;
+    }, [idParam, platformId, urlParam]);
+}
 
 interface EntityPageState {
     data: IExtractedEntitiesNested | null;

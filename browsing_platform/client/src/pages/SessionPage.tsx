@@ -1,16 +1,16 @@
 import React, {useEffect, useState} from 'react';
 import {useParams} from "react-router";
-import {CircularProgress, Divider, Stack, Typography,} from "@mui/material";
+import {Typography,} from "@mui/material";
 import {IArchiveSession, IExtractedEntitiesNested} from "../types/entities";
 import {fetchArchivingSession} from "../services/DataFetcher";
 import EntitiesViewer from "../UIComponents/Entities/EntitiesViewer";
-import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 import ArchivingSessionsList from "../UIComponents/Entities/ArchivingSessionsList";
 import {EntityViewerConfig} from "../UIComponents/Entities/EntitiesViewerConfig";
 import cookie from "js-cookie";
 import LinkSharing from "../UIComponents/LinkSharing/LinkSharing";
 import DataLoadGuard from "./DataLoadGuard";
 import {getShareTokenFromHref} from "../services/linkSharing";
+import PageShell, {PageSubtitleLoading} from "./PageShell";
 
 export default function SessionPage() {
     const {id: idParam} = useParams();
@@ -71,25 +71,15 @@ export default function SessionPage() {
     );
 
     const isLoggedIn = !!(cookie.get("token"));
-    return <div className={"page-wrap"}>
-        <TopNavBar hideMenuButton={hideHeader}>
-            <Stack direction={"row"} alignItems={"center"} justifyContent={"space-between"} gap={1} sx={{width: '100%'}}>
-                <Stack direction={"row"} alignItems={"center"} gap={1}>
-                    <Typography>Archiving Session Data</Typography>
-                    {
-                        data ?
-                            <Typography>Session #{id}</Typography> :
-                            <CircularProgress color={"primary"} size={"16"}/>
-                    }
-                </Stack>
-                {isLoggedIn && id ? <LinkSharing entityType={"archiving_session"} entityId={id}/> : null}
-            </Stack>
-        </TopNavBar>
-        <div className={"page-content content-wrap"}>
-            <Stack gap={2} sx={{width: '100%'}} divider={<Divider orientation="horizontal" flexItem/>}>
-                {renderData()}
-                <ArchivingSessionsList sessions={sessions} loadingSessions={loadingData}/>
-            </Stack>
-        </div>
-    </div>
+    return (
+        <PageShell
+            hideMenu={hideHeader}
+            title="Archiving Session Data"
+            subtitle={<PageSubtitleLoading data={data}><Typography>Session #{id}</Typography></PageSubtitleLoading>}
+            headerRight={isLoggedIn && id ? <LinkSharing entityType={"archiving_session"} entityId={id}/> : undefined}
+        >
+            {renderData()}
+            <ArchivingSessionsList sessions={sessions} loadingSessions={loadingData}/>
+        </PageShell>
+    );
 }

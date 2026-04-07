@@ -1,15 +1,12 @@
 import React from 'react';
-import {Box, Card, Divider, Stack, Typography} from '@mui/material';
+import {Card, Typography} from '@mui/material';
 import {SearchResultsProps} from './types';
-import {SearchResultTags, SearchResultThumbnails, SelectableResultBox} from './SearchResultParts';
+import {SearchResultList, SearchResultTags, SearchResultThumbnails, SelectableResultBox} from './SearchResultParts';
 
 export default function AccountSearchResults({results, tagsMap, selectedIds, onToggleSelected}: SearchResultsProps) {
-    if (results.length === 0) {
-        return <Box>No results found.</Box>;
-    }
     return (
-        <Stack spacing={2} divider={<Divider orientation="horizontal" flexItem/>}>
-            {results.map((result, idx) => {
+        <SearchResultList results={results}>
+            {(result, idx) => {
                 const tags = tagsMap?.[result.id] ?? [];
                 return (
                     <SelectableResultBox key={idx} id={result.id} page={result.page} selectedIds={selectedIds} onToggleSelected={onToggleSelected}>
@@ -23,7 +20,7 @@ export default function AccountSearchResults({results, tagsMap, selectedIds, onT
                         </Card>
                     </SelectableResultBox>
                 );
-            })}
-        </Stack>
+            }}
+        </SearchResultList>
     );
 }

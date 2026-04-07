@@ -6,13 +6,14 @@ import {ITagWithType} from '../../types/tags';
 import {anchor_local_static_files} from '../../services/server';
 import {SearchResultsProps} from './types';
 
-function MediaHoverOverlay({accountName, pubDate, tags}: {
+const MediaHoverOverlay = React.forwardRef<HTMLDivElement, {
     accountName: string | null;
     pubDate: string | null;
     tags: ITagWithType[];
-}) {
+}>(function MediaHoverOverlay({accountName, pubDate, tags}, ref) {
     return (
         <Box
+            ref={ref}
             sx={{
                 position: 'absolute',
                 bottom: 0,
@@ -54,7 +55,7 @@ function MediaHoverOverlay({accountName, pubDate, tags}: {
             )}
         </Box>
     );
-}
+});
 
 interface CellProps {
     result: SearchResult;

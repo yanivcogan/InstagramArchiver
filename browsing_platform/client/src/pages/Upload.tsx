@@ -382,6 +382,11 @@ export default function UploadPage() {
     const setArchiveStatus = (archiveName: string, update: Partial<ArchiveState>) =>
         setArchives(prev => prev.map(a => a.name !== archiveName ? a : { ...a, ...update }));
 
+    const updateArchiveFiles = (archiveName: string, fileMapper: (f: FileState) => FileState) =>
+        setArchives(prev => prev.map(a =>
+            a.name !== archiveName ? a : { ...a, files: a.files.map(fileMapper) }
+        ));
+
     // -----------------------------------------------------------------------
     // Drop handling (full-page)
     // -----------------------------------------------------------------------
@@ -499,12 +504,7 @@ export default function UploadPage() {
             const infoByPath = new Map(fileInfos.map(fi => [fi.relativePath, fi]));
 
             // Mark all files as uploading before TUS starts
-            setArchives(prev => prev.map(a =>
-                a.name !== archive.name ? a : {
-                    ...a,
-                    files: a.files.map(af => ({ ...af, status: 'uploading', uploadedBytes: 0 })),
-                }
-            ));
+            updateArchiveFiles(archive.name, af => ({ ...af, status: 'uploading', uploadedBytes: 0 }));
 
             // Step 3 — single TUS upload
             const upload = new TusUpload(tarBlob, {
@@ -544,12 +544,7 @@ export default function UploadPage() {
                 },
                 onError: (err) => {
                     const msg = err instanceof Error ? err.message : String(err);
-                    setArchives(prev => prev.map(a =>
-                        a.name !== archive.name ? a : {
-                            ...a,
-                            files: a.files.map(af => ({ ...af, status: 'error', error: msg })),
-                        }
-                    ));
+                    updateArchiveFiles(archive.name, af => ({ ...af, status: 'error', error: msg }));
                     activeUploadsRef.current.delete(archive.name);
                     reject(err);
                 },
