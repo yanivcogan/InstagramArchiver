@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from browsing_platform.server.services.permissions import auth_user_access
 from browsing_platform.server.services.tag import ITagWithType
@@ -10,6 +10,7 @@ from browsing_platform.server.services.tag_management import (
     delete_tag_type,
     list_tags, list_quick_access_tags, create_tag, update_tag, delete_tag, get_tag_usage_counts,
     list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle, update_hierarchy_notes,
+    get_tag_counts_by_type,
 )
 
 router = APIRouter(
@@ -37,6 +38,16 @@ class TagBody(BaseModel):
     tag_type_id: Optional[int] = None
     quick_access: bool = False
 
+    @field_validator('name')
+    @classmethod
+    def name_no_commas(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('Tag name cannot be empty')
+        if ',' in v:
+            raise ValueError('Tag name cannot contain commas')
+        return v
+
 
 # ── Hierarchy request bodies ───────────────────────────────────────────────────
 
@@ -52,6 +63,13 @@ class HierarchyDeleteBody(BaseModel):
 
 
 # ── Tag Type endpoints ─────────────────────────────────────────────────────────
+
+@router.get("/types/counts/")
+@router.get("/types/counts")
+async def get_tag_type_counts() -> dict[str, int]:
+    """Returns {type_id_str: count} plus key 'null' for untyped tags."""
+    return get_tag_counts_by_type()
+
 
 @router.get("/types/")
 @router.get("/types")

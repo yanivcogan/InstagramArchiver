@@ -116,6 +116,18 @@ def delete_tag_type(tag_type_id: int) -> tuple[bool, str]:
     return True, ""
 
 
+# ── Tag Counts ────────────────────────────────────────────────────────────────
+
+def get_tag_counts_by_type() -> dict[str, int]:
+    """Returns {type_id_str: count} plus key 'null' for untyped tags."""
+    rows = db.execute_query(
+        "SELECT COALESCE(CAST(tag_type_id AS CHAR), 'null') AS k, COUNT(*) AS cnt FROM tag GROUP BY tag_type_id",
+        {},
+        return_type="rows"
+    )
+    return {row["k"]: row["cnt"] for row in rows}
+
+
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 def list_tags(tag_type_id: Optional[int] = None, q: Optional[str] = None, page: int = 1, page_size: int = 50) -> list[ITagDetail]:
@@ -287,6 +299,81 @@ def update_hierarchy_notes(super_tag_id: int, sub_tag_id: int, notes: Optional[s
         return_type="none"
     )
     return True
+
+
+# ── Import helpers ────────────────────────────────────────────────────────────
+
+def get_tag_type_by_name(name: str) -> Optional[ITagType]:
+    row = db.execute_query(
+        "SELECT id, name, description, notes, entity_affinity FROM tag_type WHERE LOWER(TRIM(name)) = LOWER(TRIM(%(name)s)) LIMIT 1",
+        {"name": name},
+        return_type="single_row"
+    )
+    if not row:
+        return None
+    ea = row.get("entity_affinity")
+    if isinstance(ea, str):
+        try:
+            ea = json.loads(ea)
+        except (json.JSONDecodeError, TypeError):
+            ea = None
+    return ITagType(id=row["id"], name=row["name"], description=row.get("description"),
+                    notes=row.get("notes"), entity_affinity=ea)
+
+
+def get_tag_by_name_and_type(name: str, tag_type_id: Optional[int]) -> Optional[ITagDetail]:
+    if tag_type_id is not None:
+        row = db.execute_query(
+            "SELECT t.id, t.name, t.description, t.tag_type_id, t.quick_access, tt.name AS tag_type_name "
+            "FROM tag t LEFT JOIN tag_type tt ON t.tag_type_id = tt.id "
+            "WHERE LOWER(TRIM(t.name)) = LOWER(TRIM(%(name)s)) AND t.tag_type_id = %(type_id)s LIMIT 1",
+            {"name": name, "type_id": tag_type_id},
+            return_type="single_row"
+        )
+    else:
+        row = db.execute_query(
+            "SELECT t.id, t.name, t.description, t.tag_type_id, t.quick_access, tt.name AS tag_type_name "
+            "FROM tag t LEFT JOIN tag_type tt ON t.tag_type_id = tt.id "
+            "WHERE LOWER(TRIM(t.name)) = LOWER(TRIM(%(name)s)) AND t.tag_type_id IS NULL LIMIT 1",
+            {"name": name},
+            return_type="single_row"
+        )
+    if not row:
+        return None
+    return ITagDetail(id=row["id"], name=row["name"], description=row.get("description"),
+                      tag_type_id=row.get("tag_type_id"), tag_type_name=row.get("tag_type_name"),
+                      quick_access=bool(row.get("quick_access")))
+
+
+def upsert_tag(name: str, description: Optional[str], tag_type_id: Optional[int],
+               quick_access: bool = False) -> tuple[ITagDetail, bool]:
+    """Returns (tag, was_created). SELECT-then-INSERT to avoid REPLACE INTO side-effects.
+    The name is stripped of leading/trailing whitespace before storing."""
+    name = name.strip()
+    existing = get_tag_by_name_and_type(name, tag_type_id)
+    if existing:
+        return existing, False
+    tag = create_tag(name, description, tag_type_id, quick_access)
+    return tag, True
+
+
+def add_hierarchy_ignore_duplicate(super_tag_id: int, sub_tag_id: int) -> str:
+    """Returns 'added', 'exists', or 'cycle'."""
+    if would_create_cycle(super_tag_id, sub_tag_id):
+        return "cycle"
+    existing = db.execute_query(
+        "SELECT id FROM tag_hierarchy WHERE super_tag_id = %(super_id)s AND sub_tag_id = %(sub_id)s",
+        {"super_id": super_tag_id, "sub_id": sub_tag_id},
+        return_type="single_row"
+    )
+    if existing:
+        return "exists"
+    db.execute_query(
+        "INSERT INTO tag_hierarchy (super_tag_id, sub_tag_id) VALUES (%(super_id)s, %(sub_id)s)",
+        {"super_id": super_tag_id, "sub_id": sub_tag_id},
+        return_type="none"
+    )
+    return "added"
 
 
 # ── Related Account Tag Stats ─────────────────────────────────────────────────

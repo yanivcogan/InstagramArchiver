@@ -113,9 +113,32 @@ export const anchor_local_static_files = (path?: string) => {
     return path;
 }
 
+const postFormData = async (path: string, formData: FormData): Promise<any> => {
+    const headers = new Headers();
+    headers.set('Accept', 'application/json');
+    const token: string | undefined = cookie.get("token");
+    if (token) {
+        headers.set("Authorization", "token:" + token);
+    }
+    const shareLink = getShareTokenFromHref();
+    if (shareLink) {
+        headers.set("X-Share-Link", shareLink);
+    }
+    const res = await fetch(config.serverPath + apiPath + path, {
+        method: 'POST',
+        body: formData,
+        headers,
+    });
+    const resJson = await res.json().catch(() => null);
+    if (res.ok) return resJson;
+    const errorMessage = resJson?.error || resJson?.detail || `Request failed with status ${res.status}`;
+    return Promise.reject(new ServerError(res.status, errorMessage));
+};
+
 const server = {
     get,
     post,
+    postFormData,
 }
 
 export default (server)

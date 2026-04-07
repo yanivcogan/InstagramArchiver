@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {Link, useSearchParams} from 'react-router';
 import {
+    Badge,
     Box,
     Button,
     Checkbox,
@@ -15,6 +16,9 @@ import {
     FormControlLabel,
     IconButton,
     InputLabel,
+    List,
+    ListItemButton,
+    ListItemText,
     MenuItem,
     OutlinedInput,
     Select,
@@ -44,6 +48,7 @@ import {
     fetchTagChildren,
     fetchTagParents,
     fetchTags,
+    fetchTagTypeCounts,
     fetchTagTypes,
     fetchTagUsage,
     removeHierarchy,
@@ -54,6 +59,8 @@ import {
 import {lookupTags} from "../services/DataFetcher";
 import Autocomplete from "@mui/material/Autocomplete";
 import {toast} from "material-react-toastify";
+import ImportTagsTab from "./TagManagement/ImportTagsTab";
+import ImportAnnotationsTab from "./TagManagement/ImportAnnotationsTab";
 
 const ENTITY_AFFINITY_OPTIONS = ["account", "post", "media", "media_part"];
 
@@ -320,6 +327,7 @@ function TagsTab() {
     };
 
     const [tagTypes, setTagTypes] = useState<ITagType[]>([]);
+    const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
     const [tags, setTags] = useState<ITagDetail[]>([]);
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
@@ -342,7 +350,10 @@ function TagsTab() {
     const [addChildOptions, setAddChildOptions] = useState<ITagWithType[]>([]);
     const [editingNote, setEditingNote] = useState<{super_id: number; sub_id: number; notes: string} | null>(null);
 
-    const loadTypes = () => fetchTagTypes().then(setTagTypes);
+    const loadTypes = () => {
+        fetchTagTypes().then(setTagTypes);
+        fetchTagTypeCounts().then(setTypeCounts).catch(() => {});
+    };
     const loadTags = () => {
         setLoading(true);
         fetchTags({tag_type_id: selectedTypeId ?? undefined, q: search || undefined, page, page_size: PAGE_SIZE}).then(data => {
@@ -455,16 +466,49 @@ function TagsTab() {
         if (editTarget?.id) loadHierarchy(editTarget.id);
     };
 
+    const totalCount = Object.values(typeCounts).reduce((a, b) => a + b, 0);
+
     return <Stack direction="row" gap={2} sx={{minHeight: 400}}>
         {/* Left sidebar: tag type filter */}
-        <Stack sx={{width: 180, borderRight: '1px solid #e0e0e0', pr: 1}}>
-            <Typography variant="caption" sx={{mb: 1, color: 'text.secondary'}}>Filter by type</Typography>
-            <Button size="small" variant={selectedTypeId === null ? "contained" : "text"} onClick={() => setSelectedTypeId(null)}>All</Button>
-            {tagTypes.map(tt => (
-                <Button key={tt.id} size="small" variant={selectedTypeId === tt.id ? "contained" : "text"} onClick={() => setSelectedTypeId(tt.id ?? null)}>
-                    {tt.name}
-                </Button>
-            ))}
+        <Stack sx={{width: 190, borderRight: '1px solid #e0e0e0', pr: 1, flexShrink: 0}}>
+            <Typography variant="caption" sx={{mb: 0.5, color: 'text.secondary', fontWeight: 600, pl: 1}}>Filter by type</Typography>
+            <List dense disablePadding>
+                <ListItemButton
+                    selected={selectedTypeId === null}
+                    onClick={() => setSelectedTypeId(null)}
+                    sx={{borderRadius: 1}}
+                >
+                    <ListItemText primary="All" primaryTypographyProps={{variant: 'body2'}}/>
+                    <Badge badgeContent={totalCount} color="default" max={9999}
+                           sx={{'& .MuiBadge-badge': {position: 'static', transform: 'none', ml: 1}}}/>
+                </ListItemButton>
+                {tagTypes.map(tt => (
+                    <ListItemButton
+                        key={tt.id}
+                        selected={selectedTypeId === tt.id}
+                        onClick={() => setSelectedTypeId(tt.id ?? null)}
+                        sx={{borderRadius: 1}}
+                    >
+                        <ListItemText primary={tt.name} primaryTypographyProps={{variant: 'body2'}}/>
+                        <Badge
+                            badgeContent={typeCounts[String(tt.id)] ?? 0}
+                            color="primary" max={9999}
+                            sx={{'& .MuiBadge-badge': {position: 'static', transform: 'none', ml: 1}}}
+                        />
+                    </ListItemButton>
+                ))}
+                {typeCounts['null'] > 0 && (
+                    <ListItemButton
+                        selected={false}
+                        disabled
+                        sx={{borderRadius: 1}}
+                    >
+                        <ListItemText primary="(untyped)" primaryTypographyProps={{variant: 'body2', color: 'text.secondary'}}/>
+                        <Badge badgeContent={typeCounts['null']} color="default" max={9999}
+                               sx={{'& .MuiBadge-badge': {position: 'static', transform: 'none', ml: 1}}}/>
+                    </ListItemButton>
+                )}
+            </List>
         </Stack>
         {/* Right: tag table */}
         <Stack gap={1} sx={{flex: 1}}>
@@ -522,7 +566,14 @@ function TagsTab() {
             <DialogTitle>{editTarget ? "Edit Tag" : "New Tag"}</DialogTitle>
             <DialogContent>
                 <Stack gap={2} sx={{mt: 1}}>
-                    <TextField label="Name" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} required/>
+                    <TextField
+                        label="Name"
+                        value={form.name}
+                        onChange={e => setForm(f => ({...f, name: e.target.value}))}
+                        error={form.name.includes(',')}
+                        helperText={form.name.includes(',') ? 'Tag name cannot contain commas' : undefined}
+                        required
+                    />
                     <TextField label="Description" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}/>
                     <FormControl size="small">
                         <InputLabel>Tag Type</InputLabel>
@@ -589,7 +640,7 @@ function TagsTab() {
             </DialogContent>
             <DialogActions>
                 <Button onClick={() => setFormOpen(false)}>Cancel</Button>
-                <Button variant="contained" onClick={handleSave}>Save</Button>
+                <Button variant="contained" onClick={handleSave} disabled={form.name.includes(',') || !form.name.trim()}>Save</Button>
             </DialogActions>
         </Dialog>
     </Stack>;
@@ -597,7 +648,7 @@ function TagsTab() {
 
 /* ── Main Page ──────────────────────────────────────────────────────────────── */
 
-const TAB_KEYS = ['types', 'tags'];
+const TAB_KEYS = ['types', 'tags', 'import-tags', 'import-annotations'];
 
 export default function TagManagementPage() {
     const [params, setParams] = useSearchParams();
@@ -620,10 +671,14 @@ export default function TagManagementPage() {
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{mb: 2}}>
                 <Tab label="Tag Types"/>
                 <Tab label="Tags"/>
+                <Tab label="Import Tags"/>
+                <Tab label="Import Annotations"/>
             </Tabs>
             <Divider sx={{mb: 2}}/>
             {tab === 0 && <TagTypesTab/>}
             {tab === 1 && <TagsTab/>}
+            {tab === 2 && <ImportTagsTab/>}
+            {tab === 3 && <ImportAnnotationsTab/>}
         </div>
     </div>;
 }

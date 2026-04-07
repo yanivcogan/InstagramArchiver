@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share, upload, incorporate, tag_management
+    permissions, tags, annotate, share, upload, incorporate, tag_management, tag_import, annotation_import
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
@@ -213,6 +213,8 @@ for r in [
     upload.router,
     incorporate.router,
     tag_management.router,
+    tag_import.router,
+    annotation_import.router,
 ]:
     app.include_router(r, prefix="/api")
 
