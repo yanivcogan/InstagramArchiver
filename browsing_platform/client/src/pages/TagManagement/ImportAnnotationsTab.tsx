@@ -184,6 +184,8 @@ function PromptGeneratorDialog({open, onClose}: {open: boolean; onClose: () => v
                             setGeneratedPrompt(null); // invalidate on change
                         }}
                         label="Working tags"
+                        rapidPrefixSelection={true}
+                        disableDeletionCheck={true}
                     />
                     <Box>
                         <Button

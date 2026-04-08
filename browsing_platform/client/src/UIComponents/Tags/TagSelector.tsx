@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import Chip from '@mui/material/Chip';
 import Autocomplete from '@mui/material/Autocomplete';
 import TextField from '@mui/material/TextField';
@@ -14,13 +14,16 @@ interface IProps {
     onChipClick?: (tag: ITagWithType) => void
     label?: string
     entity?: string
+    rapidPrefixSelection?: boolean
+    disableDeletionCheck?: boolean
 }
 
-export default function TagSelector({selectedTags, readOnly, onChange, onChipClick, label = 'Tags', entity}: IProps) {
+export default function TagSelector({selectedTags, readOnly, onChange, onChipClick, label = 'Tags', entity, rapidPrefixSelection = false, disableDeletionCheck = false}: IProps) {
     const [inputValue, setInputValue] = useState('');
     const [fetchingOptions, setFetchingOptions] = useState(false);
     const [options, setOptions] = useState<ITagWithType[]>([]);
     const [pendingDelete, setPendingDelete] = useState<{tag: ITagWithType; onDelete: (e: any) => void} | null>(null);
+    const selectedSinceLastInput = useRef(false);
 
     const fetchMatchingOptions = async (value: string) => {
         setFetchingOptions(true);
@@ -38,10 +41,24 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
             onChange(newValue);
         }}
         disabled={readOnly === true}
+        disableCloseOnSelect={rapidPrefixSelection}
+        filterOptions={(x) => x}
         inputValue={inputValue}
-        onInputChange={async (_, newInputValue) => {
+        onInputChange={async (_, newInputValue, reason) => {
+            if (rapidPrefixSelection && reason !== 'input') {
+                if (reason === 'selectOption') selectedSinceLastInput.current = true;
+                return;
+            }
+            selectedSinceLastInput.current = false;
             setInputValue(newInputValue);
             await fetchMatchingOptions(newInputValue);
+        }}
+        onClose={() => {
+            if (rapidPrefixSelection && selectedSinceLastInput.current) {
+                setInputValue('');
+                setOptions([]);
+                selectedSinceLastInput.current = false;
+            }
         }}
         multiple
         noOptionsText={fetchingOptions ? 'Loading…' : (inputValue ? 'No tags found' : 'Start typing to search tags')}
@@ -70,7 +87,14 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
                             label={option.name}
                             key={key}
                             {...itemProps}
-                            onDelete={() => setPendingDelete({tag: option, onDelete})}
+                            onDelete={() => {
+                                if(disableDeletionCheck){
+                                    onDelete(undefined)
+                                }
+                                else {
+                                    setPendingDelete({tag: option, onDelete})
+                                }
+                            }}
                             onClick={onChipClick ? () => onChipClick(option) : undefined}
                         />
                     </Tooltip>
