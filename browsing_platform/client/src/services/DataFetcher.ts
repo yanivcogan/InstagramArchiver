@@ -1,14 +1,14 @@
 import {
     IAccountAuxiliaryCounts,
     IAccountInteractions,
-    IAccountRelation,
+    IAccountRelationsResponse,
     IArchiveSession,
     IArchiveSessionWithEntities,
-    IComment,
+    ICommentsResponse,
     IExtractedEntitiesNested,
+    ILikesResponse,
     IMediaPart,
     IPostAuxiliaryCounts,
-    IPostLike
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
@@ -53,12 +53,17 @@ const transformConfigToQueryParams = (config: EntitiesTransformConfig): string =
     return params.toString();
 }
 
+const parseAccountTagsMap = (raw: Record<string, ITagWithType[]> | undefined): Record<number, ITagWithType[]> =>
+    raw ? Object.fromEntries(Object.entries(raw).map(([k, v]) => [Number(k), v])) : {};
+
 export const fetchAccount = async (accountId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("account/" + accountId + "?" + transformConfigToQueryParams(config));
+    const result = await server.get("account/" + accountId + "?" + transformConfigToQueryParams(config));
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
 export const fetchPost = async (postId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("post/" + postId + "?" + transformConfigToQueryParams(config));
+    const result = await server.get("post/" + postId + "?" + transformConfigToQueryParams(config));
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
 export const fetchMedia = async (mediaId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
@@ -85,17 +90,20 @@ export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> =>
     return await server.get(`media/parts/${mediaId}/`);
 }
 
-export const fetchPostComments = async (postId: number): Promise<IComment[]> => {
-    return await server.get(`post/${postId}/comments/`);
+export const fetchPostComments = async (postId: number): Promise<ICommentsResponse> => {
+    const result = await server.get(`post/${postId}/comments/`);
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
-export const fetchPostLikes = async (postId: number): Promise<IPostLike[]> => {
-    return await server.get(`post/${postId}/likes/`);
+export const fetchPostLikes = async (postId: number): Promise<ILikesResponse> => {
+    const result = await server.get(`post/${postId}/likes/`);
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
-export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelation[] | null> => {
+export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelationsResponse | null> => {
     try {
-        return await server.get(`account/${accountId}/relations/`);
+        const result = await server.get(`account/${accountId}/relations/`);
+        return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
     } catch {
         return null;
     }
@@ -103,7 +111,8 @@ export const fetchAccountRelations = async (accountId: number): Promise<IAccount
 
 export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions | null> => {
     try {
-        return await server.get(`account/${accountId}/interactions/`);
+        const result = await server.get(`account/${accountId}/interactions/`);
+        return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
     } catch {
         return null;
     }

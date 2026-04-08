@@ -8,10 +8,11 @@ from browsing_platform.server.services.account import account_exists, get_accoun
     get_account_by_platform_id, get_account_by_url
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
     get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions, \
-    get_account_auxiliary_counts, AccountAuxiliaryCounts
+    get_account_auxiliary_counts, AccountAuxiliaryCounts, AccountRelationsResponse, \
+    get_account_tags_for_account_relations
 from browsing_platform.server.services.permissions import auth_entity_view_access, require_any_auth
 from browsing_platform.server.services.tag_management import get_related_account_tag_stats, ITagStat
-from extractors.entity_types import ExtractedEntitiesNested, AccountRelation
+from extractors.entity_types import ExtractedEntitiesNested
 
 router = APIRouter(
     prefix="/account",
@@ -56,10 +57,13 @@ async def get_account_data(item_id:int) -> Any:
 
 @router.get("/{item_id}/relations/", dependencies=[Depends(_auth_account_view)])
 @router.get("/{item_id}/relations", dependencies=[Depends(_auth_account_view)])
-async def get_relations(item_id: int) -> list[AccountRelation]:
+async def get_relations(item_id: int) -> AccountRelationsResponse:
     if not account_exists(item_id):
         raise HTTPException(status_code=404, detail="Account Not Found")
-    return get_account_relations_by_account_id(item_id)
+    return AccountRelationsResponse(
+        relations=get_account_relations_by_account_id(item_id),
+        account_tags=get_account_tags_for_account_relations(item_id),
+    )
 
 
 @router.get("/{item_id}/interactions/", dependencies=[Depends(_auth_account_view)])

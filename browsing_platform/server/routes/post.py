@@ -5,7 +5,8 @@ from fastapi import HTTPException
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.enriched_entities import get_enriched_post_by_id, get_comments_by_post_ids, \
-    get_likes_by_post_id, get_post_auxiliary_counts, PostAuxiliaryCounts
+    get_likes_by_post_id, get_post_auxiliary_counts, PostAuxiliaryCounts, CommentsResponse, LikesResponse, \
+    get_account_tags_for_post_comments, get_account_tags_for_post_likes
 from browsing_platform.server.services.permissions import auth_entity_view_access, require_any_auth
 from browsing_platform.server.services.post import get_post_data_by_id, post_exists, \
     get_post_by_platform_id, get_post_by_url
@@ -55,18 +56,24 @@ async def get_post_data(item_id:int) -> Any:
 
 @router.get("/{item_id}/comments/", dependencies=[Depends(_auth_post_view)])
 @router.get("/{item_id}/comments", dependencies=[Depends(_auth_post_view)])
-async def get_post_comments(item_id: int) -> list[Comment]:
+async def get_post_comments(item_id: int) -> CommentsResponse:
     if not post_exists(item_id):
         raise HTTPException(status_code=404, detail="Post Not Found")
-    return get_comments_by_post_ids([item_id])
+    return CommentsResponse(
+        comments=get_comments_by_post_ids([item_id]),
+        account_tags=get_account_tags_for_post_comments([item_id]),
+    )
 
 
 @router.get("/{item_id}/likes/", dependencies=[Depends(_auth_post_view)])
 @router.get("/{item_id}/likes", dependencies=[Depends(_auth_post_view)])
-async def get_post_likes(item_id: int) -> list[Like]:
+async def get_post_likes(item_id: int) -> LikesResponse:
     if not post_exists(item_id):
         raise HTTPException(status_code=404, detail="Post Not Found")
-    return get_likes_by_post_id(item_id)
+    return LikesResponse(
+        likes=get_likes_by_post_id(item_id),
+        account_tags=get_account_tags_for_post_likes(item_id),
+    )
 
 
 @router.get("/{item_id}/auxiliary-counts/", dependencies=[Depends(_auth_post_view)])

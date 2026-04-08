@@ -10,7 +10,7 @@ from browsing_platform.server.services.entities_hierarchy import nest_entities
 from browsing_platform.server.services.file_tokens import generate_file_token
 from browsing_platform.server.services.media import get_media_by_posts, get_media_by_id
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
-from browsing_platform.server.services.tag import get_tags_by_entity_ids
+from browsing_platform.server.services.tag import get_tags_by_entity_ids, ITagWithType
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post, \
@@ -22,6 +22,22 @@ class AccountInteractions(BaseModel):
     comments: list[Comment] = []
     likes: list[Like] = []
     tagged_in: list[TaggedAccount] = []
+    account_tags: dict[int, list[ITagWithType]] = {}
+
+
+class AccountRelationsResponse(BaseModel):
+    relations: list[AccountRelation]
+    account_tags: dict[int, list[ITagWithType]] = {}
+
+
+class CommentsResponse(BaseModel):
+    comments: list[Comment]
+    account_tags: dict[int, list[ITagWithType]] = {}
+
+
+class LikesResponse(BaseModel):
+    likes: list[Like]
+    account_tags: dict[int, list[ITagWithType]] = {}
 
 
 class AccountInteractionCounts(BaseModel):
@@ -45,6 +61,103 @@ def _build_in_clause(ids: list[int]) -> tuple[dict, str]:
     args = {f"id_{i}": id_ for i, id_ in enumerate(ids)}
     clause = ", ".join(f"%(id_{i})s" for i in range(len(ids)))
     return args, clause
+
+
+_ACCOUNT_TAG_SELECT = """
+    SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+           tt.name AS tag_type_name, tt.description AS tag_type_description,
+           tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+    FROM account_tag at
+    JOIN tag t ON at.tag_id = t.id
+    LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+"""
+
+
+def _group_tags_by_account_id(rows: list[dict]) -> dict[int, list[ITagWithType]]:
+    result: dict[int, list[ITagWithType]] = {}
+    for row in rows:
+        account_id = row.pop("entity_id")
+        result.setdefault(account_id, []).append(ITagWithType(**row))
+    return result
+
+
+def get_account_tags_for_post_comments(post_ids: list[int]) -> dict[int, list[ITagWithType]]:
+    """Tags for accounts that commented on the given posts."""
+    if not post_ids:
+        return {}
+    args, clause = _build_in_clause(post_ids)
+    rows = db.execute_query(
+        f"""SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                   tt.name AS tag_type_name, tt.description AS tag_type_description,
+                   tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+            FROM account_tag at
+            JOIN comment c ON at.account_id = c.account_id
+            JOIN tag t ON at.tag_id = t.id
+            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+            WHERE c.post_id IN ({clause})""",
+        args,
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
+def get_account_tags_for_post_likes(post_id: int) -> dict[int, list[ITagWithType]]:
+    """Tags for accounts that liked a post."""
+    rows = db.execute_query(
+        """SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                  tt.name AS tag_type_name, tt.description AS tag_type_description,
+                  tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+           FROM account_tag at
+           JOIN post_like pl ON at.account_id = pl.account_id
+           JOIN tag t ON at.tag_id = t.id
+           LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+           WHERE pl.post_id = %(post_id)s""",
+        {"post_id": post_id},
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
+def get_account_tags_for_account_relations(account_id: int) -> dict[int, list[ITagWithType]]:
+    """Tags for all accounts related to a given account (both directions)."""
+    rows = db.execute_query(
+        """SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                  tt.name AS tag_type_name, tt.description AS tag_type_description,
+                  tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+           FROM account_tag at
+           JOIN tag t ON at.tag_id = t.id
+           LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+           WHERE at.account_id IN (
+               SELECT follower_account_id FROM account_relation
+                 WHERE follower_account_id = %(id)s OR followed_account_id = %(id)s
+               UNION
+               SELECT followed_account_id FROM account_relation
+                 WHERE follower_account_id = %(id)s OR followed_account_id = %(id)s
+           )""",
+        {"id": account_id},
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
+def get_account_tags_for_tagged_accounts(post_ids: list[int]) -> dict[int, list[ITagWithType]]:
+    """Tags for tagged_account_id values in the given posts."""
+    if not post_ids:
+        return {}
+    args, clause = _build_in_clause(post_ids)
+    rows = db.execute_query(
+        f"""SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                   tt.name AS tag_type_name, tt.description AS tag_type_description,
+                   tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+            FROM account_tag at
+            JOIN tagged_account ta ON at.account_id = ta.tagged_account_id
+            JOIN tag t ON at.tag_id = t.id
+            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+            WHERE ta.post_id IN ({clause})""",
+        args,
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
 
 
 def get_comments_by_post_ids(post_ids: list[int]) -> list[Comment]:
@@ -162,7 +275,8 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
     return AccountInteractions(
         comments=[Comment(**r) for r in comment_rows],
         likes=[Like(**r) for r in like_rows],
-        tagged_in=[TaggedAccount(**r) for r in tagged_rows]
+        tagged_in=[TaggedAccount(**r) for r in tagged_rows],
+        account_tags=get_tags_by_entity_ids('account', [account_id])
     )
 
 
@@ -367,6 +481,10 @@ def get_enriched_post_by_id(
         tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
+    nested_entities.account_tags = {
+        **get_account_tags_for_post_comments([post_id]),
+        **get_account_tags_for_tagged_accounts([post_id]),
+    }
     return nested_entities
 
 
@@ -390,6 +508,8 @@ def get_enriched_account_by_id(
         tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
+    if post_ids:
+        nested_entities.account_tags = get_account_tags_for_tagged_accounts(post_ids)
     return nested_entities
 
 

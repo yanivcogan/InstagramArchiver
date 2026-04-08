@@ -531,3 +531,4 @@ class ExtractedEntitiesNested(BaseModel):
     accounts: list[AccountAndAssociatedEntities] = Field(default_factory=list)
     posts: list[PostAndAssociatedEntities] = Field(default_factory=list)
     media: list[MediaAndAssociatedEntities] = Field(default_factory=list)
+    account_tags: dict[int, list[ITagWithType]] = Field(default_factory=dict)

@@ -4,8 +4,10 @@ import {
     IAccountAuxiliaryCounts,
     IAccountInteractions,
     IAccountRelation,
+    IAccountRelationsResponse,
     IPostAndAssociatedEntities
 } from "../../types/entities";
+import {ITagWithType} from "../../types/tags";
 import {
     Box,
     CircularProgress,
@@ -92,12 +94,13 @@ const HIGHLIGHT_STYLE: React.CSSProperties = {
     marginLeft: -4,
 };
 
-function AccountRelationsPanel({loadingRelations, relations, highlightRelationId, relationRefs, contextAccountId}: {
+function AccountRelationsPanel({loadingRelations, relations, highlightRelationId, relationRefs, contextAccountId, accountTagsMap}: {
     loadingRelations: boolean;
     relations: IAccountRelation[] | null;
     highlightRelationId?: number;
     relationRefs: React.MutableRefObject<Map<number, HTMLElement>>;
     contextAccountId?: number;
+    accountTagsMap: Record<number, ITagWithType[]>;
 }) {
     return (
         <>
@@ -115,7 +118,7 @@ function AccountRelationsPanel({loadingRelations, relations, highlightRelationId
                             } : undefined}
                             style={r.id != null && r.id === highlightRelationId ? HIGHLIGHT_STYLE : undefined}
                         >
-                            <AccountRelation relation={r} contextAccountId={contextAccountId}/>
+                            <AccountRelation relation={r} contextAccountId={contextAccountId} accountTagsMap={accountTagsMap}/>
                         </div>
                     ))}
                 </Stack>
@@ -124,9 +127,10 @@ function AccountRelationsPanel({loadingRelations, relations, highlightRelationId
     );
 }
 
-function AccountInteractionsPanel({loadingInteractions, interactions}: {
+function AccountInteractionsPanel({loadingInteractions, interactions, accountTagsMap}: {
     loadingInteractions: boolean;
     interactions: IAccountInteractions | null;
+    accountTagsMap: Record<number, ITagWithType[]>;
 }) {
     return (
         <>
@@ -138,7 +142,7 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
                             <Typography variant="caption" color="text.secondary">
                                 Comments ({interactions.comments.length})
                             </Typography>
-                            {interactions.comments.map((c, i) => <Comment key={i} comment={c}/>)}
+                            {interactions.comments.map((c, i) => <Comment key={i} comment={c} accountTagsMap={accountTagsMap}/>)}
                         </Stack>
                     )}
                     {interactions.likes.length > 0 && (
@@ -146,7 +150,7 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
                             <Typography variant="caption" color="text.secondary">
                                 Likes ({interactions.likes.length})
                             </Typography>
-                            {interactions.likes.map((l, i) => <PostLike key={i} like={l}/>)}
+                            {interactions.likes.map((l, i) => <PostLike key={i} like={l} accountTagsMap={accountTagsMap}/>)}
                         </Stack>
                     )}
                     {interactions.tagged_in.length > 0 && (
@@ -155,7 +159,13 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
                                 Tagged in ({interactions.tagged_in.length})
                             </Typography>
                             <Stack direction="row" gap={0.5} flexWrap="wrap">
-                                {interactions.tagged_in.map((ta, i) => <TaggedAccountChip key={i} taggedAccount={ta}/>)}
+                                {interactions.tagged_in.map((ta, i) => (
+                                    <TaggedAccountChip
+                                        key={i}
+                                        taggedAccount={ta}
+                                        accountTags={ta.tagged_account_id != null ? accountTagsMap[ta.tagged_account_id] : undefined}
+                                    />
+                                ))}
                             </Stack>
                         </Stack>
                     )}
@@ -174,6 +184,7 @@ interface IProps {
     highlightCommentId?: number
     highlightLikeId?: number
     highlightRelationId?: number
+    initialAccountTagsMap?: Record<number, ITagWithType[]>
 }
 
 const usernameFromUrl = (url?: string): string | null => {
@@ -189,10 +200,12 @@ export default function Account({
                                     viewerConfig,
                                     highlightCommentId,
                                     highlightLikeId,
-                                    highlightRelationId
+                                    highlightRelationId,
+                                    initialAccountTagsMap,
                                 }: IProps) {
     const [account, setAccount] = useState(accountProp);
     const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
+    const [accountTagsMap, setAccountTagsMap] = useState<Record<number, ITagWithType[]>>(initialAccountTagsMap ?? {});
     const [renderedIndices, setRenderedIndices] = useState<Set<number>>(() => {
         const pSize = viewerConfig?.account?.postsPageSize;
         if (!pSize) return new Set<number>(); // export mode: irrelevant, all posts render via !pageSize check
@@ -204,6 +217,12 @@ export default function Account({
 
     const [interactions, setInteractions] = useState<IAccountInteractions | null>(null);
     const [loadingInteractions, setLoadingInteractions] = useState(false);
+
+    const mergeAccountTags = (newTags: Record<number, ITagWithType[]> | undefined) => {
+        if (newTags && Object.keys(newTags).length > 0) {
+            setAccountTagsMap(prev => ({...prev, ...newTags}));
+        }
+    };
 
     const [activeTab, setActiveTab] = useState<'relations' | 'interactions' | 'raw' | null>(
         highlightRelationId ? 'relations' : null
@@ -229,18 +248,20 @@ export default function Account({
     const loadRelations = useCallback(async () => {
         if (loadingRelations || relations !== null || account.id == null) return;
         setLoadingRelations(true);
-        const fetched = await fetchAccountRelations(account.id);
-        setRelations(fetched);
+        const fetched: IAccountRelationsResponse | null = await fetchAccountRelations(account.id);
+        setRelations(fetched?.relations ?? null);
+        mergeAccountTags(fetched?.account_tags);
         setLoadingRelations(false);
-    }, [loadingRelations, relations, account.id]);
+    }, [loadingRelations, relations, account.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const loadInteractions = useCallback(async () => {
         if (loadingInteractions || interactions !== null || account.id == null) return;
         setLoadingInteractions(true);
         const fetched = await fetchAccountInteractions(account.id);
         setInteractions(fetched);
+        mergeAccountTags(fetched?.account_tags);
         setLoadingInteractions(false);
-    }, [loadingInteractions, interactions, account.id]);
+    }, [loadingInteractions, interactions, account.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (activeTab === 'relations') loadRelations();
@@ -435,12 +456,14 @@ export default function Account({
                                 highlightRelationId={highlightRelationId}
                                 relationRefs={relationRefs}
                                 contextAccountId={account.id}
+                                accountTagsMap={accountTagsMap}
                             />
                         )}
                         {activeTab === 'interactions' && (
                             <AccountInteractionsPanel
                                 loadingInteractions={loadingInteractions}
                                 interactions={interactions}
+                                accountTagsMap={accountTagsMap}
                             />
                         )}
                         {activeTab === 'raw' && (
@@ -470,6 +493,7 @@ export default function Account({
                                 viewerConfig={effectiveConfig as EntityViewerConfig}
                                 highlightCommentId={highlightCommentId}
                                 highlightLikeId={highlightLikeId}
+                                initialAccountTagsMap={accountTagsMap}
                             />
                         );
                     }

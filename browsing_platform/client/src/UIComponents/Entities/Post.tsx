@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {IComment, IPostAndAssociatedEntities, IPostAuxiliaryCounts, IPostLike} from "../../types/entities";
+import {IComment, ICommentsResponse, ILikesResponse, IPostAndAssociatedEntities, IPostAuxiliaryCounts, IPostLike} from "../../types/entities";
+import {ITagWithType} from "../../types/tags";
 import {Box, CircularProgress, Collapse, Link, Paper, Stack, Tab, Tabs, Tooltip, Typography} from "@mui/material";
 import Media from "./Media";
 import ReactJson from "react-json-view";
@@ -26,7 +27,7 @@ const HIGHLIGHT_STYLE: React.CSSProperties = {
     marginLeft: -4,
 };
 
-function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlightCommentId, commentRefs, postId, shareToken}: {
+function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlightCommentId, commentRefs, postId, shareToken, accountTagsMap}: {
     loadingComments: boolean;
     commentsLoaded: boolean;
     comments: IComment[] | null;
@@ -34,6 +35,7 @@ function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlight
     commentRefs: React.MutableRefObject<Map<number, HTMLElement>>;
     postId?: number;
     shareToken: string | null;
+    accountTagsMap: Record<number, ITagWithType[]>;
 }) {
     return (
         <>
@@ -48,7 +50,7 @@ function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlight
                             } : undefined}
                             style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
                         >
-                            <Comment comment={c} postId={postId} shareToken={shareToken}/>
+                            <Comment comment={c} postId={postId} shareToken={shareToken} accountTagsMap={accountTagsMap}/>
                         </div>
                     ))}
                 </Stack>
@@ -60,7 +62,7 @@ function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlight
     );
 }
 
-function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, likeRefs, postId, shareToken}: {
+function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, likeRefs, postId, shareToken, accountTagsMap}: {
     loadingLikes: boolean;
     likesLoaded: boolean;
     likes: IPostLike[] | null;
@@ -68,6 +70,7 @@ function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, like
     likeRefs: React.MutableRefObject<Map<number, HTMLElement>>;
     postId?: number;
     shareToken: string | null;
+    accountTagsMap: Record<number, ITagWithType[]>;
 }) {
     return (
         <>
@@ -82,7 +85,7 @@ function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, like
                             } : undefined}
                             style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
                         >
-                            <PostLike like={l} postId={postId} shareToken={shareToken}/>
+                            <PostLike like={l} postId={postId} shareToken={shareToken} accountTagsMap={accountTagsMap}/>
                         </div>
                     ))}
                 </Stack>
@@ -99,11 +102,13 @@ interface IProps {
     viewerConfig?: EntityViewerConfig
     highlightCommentId?: number
     highlightLikeId?: number
+    initialAccountTagsMap?: Record<number, ITagWithType[]>
 }
 
-export default function Post({post: postProp, viewerConfig, highlightCommentId, highlightLikeId}: IProps) {
+export default function Post({post: postProp, viewerConfig, highlightCommentId, highlightLikeId, initialAccountTagsMap}: IProps) {
     const [post, setPost] = useState(postProp);
     const [awaitingDetailsFetch, setAwaitingDetailsFetch] = useState(false);
+    const [accountTagsMap, setAccountTagsMap] = useState<Record<number, ITagWithType[]>>(initialAccountTagsMap ?? {});
 
     const preloadedComments = postProp.post_comments.length > 0 ? postProp.post_comments : null;
     const [comments, setComments] = useState<IComment[] | null>(preloadedComments);
@@ -131,20 +136,26 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
     const loadComments = useCallback(async () => {
         if (loadingComments || commentsLoaded || post.id == null) return;
         setLoadingComments(true);
-        const fetched = await fetchPostComments(post.id);
-        setComments(fetched);
+        const fetched: ICommentsResponse = await fetchPostComments(post.id);
+        setComments(fetched.comments);
+        if (fetched.account_tags && Object.keys(fetched.account_tags).length > 0) {
+            setAccountTagsMap(prev => ({...prev, ...fetched.account_tags}));
+        }
         setCommentsLoaded(true);
         setLoadingComments(false);
-    }, [loadingComments, commentsLoaded, post.id]);
+    }, [loadingComments, commentsLoaded, post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const loadLikes = useCallback(async () => {
         if (loadingLikes || likesLoaded || post.id == null) return;
         setLoadingLikes(true);
-        const fetched = await fetchPostLikes(post.id);
-        setLikes(fetched);
+        const fetched: ILikesResponse = await fetchPostLikes(post.id);
+        setLikes(fetched.likes);
+        if (fetched.account_tags && Object.keys(fetched.account_tags).length > 0) {
+            setAccountTagsMap(prev => ({...prev, ...fetched.account_tags}));
+        }
         setLikesLoaded(true);
         setLoadingLikes(false);
-    }, [loadingLikes, likesLoaded, post.id]);
+    }, [loadingLikes, likesLoaded, post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Scroll to highlighted comment after load
     useEffect(() => {
@@ -292,7 +303,13 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
 
             {showTaggedAccounts && (
                 <Stack direction="row" gap={0.5} flexWrap="wrap">
-                    {taggedAccounts.map((ta, i) => <TaggedAccountChip key={i} taggedAccount={ta}/>)}
+                    {taggedAccounts.map((ta, i) => (
+                        <TaggedAccountChip
+                            key={i}
+                            taggedAccount={ta}
+                            accountTags={ta.tagged_account_id != null ? accountTagsMap[ta.tagged_account_id] : undefined}
+                        />
+                    ))}
                 </Stack>
             )}
 
@@ -344,6 +361,7 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                                 commentRefs={commentRefs}
                                 postId={post.id}
                                 shareToken={shareToken}
+                                accountTagsMap={accountTagsMap}
                             />
                         )}
                         {activeTab === 'likes' && (
@@ -355,6 +373,7 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                                 likeRefs={likeRefs}
                                 postId={post.id}
                                 shareToken={shareToken}
+                                accountTagsMap={accountTagsMap}
                             />
                         )}
                         {activeTab === 'raw' && (

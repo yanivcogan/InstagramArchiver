@@ -141,6 +141,7 @@ export interface IExtractedEntitiesNested {
     accounts: IAccountAndAssociatedEntities[];
     posts: IPostAndAssociatedEntities[];
     media: IMediaAndAssociatedEntities[];
+    account_tags?: Record<number, ITagWithType[]>;
 }
 
 interface ISessionAttachments {
@@ -187,6 +188,22 @@ export interface IAccountInteractions {
     comments: IComment[];
     likes: IPostLike[];
     tagged_in: ITaggedAccount[];
+    account_tags?: Record<number, ITagWithType[]>;
+}
+
+export interface IAccountRelationsResponse {
+    relations: IAccountRelation[];
+    account_tags: Record<number, ITagWithType[]>;
+}
+
+export interface ICommentsResponse {
+    comments: IComment[];
+    account_tags: Record<number, ITagWithType[]>;
+}
+
+export interface ILikesResponse {
+    likes: IPostLike[];
+    account_tags: Record<number, ITagWithType[]>;
 }
 
 interface IAccountInteractionCounts {

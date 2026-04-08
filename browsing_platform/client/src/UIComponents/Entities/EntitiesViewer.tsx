@@ -29,6 +29,8 @@ export default function EntitiesViewer({entities, viewerConfig, highlightComment
             (a, b) => (b.account_posts?.length ?? 0) - (a.account_posts?.length ?? 0)
         ), [entities.accounts]);
 
+    const initialAccountTagsMap = entities.account_tags ?? {};
+
     return <Stack gap={1}>
         {sortedAccounts.map((account: IAccountAndAssociatedEntities, index: number) =>
             <Account
@@ -38,6 +40,7 @@ export default function EntitiesViewer({entities, viewerConfig, highlightComment
                 highlightCommentId={highlightCommentId}
                 highlightLikeId={highlightLikeId}
                 highlightRelationId={highlightRelationId}
+                initialAccountTagsMap={initialAccountTagsMap}
             />
         )}
         {sortedPosts.map((post: IPostAndAssociatedEntities, index: number) =>
@@ -47,6 +50,7 @@ export default function EntitiesViewer({entities, viewerConfig, highlightComment
                 viewerConfig={viewerConfig}
                 highlightCommentId={highlightCommentId}
                 highlightLikeId={highlightLikeId}
+                initialAccountTagsMap={initialAccountTagsMap}
             />
         )}
         {entities.media.map((media, index: number) =>

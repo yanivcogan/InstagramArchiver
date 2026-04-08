@@ -14,6 +14,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import {ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
+import InlineTagsDisplay from "../Tags/InlineTagsDisplay";
 import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
 import {fetchQuickAccessTags} from "../../services/TagManagementService";
 import {toast} from "material-react-toastify";
@@ -66,27 +67,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     };
 
     if (readonly) {
-        if (tags.length === 0) return null;
-        return <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="baseline">
-            <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>Tags:</Typography>
-            {tags.map((tag, index) => (
-                <Tooltip key={index} title={tag.tag_type_name} arrow disableInteractive>
-                    <Typography component="span" variant="caption" sx={{
-                        padding: '0.1em 0.4em',
-                        backgroundColor: '#e0e0e0',
-                        borderRadius: '4px',
-                    }}>
-                        {tag.name}
-                        {tag.assignment_notes && (
-                            <Typography component="span" variant="caption"
-                                        sx={{ml: 0.5, color: 'text.secondary', fontStyle: 'italic'}}>
-                                ({tag.assignment_notes})
-                            </Typography>
-                        )}
-                    </Typography>
-                </Tooltip>
-            ))}
-        </Stack>;
+        return <InlineTagsDisplay tags={tags}/>;
     }
 
     return <Stack gap={1}>
