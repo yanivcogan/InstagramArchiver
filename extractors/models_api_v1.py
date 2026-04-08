@@ -90,9 +90,9 @@ class LikersApiV1(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 class CommentUserApiV1(BaseModel):
-    pk: Union[str, int]
-    pk_id: Union[str, int]
-    id: Union[str, int]
+    pk: Optional[str]
+    pk_id: Optional[str]
+    id: Optional[str]
     full_name: str
     is_private: bool
     is_unpublished: Optional[bool] = None
@@ -107,8 +107,8 @@ class CommentUserApiV1(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentCaptionApiV1(BaseModel):
-    pk: Union[str, int]
-    user_id: Union[str, int]
+    pk: Optional[str]
+    user_id: Optional[str]
     type: int
     did_report_as_spam: bool
     created_at: int
@@ -132,8 +132,8 @@ class CommentCaptionApiV1(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentItemApiV1(BaseModel):
-    pk: Union[str, int]
-    user_id: Union[str, int]
+    pk: Optional[str]
+    user_id: Optional[str]
     type: int
     did_report_as_spam: bool
     created_at: int
