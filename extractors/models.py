@@ -482,7 +482,7 @@ class TimelineItem(BaseModel):
     upcoming_event: Optional[Any] = None
     user: TimelineItemUser
     like_count: int
-    like_and_view_counts_disabled: bool
+    like_and_view_counts_disabled: Optional[bool] = None
     boosted_status: Optional[Any] = None
     boost_unavailable_identifier: Optional[Any] = None
     boost_unavailable_reason: Optional[Any] = None

@@ -117,7 +117,7 @@ class ClipsUserMedia(BaseModel):
     product_type: str
     play_count: Optional[int] = None # Made optional as it might not always be present
     view_count: Optional[int] = None
-    like_and_view_counts_disabled: bool
+    like_and_view_counts_disabled: Optional[bool] = None
     comment_count: int
     like_count: int
     audience: Optional[Any] = None
