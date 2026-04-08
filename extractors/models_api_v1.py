@@ -1,8 +1,13 @@
 from typing import List, Optional, Any, Union
 
-from pydantic import ConfigDict, BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field, field_validator
 
 from extractors.models import VideoVersion, InstagramImageVersions2
+
+
+def _str_id(v: Any) -> Any:
+    """Coerce integer IDs to strings. Instagram's API inconsistently returns IDs as either str or int."""
+    return str(v) if isinstance(v, int) else v
 
 
 class FriendshipUserApiV1(BaseModel):
@@ -21,6 +26,11 @@ class FriendshipUserApiV1(BaseModel):
     has_anonymous_profile_picture: Optional[bool] = None
     account_badges: Optional[List[Any]] = Field(default_factory=list)
     latest_reel_media: Optional[int] = None
+
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -78,6 +88,11 @@ class LikerUserApiV1(BaseModel):
     hd_profile_pic_url_info: Optional[Any] = None
     is_unpublished: Optional[Any] = None
 
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
@@ -104,6 +119,11 @@ class CommentUserApiV1(BaseModel):
     profile_pic_url: str
     is_mentionable: Optional[bool] = None # Specific to user in comment items
 
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentCaptionApiV1(BaseModel):
@@ -128,6 +148,11 @@ class CommentCaptionApiV1(BaseModel):
     private_reply_status: int
     has_translation: Optional[bool] = None
     user: CommentUserApiV1
+
+    @field_validator('pk', 'user_id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -160,6 +185,11 @@ class CommentItemApiV1(BaseModel):
     child_comment_count: int
     other_preview_users: Optional[List[Any]] = Field(default_factory=list)
     user: CommentUserApiV1
+
+    @field_validator('pk', 'user_id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -206,6 +236,11 @@ class TaggedUserInTagApiV1(BaseModel):
     is_verified: bool
     profile_pic_id: Optional[str] = None
     profile_pic_url: str
+
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -271,6 +306,11 @@ class MediaUserApiV1(BaseModel):
     username: str
     is_embeds_disabled: Optional[bool] = None
     latest_reel_media: Optional[int] = None
+
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
