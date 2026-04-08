@@ -93,6 +93,7 @@ def parse_search_url(s: str) -> Optional[ParsedSearchUrl]:
         if m:
             suffix = post_process(m.group(1))
             if suffix:
+                suffix = suffix.strip().rstrip('/').rstrip('\\')
                 return ParsedSearchUrl(platform=platform, suffix=suffix)
     return None
 
