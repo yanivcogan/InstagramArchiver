@@ -2,6 +2,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import subprocess
 import traceback
 import ppdeep
@@ -69,10 +70,16 @@ def extract_xpv_asset_id(url) -> Optional[str]:
         return str(xpv_asset_id)
     except Exception as e:
         print(f"Error decoding efg: {e}")
-        try:
-            return str(int(md5(url.split(".mp4")[0].split("/")[-1].encode("utf-8")).hexdigest(), 16))
-        except Exception:
-            return None
+        return None
+
+
+def extract_xpv_asset_id_from_dash_manifest(manifest_xml: str) -> Optional[str]:
+    """Try to get xpv_asset_id from the efg param of any BaseURL in a DASH manifest."""
+    for base_url in re.findall(r'<BaseURL>([^<]+)</BaseURL>', manifest_xml):
+        result = extract_xpv_asset_id(base_url)
+        if result:
+            return result
+    return None
 
 
 def extract_video_maps(har_path: Path) -> list[Video]:
@@ -95,6 +102,8 @@ def extract_video_maps(har_path: Path) -> list[Video]:
                         )
                     ))
                     xpv_asset_id = extract_xpv_asset_id(url)
+                    if xpv_asset_id is None:
+                        continue
                     filename = base_url.split("/")[-1]
                     start = end = None
                     if "bytestart=" in url:
@@ -448,102 +457,106 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
 
 
 def extract_videos_from_structures(structures: list[StructureType]) -> list[Video]:
-    pk_video_versions_dict: dict[str, list[VideoVersion]] = dict()
+    # dict keyed by item pk → (video_versions, dash_manifest, item_pk)
+    # item_pk is always the specific item's own pk (carousel_item.pk for carousels),
+    # used as a last-resort fallback when no canonical xpv_asset_id can be extracted.
+    pk_video_versions_dict: dict[str, tuple[list[VideoVersion], Optional[str], str]] = dict()
+
+    def _store(pk: Optional[str], versions: Optional[list[VideoVersion]], src: object) -> None:
+        if not pk or not versions:
+            return
+        manifest: Optional[str] = getattr(src, 'video_dash_manifest', None)
+        pk_video_versions_dict[pk] = (versions, manifest, pk)
+
     for s in structures:
         if isinstance(s, GraphQLResponse):
             if s.reels_media:
                 for edge in s.reels_media.edges:
                     for item in edge.node.items:
-                        if item.video_versions:
-                            pk_video_versions_dict[item.pk] = item.video_versions
+                        _store(item.pk, item.video_versions, item)
                         if item.carousel_media:
                             for carousel_item in item.carousel_media:
-                                if carousel_item.video_versions:
-                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                                _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.stories_feed:
                 for edge in s.stories_feed.reels_media:
                     for item in edge.items:
-                        if item.video_versions:
-                            pk_video_versions_dict[item.pk] = item.video_versions
+                        _store(item.pk, item.video_versions, item)
                         if item.carousel_media:
                             for carousel_item in item.carousel_media:
-                                if carousel_item.video_versions:
-                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                                _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.profile_timeline:
                 for edge in s.profile_timeline.edges:
-                    if edge.node.video_versions:
-                        pk_video_versions_dict[edge.node.pk] = edge.node.video_versions
+                    _store(edge.node.pk, edge.node.video_versions, edge.node)
                     if edge.node.carousel_media:
                         for carousel_item in edge.node.carousel_media:
-                            if carousel_item.video_versions:
-                                pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                            _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.clips_user_connection:
                 for edge in s.clips_user_connection.edges:
-                    if edge.node.media.video_versions:
-                        pk_video_versions_dict[edge.node.media.pk] = edge.node.media.video_versions
+                    _store(edge.node.media.pk, edge.node.media.video_versions, edge.node.media)
         elif isinstance(s, ApiV1Response):
             if s.media_info:
                 for item in s.media_info.items:
-                    if item.video_versions:
-                        pk_video_versions_dict[item.pk] = item.video_versions
+                    _store(item.pk, item.video_versions, item)
         elif isinstance(s, PageResponse):
             if s.posts:
                 for post in s.posts.items:
-                    if post.video_versions:
-                        pk_video_versions_dict[post.pk] = post.video_versions
+                    _store(post.pk, post.video_versions, post)
                     if post.carousel_media:
                         for carousel_item in post.carousel_media:
-                            if carousel_item.video_versions:
-                                pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                            _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.stories:
                 for edge in s.stories.edges:
                     for item in edge.node.items:
-                        if item.video_versions:
-                            pk_video_versions_dict[item.pk] = item.video_versions
+                        _store(item.pk, item.video_versions, item)
                         if item.carousel_media:
                             for carousel_item in item.carousel_media:
-                                if carousel_item.video_versions:
-                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                                _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.highlight_reels:
                 for reel in s.highlight_reels.edges:
                     for item in reel.node.items:
-                        if item.video_versions:
-                            pk_video_versions_dict[item.pk] = item.video_versions
+                        _store(item.pk, item.video_versions, item)
                         if item.carousel_media:
                             for carousel_item in item.carousel_media:
-                                if carousel_item.video_versions:
-                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                                _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.stories_direct:
                 for story in s.stories_direct.reels_media:
                     for item in story.items:
-                        if item.video_versions:
-                            pk_video_versions_dict[item.pk] = item.video_versions
+                        _store(item.pk, item.video_versions, item)
                         if item.carousel_media:
                             for carousel_item in item.carousel_media:
-                                if carousel_item.video_versions:
-                                    pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                                _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
             if s.timelines:
                 for item in s.timelines.items:
-                    if item.video_versions:
-                        pk_video_versions_dict[item.pk] = item.video_versions
+                    _store(item.pk, item.video_versions, item)
                     if item.carousel_media:
                         for carousel_item in item.carousel_media:
-                            if carousel_item.video_versions:
-                                pk_video_versions_dict[carousel_item.pk] = carousel_item.video_versions
+                            _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
+
     videos: dict[str, Video] = dict()
-    for pk, video_versions in pk_video_versions_dict.items():
-        if video_versions:
-            try:
-                xpv_asset_id = extract_xpv_asset_id(video_versions[0].url)
-                video = Video(
-                    xpv_asset_id=xpv_asset_id,
-                    full_asset=video_versions[0].url,
-                    fetched_tracks=None
-                )
-                videos[xpv_asset_id] = video
-            except Exception as e:
-                print(f"Error extracting xpv_asset_id from video version URL {video_versions[0].url}: {e}")
-                continue
+    for item_pk, (video_versions, dash_manifest, fallback_pk) in pk_video_versions_dict.items():
+        first_url = video_versions[0].url
+        if not first_url:
+            continue
+        try:
+            xpv_asset_id = extract_xpv_asset_id(first_url)
+            # video_versions efg may lack xpv_asset_id (e.g. clips/reels URLs).
+            # DASH manifest BaseURLs carry the real xpv_asset_id — try those next.
+            if dash_manifest:
+                dash_id = extract_xpv_asset_id_from_dash_manifest(dash_manifest)
+                if dash_id:
+                    xpv_asset_id = dash_id
+            # Last resort: use the item's own pk (unique per carousel item).
+            if not xpv_asset_id:
+                xpv_asset_id = fallback_pk
+            video = Video(
+                xpv_asset_id=xpv_asset_id,
+                full_asset=first_url,
+                fetched_tracks=None
+            )
+            videos[xpv_asset_id] = video
+        except Exception as e:
+            print(f"Error extracting xpv_asset_id from video version URL {first_url}: {e}")
+            continue
     return list(videos.values())
 
 

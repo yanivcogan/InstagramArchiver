@@ -95,20 +95,28 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
                     ))
                     xpv_asset_id = _extract_video_xpv_asset_id(url)
                     filename = base_url.split('/')[-1]
+                    # If the URL's efg has no xpv_asset_id (e.g. clips/reels video_versions
+                    # URLs), fall back to the filename, which is content-addressed and
+                    # consistent across the same video's CDN URLs.
+                    if not xpv_asset_id:
+                        xpv_asset_id = filename
+                    if not xpv_asset_id:
+                        continue
                     start = end = None
                     if 'bytestart=' in url:
                         start = int(url.split('bytestart=')[1].split('&')[0])
                     if 'byteend=' in url:
                         end = int(url.split('byteend=')[1].split('&')[0])
                     segment_data = base64.b64decode(content['text'])
-                    if xpv_asset_id:
-                        if xpv_asset_id not in videos_dict:
-                            videos_dict[xpv_asset_id] = Video(xpv_asset_id=xpv_asset_id, fetched_tracks={})
-                        if filename not in videos_dict[xpv_asset_id].fetched_tracks:
-                            videos_dict[xpv_asset_id].fetched_tracks[filename] = MediaTrack(
+                    if xpv_asset_id not in videos_dict:
+                        videos_dict[xpv_asset_id] = Video(xpv_asset_id=xpv_asset_id, fetched_tracks={})
+                    fetched_tracks = videos_dict[xpv_asset_id].fetched_tracks
+                    if fetched_tracks is not None:
+                        if filename not in fetched_tracks:
+                            fetched_tracks[filename] = MediaTrack(
                                 base_url=base_url, full_url=full_url, segments=[]
                             )
-                        videos_dict[xpv_asset_id].fetched_tracks[filename].segments.append(
+                        fetched_tracks[filename].segments.append(
                             MediaSegment(start=start, end=end, data=segment_data)
                         )
             except Exception as e:

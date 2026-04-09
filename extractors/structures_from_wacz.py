@@ -156,8 +156,15 @@ def scan_wacz(wacz_path: Path, output_dir: Path) -> tuple[list[StructureType], l
                                         )
                                     )
                                 ))
-                                xpv_asset_id = _extract_video_xpv_asset_id(url) or base_url.split('/')[-1]
+                                xpv_asset_id = _extract_video_xpv_asset_id(url)
                                 filename = base_url.split('/')[-1]
+                                # If the URL's efg has no xpv_asset_id (e.g. clips/reels
+                                # video_versions URLs), fall back to the filename, which is
+                                # content-addressed and consistent across the same video's CDN URLs.
+                                if not xpv_asset_id:
+                                    xpv_asset_id = filename
+                                if not xpv_asset_id:
+                                    continue
                                 start = end = None
                                 if 'bytestart=' in url:
                                     start = int(url.split('bytestart=')[1].split('&')[0])
@@ -168,13 +175,15 @@ def scan_wacz(wacz_path: Path, output_dir: Path) -> tuple[list[StructureType], l
                                     videos_dict[xpv_asset_id] = Video(
                                         xpv_asset_id=xpv_asset_id, fetched_tracks={}
                                     )
-                                if filename not in videos_dict[xpv_asset_id].fetched_tracks:
-                                    videos_dict[xpv_asset_id].fetched_tracks[filename] = MediaTrack(
-                                        base_url=base_url, full_url=full_url, segments=[]
+                                fetched_tracks = videos_dict[xpv_asset_id].fetched_tracks
+                                if fetched_tracks is not None:
+                                    if filename not in fetched_tracks:
+                                        fetched_tracks[filename] = MediaTrack(
+                                            base_url=base_url, full_url=full_url, segments=[]
+                                        )
+                                    fetched_tracks[filename].segments.append(
+                                        MediaSegment(start=start, end=end, data=body)
                                     )
-                                videos_dict[xpv_asset_id].fetched_tracks[filename].segments.append(
-                                    MediaSegment(start=start, end=end, data=body)
-                                )
                     except Exception as e:
                         print(f"[wacz] Video segment error for {url}: {e}")
                         traceback.print_exc()
