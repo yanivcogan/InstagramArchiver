@@ -376,8 +376,16 @@ def merge_har_attachments(har_path: Path) -> Path:
 
 
 def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
-    context.close()
-    browser.close()
+    # Guard against browsers that have already disconnected/crashed — both
+    # close() calls can throw Playwright errors in that case.
+    try:
+        context.close()
+    except Exception as e:
+        print(f"Warning: context.close() raised an error (browser may have already closed): {e}")
+    try:
+        browser.close()
+    except Exception as e:
+        print(f"Warning: browser.close() raised an error (browser may have already closed): {e}")
 
     # Stop the recording loop. The thread now exits quickly (no FFmpeg inside it).
     if stop_event is not None:
@@ -395,67 +403,12 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
             shutil.rmtree(archive_dir)
         return
 
-    # Re-encode the raw screen recording to H.264 (was previously done inside
-    # the recording thread; moved here so the dialog could appear sooner).
-    video_path = archive_dir / "screen_recording.mp4"
-    raw_video_path = archive_dir / "screen_recording_raw.mp4"
-    if raw_video_path.exists():
-        print("Re-encoding screen recording to H.264 for browser compatibility...")
-        try:
-            subprocess.run(
-                ["ffmpeg", "-i", str(raw_video_path), "-c:v", "libx264",
-                 "-pix_fmt", "yuv420p", "-y", str(video_path)],
-                check=True, capture_output=True
-            )
-            raw_video_path.unlink()
-            print(f"Screen recording saved to {video_path}")
-        except Exception as e:
-            print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
-            shutil.move(str(raw_video_path), str(video_path))
+    metadata.signature = storage_config.signature
+    metadata.notes = storage_config.notes
 
-    # Hash and timestamp the screen recording
-    if video_path.exists():
-        with open(video_path, 'rb') as f:
-            video_content = f.read()
-        metadata.video_hash = md5(video_content).hexdigest()
-        metadata.video_fuzzy_hash = ppdeep.hash(video_content)
-
-        video_hash_path = archive_dir / "video_hash.txt"
-        with open(video_hash_path, 'w', encoding='utf-8') as f:
-            f.write(metadata.video_hash)
-        try:
-            timestamp_file(video_hash_path)
-        except Exception as e:
-            traceback.print_exc()
-            print(f"❌ Error timestamping video hash file: {e}")
-
-        video_fuzzy_hash_path = archive_dir / "fuzzy_video_hash.txt"
-        with open(video_fuzzy_hash_path, 'w', encoding='utf-8') as f:
-            f.write(metadata.video_fuzzy_hash)
-        try:
-            timestamp_file(video_fuzzy_hash_path)
-        except Exception as e:
-            traceback.print_exc()
-            print(f"❌ Error timestamping video fuzzy hash file: {e}")
-
-    # Timestamp the frame hashes log
-    frame_hashes_path = archive_dir / "frame_hashes.jsonl"
-    if frame_hashes_path.exists():
-        try:
-            timestamp_file(frame_hashes_path)
-        except Exception as e:
-            traceback.print_exc()
-            print(f"❌ Error timestamping frame hashes file: {e}")
-
-    # Inline response bodies from the har_workspace into a single self-contained
-    # HAR at archive_dir / "archive.har", then remove the workspace directory.
-    metadata.har_archive = merge_har_attachments(metadata.har_archive)
-
-    # Resolve all domains contacted during the session
-    metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
-
-    archiving_finished_timestamp = datetime.datetime.now().isoformat()
-    metadata.archiving_finished_timestamp = archiving_finished_timestamp
+    # har_path may be updated by merge_har_attachments inside the try block below;
+    # initialise here so it is always defined when generate_entities_summary runs.
+    har_path = metadata.har_archive
 
     # video downloading configuration
     v_download_missing: bool = True
@@ -470,55 +423,122 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     p_download_unfetched_media: bool = storage_config.p_download_unfetched_media
     p_download_highest_quality_assets_from_structures: bool = storage_config.p_download_highest_quality_assets_from_structures
 
-
-    metadata.signature = storage_config.signature
-    metadata.notes = storage_config.notes
-
-    har_path = metadata.har_archive
-    # sanitized_har_path = archive_dir / "sanitized.har"
-
-    # sanitize_har(har_path, sanitized_har_path)
-
-    with open(har_path, 'rb') as file:
-        print("reading har file")
-        har_content = file.read()
-        print("generating md5 exact hash")
-        har_hash = md5(har_content).hexdigest()
-        print("generating fuzzy hash")
-        har_fuzzy_hash = ppdeep.hash(har_content)
-        metadata.har_hash = har_hash
-        metadata.har_fuzzy_hash = har_fuzzy_hash
-
-    # store and timestamp regular hash
-    har_hash_path = archive_dir / "har_hash.txt"
-    with open(har_hash_path, 'w', encoding='utf-8') as f:
-        f.write(metadata.har_hash)
-
     try:
-        timestamp_file(har_hash_path)
+        # Re-encode the raw screen recording to H.264 (was previously done inside
+        # the recording thread; moved here so the dialog could appear sooner).
+        video_path = archive_dir / "screen_recording.mp4"
+        raw_video_path = archive_dir / "screen_recording_raw.mp4"
+        if raw_video_path.exists():
+            print("Re-encoding screen recording to H.264 for browser compatibility...")
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-i", str(raw_video_path), "-c:v", "libx264",
+                     "-pix_fmt", "yuv420p", "-y", str(video_path)],
+                    check=True, capture_output=True
+                )
+                raw_video_path.unlink()
+                print(f"Screen recording saved to {video_path}")
+            except Exception as e:
+                print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
+                shutil.move(str(raw_video_path), str(video_path))
+
+        # Hash and timestamp the screen recording
+        if video_path.exists():
+            with open(video_path, 'rb') as f:
+                video_content = f.read()
+            metadata.video_hash = md5(video_content).hexdigest()
+            metadata.video_fuzzy_hash = ppdeep.hash(video_content)
+
+            video_hash_path = archive_dir / "video_hash.txt"
+            with open(video_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.video_hash)
+            try:
+                timestamp_file(video_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping video hash file: {e}")
+
+            video_fuzzy_hash_path = archive_dir / "fuzzy_video_hash.txt"
+            with open(video_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.video_fuzzy_hash)
+            try:
+                timestamp_file(video_fuzzy_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping video fuzzy hash file: {e}")
+
+        # Timestamp the frame hashes log
+        frame_hashes_path = archive_dir / "frame_hashes.jsonl"
+        if frame_hashes_path.exists():
+            try:
+                timestamp_file(frame_hashes_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping frame hashes file: {e}")
+
+        # Inline response bodies from the har_workspace into a single self-contained
+        # HAR at archive_dir / "archive.har", then remove the workspace directory.
+        try:
+            metadata.har_archive = merge_har_attachments(metadata.har_archive)
+            har_path = metadata.har_archive
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ HAR merge failed, proceeding with unmerged HAR: {e}")
+
+        # Resolve all domains contacted during the session
+        metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
+
+        metadata.archiving_finished_timestamp = datetime.datetime.now().isoformat()
+        # sanitized_har_path = archive_dir / "sanitized.har"
+
+        # sanitize_har(har_path, sanitized_har_path)
+
+        try:
+            with open(har_path, 'rb') as file:
+                print("reading har file")
+                har_content = file.read()
+                print("generating md5 exact hash")
+                har_hash = md5(har_content).hexdigest()
+                print("generating fuzzy hash")
+                har_fuzzy_hash = ppdeep.hash(har_content)
+                metadata.har_hash = har_hash
+                metadata.har_fuzzy_hash = har_fuzzy_hash
+
+            # store and timestamp regular hash
+            har_hash_path = archive_dir / "har_hash.txt"
+            with open(har_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.har_hash)
+            try:
+                timestamp_file(har_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping HAR hash file: {e}")
+
+            # store and timestamp fuzzy hash
+            har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
+            with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.har_fuzzy_hash)
+            try:
+                timestamp_file(har_fuzzy_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping HAR fuzzy hash file: {e}")
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ HAR hashing failed: {e}")
+
+        # with open(sanitized_har_path, 'rb') as file:
+        #     sanitized_har_content = file.read()
+        #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
+        #     metadata.sanitized_har_hash = sanitized_har_hash
+
     except Exception as e:
         traceback.print_exc()
-        print(f"❌ Error timestamping HAR hash file: {e}")
-
-    # store and timestamp fuzzy hash
-    har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
-    with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
-        f.write(metadata.har_fuzzy_hash)
-
-    try:
-        timestamp_file(har_fuzzy_hash_path)
-    except Exception as e:
-        traceback.print_exc()
-        print(f"❌ Error timestamping HAR hash file: {e}")
-
-    # with open(sanitized_har_path, 'rb') as file:
-    #     sanitized_har_content = file.read()
-    #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
-    #     metadata.sanitized_har_hash = sanitized_har_hash
-
-    with open(archive_dir / "metadata.json", "w", encoding="utf-8") as f:
-        metadata_dict = metadata.model_dump()
-        json.dump(metadata_dict, f, indent=2, default=str)
+        print(f"❌ Error during post-processing (metadata.json will still be saved): {e}")
+    finally:
+        with open(archive_dir / "metadata.json", "w", encoding="utf-8") as f:
+            metadata_dict = metadata.model_dump()
+            json.dump(metadata_dict, f, indent=2, default=str)
 
     with open(archive_dir / "affidavit.txt", "w", encoding="utf-8") as f:
         f.write(affidavit_from_metadata(metadata))
