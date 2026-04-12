@@ -1,5 +1,6 @@
 import base64
 import datetime
+import html
 import json
 import os
 import re
@@ -74,62 +75,272 @@ def extract_xpv_asset_id(url) -> Optional[str]:
 
 
 def extract_xpv_asset_id_from_dash_manifest(manifest_xml: str) -> Optional[str]:
-    """Try to get xpv_asset_id from the efg param of any BaseURL in a DASH manifest."""
+    """Try to get xpv_asset_id from the efg param of any BaseURL in a DASH manifest.
+
+    DASH manifests are XML and use HTML entities (e.g. &amp; for &) in URLs.
+    We must HTML-decode each BaseURL before URL-parsing so that query parameter
+    names like 'efg' are found correctly (raw XML has 'amp;efg' as the key).
+    """
     for base_url in re.findall(r'<BaseURL>([^<]+)</BaseURL>', manifest_xml):
-        result = extract_xpv_asset_id(base_url)
+        result = extract_xpv_asset_id(html.unescape(base_url))
         if result:
             return result
     return None
 
 
+# ---------------------------------------------------------------------------
+# Shared video-segment accumulation and key-reconciliation helpers.
+# Used by extract_video_maps, _scan_har_once, and scan_wacz so that all three
+# scanners apply identical cascade logic and remain easy to keep in sync.
+# ---------------------------------------------------------------------------
+
+def _normalize_mp4_url(url: str) -> str:
+    """Strip bytestart/byteend query params from a CDN .mp4 URL."""
+    parsed = urllib_parse.urlparse(url)
+    query = '&'.join(
+        f"{k}={v[0]}" if len(v) == 1 else '&'.join(f"{k}={i}" for i in v)
+        for k, v in urllib_parse.parse_qs(parsed.query).items()
+        if k not in ('bytestart', 'byteend')
+    )
+    return str(urllib_parse.urlunparse(parsed._replace(query=query)))
+
+
+def _parse_byte_range(url: str) -> tuple[Optional[int], Optional[int]]:
+    """Return (bytestart, byteend) from URL query params, or (None, None)."""
+    start = int(url.split('bytestart=')[1].split('&')[0]) if 'bytestart=' in url else None
+    end = int(url.split('byteend=')[1].split('&')[0]) if 'byteend=' in url else None
+    return start, end
+
+
+def accumulate_video_segment(
+    url: str,
+    body: bytes,
+    real_xpv_dict: dict[str, Video],
+    fallback_dict: dict[str, Video],
+    filename_to_xpv: dict[str, str],
+) -> None:
+    """
+    Process one .mp4 URL+body and route it into the appropriate accumulation dict.
+
+    Cascade step 1 — extract xpv_asset_id from URL efg:
+    - Found: add segment to real_xpv_dict[xpv_asset_id]; record
+      filename_to_xpv[filename] = xpv_asset_id for later reconciliation.
+    - Not found: add segment to fallback_dict[filename].
+
+    The filename component of Instagram CDN URLs (path segment before ".mp4") is
+    content-addressed and identical across video_versions URLs and DASH manifest
+    BaseURLs for the same video, making it a reliable reconciliation anchor.
+
+    Call reconcile_video_dicts() after all entries have been accumulated to resolve
+    fallback entries using structure DASH manifests (cascade steps 2-3).
+    """
+    base_url = url.split('.mp4')[0]
+    filename = base_url.split('/')[-1]
+    if not filename:
+        return
+    full_url = _normalize_mp4_url(url)
+    start, end = _parse_byte_range(url)
+    xpv_asset_id = extract_xpv_asset_id(url)
+
+    if xpv_asset_id:
+        filename_to_xpv[filename] = xpv_asset_id
+        target: dict[str, Video] = real_xpv_dict
+        key: str = xpv_asset_id
+    else:
+        target = fallback_dict
+        key = filename
+
+    if key not in target:
+        target[key] = Video(xpv_asset_id=key, fetched_tracks={})
+    fetched_tracks = target[key].fetched_tracks
+    if fetched_tracks is not None:
+        if filename not in fetched_tracks:
+            fetched_tracks[filename] = MediaTrack(base_url=base_url, full_url=full_url, segments=[])
+        fetched_tracks[filename].segments.append(MediaSegment(start=start, end=end, data=body))
+
+
+def _build_filename_xpv_map(structures: list[StructureType]) -> dict[str, str]:
+    """
+    Derive the canonical xpv_asset_id for each media item in structures and
+    map ALL of its video_versions filenames to that ID.
+
+    Unlike extract_videos_from_structures (which only exposes video_versions[0]
+    as full_asset), this covers every quality level the browser may have fetched.
+    Used by reconcile_video_dicts and the re-keying pass in acquire_videos so
+    that fallback_dict entries are resolved even when the browser chose a
+    non-first quality variant.
+    """
+    result: dict[str, str] = {}
+    seen_pks: set[str] = set()
+
+    def _process(
+        versions: Optional[list[VideoVersion]],
+        manifest: Optional[str],
+        pk: Optional[str],
+    ) -> None:
+        if not versions or not pk:
+            return
+        pk_str = str(pk)
+        if pk_str in seen_pks:
+            return
+        seen_pks.add(pk_str)
+        first_url = versions[0].url
+        if not first_url:
+            return
+        xpv: Optional[str] = extract_xpv_asset_id(first_url)
+        if manifest:
+            dash_id = extract_xpv_asset_id_from_dash_manifest(manifest)
+            if dash_id:
+                xpv = dash_id
+        if not xpv:
+            xpv = pk_str
+        for vv in versions:
+            if vv.url:
+                fn = vv.url.split('.mp4')[0].split('/')[-1]
+                if fn and fn not in result:
+                    result[fn] = xpv
+
+    for s in structures:
+        if isinstance(s, GraphQLResponse):
+            if s.reels_media:
+                for edge in s.reels_media.edges:
+                    for item in edge.node.items:
+                        _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                        for ci in (item.carousel_media or []):
+                            _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.stories_feed:
+                for edge in s.stories_feed.reels_media:
+                    for item in edge.items:
+                        _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                        for ci in (item.carousel_media or []):
+                            _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.profile_timeline:
+                for edge in s.profile_timeline.edges:
+                    _process(edge.node.video_versions, getattr(edge.node, 'video_dash_manifest', None), edge.node.pk)
+                    for ci in (edge.node.carousel_media or []):
+                        _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.clips_user_connection:
+                for edge in s.clips_user_connection.edges:
+                    m = edge.node.media
+                    _process(m.video_versions, getattr(m, 'video_dash_manifest', None), m.pk)
+        elif isinstance(s, ApiV1Response):
+            if s.media_info:
+                for item in s.media_info.items:
+                    _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+        elif isinstance(s, PageResponse):
+            if s.posts:
+                for post in s.posts.items:
+                    _process(post.video_versions, getattr(post, 'video_dash_manifest', None), post.pk)
+                    for ci in (post.carousel_media or []):
+                        _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.stories:
+                for edge in s.stories.edges:
+                    for item in edge.node.items:
+                        _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                        for ci in (item.carousel_media or []):
+                            _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.highlight_reels:
+                for reel in s.highlight_reels.edges:
+                    for item in reel.node.items:
+                        _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                        for ci in (item.carousel_media or []):
+                            _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.stories_direct:
+                for story in s.stories_direct.reels_media:
+                    for item in story.items:
+                        _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                        for ci in (item.carousel_media or []):
+                            _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+            if s.timelines:
+                for item in s.timelines.items:
+                    _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                    for ci in (item.carousel_media or []):
+                        _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
+
+    return result
+
+
+def reconcile_video_dicts(
+    real_xpv_dict: dict[str, Video],
+    fallback_dict: dict[str, Video],
+    filename_to_xpv: dict[str, str],
+    structures: Optional[list[StructureType]] = None,
+) -> dict[str, Video]:
+    """
+    Merge fallback_dict into real_xpv_dict, resolving filename-keyed entries.
+
+    Cascade steps 2-3:
+    2. If structures are provided, enrich filename_to_xpv by mapping ALL
+       video_versions filenames for each structure video to its canonical
+       xpv_asset_id (cascades through URL efg → DASH manifest → post pk).
+       Covers all quality levels the browser may have fetched, not just
+       video_versions[0].
+    3. For each fallback entry keyed by filename:
+       - Resolved: if the canonical entry already exists in real_xpv_dict, merge
+         its tracks in; otherwise re-key the video with the canonical id.
+       - Unresolved: insert under the filename key — no data is lost; the video
+         can still be assembled/downloaded if needed.
+
+    Returns real_xpv_dict (mutated in place).
+    """
+    # Step 2: enrich filename_to_xpv from ALL video_versions filenames in structures
+    if structures:
+        struct_map = _build_filename_xpv_map(structures)
+        print(f"[reconcile] step2: structure filename→xpv map has {len(struct_map)} entries")
+        for fn, xpv in struct_map.items():
+            if fn not in filename_to_xpv:
+                filename_to_xpv[fn] = xpv
+
+    print(f"[reconcile] fallback_dict keys: {list(fallback_dict.keys())}")
+    print(f"[reconcile] filename_to_xpv keys: {list(filename_to_xpv.keys())}")
+
+    # Step 3: resolve and merge fallback entries
+    for fn, video in fallback_dict.items():
+        real_xpv = filename_to_xpv.get(fn)
+        if real_xpv:
+            print(f"[reconcile] resolved fallback '{fn[:20]}...' → '{real_xpv}'")
+            if real_xpv in real_xpv_dict:
+                existing_tracks = real_xpv_dict[real_xpv].fetched_tracks
+                if existing_tracks is not None:
+                    for track_name, track in (video.fetched_tracks or {}).items():
+                        if track_name not in existing_tracks:
+                            existing_tracks[track_name] = track
+            else:
+                real_xpv_dict[real_xpv] = video.model_copy(update={'xpv_asset_id': real_xpv})
+        else:
+            print(f"[reconcile] UNRESOLVED fallback '{fn[:20]}...' — keeping as filename key")
+            real_xpv_dict[fn] = video  # unresolved — keep as filename-keyed, data not lost
+
+    return real_xpv_dict
+
+
 def extract_video_maps(har_path: Path) -> list[Video]:
-    """Extracts video segment data from the HAR file using streaming JSON parsing."""
-    videos_dict: dict[int, Video] = dict()
+    """
+    Extracts video segment data from the HAR file using streaming JSON parsing.
+
+    Applies cascade step 1 (URL efg) per entry and step 2 (filename_to_xpv
+    built from sibling DASH-segment requests) at the end. Structures are not
+    available here; acquire_videos performs the final step-2 enrichment using
+    the structures_videos it already computes.
+    """
+    real_xpv_dict: dict[str, Video] = {}
+    fallback_dict: dict[str, Video] = {}
+    filename_to_xpv: dict[str, str] = {}
 
     with open(har_path, 'rb') as file:
         for entry in ijson.items(file, 'log.entries.item'):
             try:
-                if ".mp4" in entry['request']['url'] and "text" in entry['response']['content']:
+                if '.mp4' in entry['request']['url'] and 'text' in entry['response']['content']:
                     url = entry['request']['url']
-                    base_url = url.split(".mp4")[0]
-                    full_url = str(urllib_parse.urlunparse(
-                        urllib_parse.urlparse(url)._replace(
-                            query="&".join(
-                                f"{k}={v[0]}" if len(v) == 1 else "&".join(f"{k}={i}" for i in v)
-                                for k, v in urllib_parse.parse_qs(urllib_parse.urlparse(url).query).items()
-                                if k not in ("bytestart", "byteend")
-                            )
-                        )
-                    ))
-                    xpv_asset_id = extract_xpv_asset_id(url)
-                    if xpv_asset_id is None:
-                        continue
-                    filename = base_url.split("/")[-1]
-                    start = end = None
-                    if "bytestart=" in url:
-                        start = int(url.split("bytestart=")[1].split("&")[0])
-                    if "byteend=" in url:
-                        end = int(url.split("byteend=")[1].split("&")[0])
-                    response_content = base64.b64decode(entry['response']['content']['text'])
-                    if xpv_asset_id not in videos_dict:
-                        videos_dict[xpv_asset_id] = Video(
-                            xpv_asset_id=xpv_asset_id,
-                            fetched_tracks=dict(),
-                        )
-                    if filename not in videos_dict[xpv_asset_id].fetched_tracks:
-                        videos_dict[xpv_asset_id].fetched_tracks[filename] = MediaTrack(
-                            base_url=base_url,
-                            full_url=full_url,
-                            segments=[]
-                        )
-                    videos_dict[xpv_asset_id].fetched_tracks[filename].segments.append(
-                        MediaSegment(start=start, end=end, data=response_content))
+                    body = base64.b64decode(entry['response']['content']['text'])
+                    accumulate_video_segment(url, body, real_xpv_dict, fallback_dict, filename_to_xpv)
             except Exception as e:
                 print(f'Error processing entry: {e}')
                 traceback.print_exc()
                 continue
-    videos = list(videos_dict.values())
-    return videos
+
+    # Reconcile without structures; acquire_videos does a second pass with structures.
+    return list(reconcile_video_dicts(real_xpv_dict, fallback_dict, filename_to_xpv).values())
 
 
 def _count_complete_trun_samples(raw_data: bytes) -> Optional[int]:
@@ -659,9 +870,9 @@ def acquire_videos(
     existing_videos = get_existing_videos(output_dir)
 
     har_videos = har_video_maps if har_video_maps is not None else extract_video_maps(har_path)
-    structures_videos = extract_videos_from_structures(structures)
+    structures_videos = extract_videos_from_structures(structures or [])
 
-    combined_videos_dict: dict[int, Video] = dict()
+    combined_videos_dict: dict[str, Video] = {}
 
     for video in har_videos:
         if video.xpv_asset_id in combined_videos_dict:
@@ -669,11 +880,33 @@ def acquire_videos(
         else:
             combined_videos_dict[video.xpv_asset_id] = video
 
+    # Final cascade step 2 for extract_video_maps: re-key any filename-fallback
+    # HAR entries that can now be matched to a canonical xpv_asset_id.
+    # Uses _build_filename_xpv_map (which covers ALL video_versions quality levels,
+    # not just video_versions[0]) so the re-key succeeds even when the browser
+    # fetched a non-first-quality variant.
+    struct_filename_to_xpv = _build_filename_xpv_map(structures or [])
+    for fn, real_xpv in list(struct_filename_to_xpv.items()):
+        if fn in combined_videos_dict and fn != real_xpv:
+            fn_video = combined_videos_dict.pop(fn)
+            if real_xpv in combined_videos_dict:
+                existing_tracks = combined_videos_dict[real_xpv].fetched_tracks
+                if fn_video.fetched_tracks and existing_tracks is not None:
+                    for track_name, track in fn_video.fetched_tracks.items():
+                        if track_name not in existing_tracks:
+                            existing_tracks[track_name] = track
+            else:
+                combined_videos_dict[real_xpv] = fn_video.model_copy(update={'xpv_asset_id': real_xpv})
+
+    print(f"[acquire] HAR video keys after re-keying: {list(combined_videos_dict.keys())}")
+    print(f"[acquire] structure video keys: {[sv.xpv_asset_id for sv in structures_videos]}")
     for video in structures_videos:
         if video.xpv_asset_id in combined_videos_dict:
             combined_videos_dict[video.xpv_asset_id].full_asset = video.full_asset
+            print(f"[acquire] joined structure+HAR for xpv '{video.xpv_asset_id}'")
         else:
             combined_videos_dict[video.xpv_asset_id] = video
+            print(f"[acquire] structure-only video xpv '{video.xpv_asset_id}' (no HAR match)")
 
     combined_videos = list(combined_videos_dict.values())
     # attach existing local files to the videos
@@ -753,5 +986,12 @@ if __name__ == '__main__':
     acquire_videos(
         har_file_path,
         output_dir=har_file_path.parent / "videos",
-        structures=har_structures
+        structures=har_structures,
+        config=VideoAcquisitionConfig(
+            download_missing=True,
+            download_media_not_in_structures=False,
+            download_unfetched_media=False,
+            download_full_versions_of_fetched_media=False,
+            download_highest_quality_assets_from_structures=False
+        )
     )

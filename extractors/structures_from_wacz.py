@@ -4,14 +4,13 @@ import traceback
 import zipfile
 from pathlib import Path
 from typing import Optional
-from urllib import parse as urllib_parse
 
 from warcio.archiveiterator import ArchiveIterator
 
 from extractors.extract_photos import Photo, extract_xpv_asset_id as _extract_photo_asset_id
 from extractors.extract_videos import (
-    Video, MediaTrack, MediaSegment, save_fetched_asset,
-    extract_xpv_asset_id as _extract_video_xpv_asset_id,
+    Video, save_fetched_asset,
+    accumulate_video_segment, reconcile_video_dicts,
 )
 from extractors.models_har import HarRequest
 from extractors.structures_extraction import StructureType
@@ -64,7 +63,9 @@ def scan_wacz(wacz_path: Path, output_dir: Path) -> tuple[list[StructureType], l
     Returns (structures, videos, photos) — same types as _scan_har_once() in structures_to_entities.py.
     """
     structures: list[StructureType] = []
-    videos_dict: dict[str, Video] = {}
+    real_xpv_dict: dict[str, Video] = {}
+    fallback_dict: dict[str, Video] = {}
+    filename_to_xpv: dict[str, str] = {}
     photos_dict: dict[str, Photo] = {}
 
     videos_dir = output_dir / "videos"
@@ -140,50 +141,14 @@ def scan_wacz(wacz_path: Path, output_dir: Path) -> tuple[list[StructureType], l
                         print(f"[wacz] Structure processing error for {clean_url}: {e}")
                         traceback.print_exc()
 
-                    # --- Video segments (.mp4 with bytestart/byteend, video/mp4 content-type) ---
+                    # --- Video segments (.mp4 with video/mp4 content-type) ---
                     try:
                         if '.mp4' in url and ct.startswith('video/'):
                             body = _decode_response_body(record)
                             if body:
-                                base_url = url.split('.mp4')[0]
-                                full_url = str(urllib_parse.urlunparse(
-                                    urllib_parse.urlparse(url)._replace(
-                                        query='&'.join(
-                                            f"{k}={v[0]}" if len(v) == 1 else '&'.join(f"{k}={i}" for i in v)
-                                            for k, v in urllib_parse.parse_qs(
-                                                urllib_parse.urlparse(url).query).items()
-                                            if k not in ('bytestart', 'byteend')
-                                        )
-                                    )
-                                ))
-                                xpv_asset_id = _extract_video_xpv_asset_id(url)
-                                filename = base_url.split('/')[-1]
-                                # If the URL's efg has no xpv_asset_id (e.g. clips/reels
-                                # video_versions URLs), fall back to the filename, which is
-                                # content-addressed and consistent across the same video's CDN URLs.
-                                if not xpv_asset_id:
-                                    xpv_asset_id = filename
-                                if not xpv_asset_id:
-                                    continue
-                                start = end = None
-                                if 'bytestart=' in url:
-                                    start = int(url.split('bytestart=')[1].split('&')[0])
-                                if 'byteend=' in url:
-                                    end = int(url.split('byteend=')[1].split('&')[0])
-
-                                if xpv_asset_id not in videos_dict:
-                                    videos_dict[xpv_asset_id] = Video(
-                                        xpv_asset_id=xpv_asset_id, fetched_tracks={}
-                                    )
-                                fetched_tracks = videos_dict[xpv_asset_id].fetched_tracks
-                                if fetched_tracks is not None:
-                                    if filename not in fetched_tracks:
-                                        fetched_tracks[filename] = MediaTrack(
-                                            base_url=base_url, full_url=full_url, segments=[]
-                                        )
-                                    fetched_tracks[filename].segments.append(
-                                        MediaSegment(start=start, end=end, data=body)
-                                    )
+                                accumulate_video_segment(
+                                    url, body, real_xpv_dict, fallback_dict, filename_to_xpv
+                                )
                     except Exception as e:
                         print(f"[wacz] Video segment error for {url}: {e}")
                         traceback.print_exc()
@@ -203,8 +168,11 @@ def scan_wacz(wacz_path: Path, output_dir: Path) -> tuple[list[StructureType], l
                     except Exception as e:
                         print(f"[wacz] Image error for {url}: {e}")
 
+    # --- Reconcile filename-keyed video entries (cascade steps 2-3) ---
+    reconcile_video_dicts(real_xpv_dict, fallback_dict, filename_to_xpv, structures=structures)
+
     # --- Assemble video segments and save to disk ---
-    videos = list(videos_dict.values())
+    videos = list(real_xpv_dict.values())
     for video in videos:
         if video.fetched_tracks:
             result = save_fetched_asset(video, videos_dir, download_full_track=False)

@@ -524,7 +524,7 @@ def manual_entities_summary_generation():
         VideoAcquisitionConfig(
             download_missing=True,
             download_media_not_in_structures=False,
-            download_unfetched_media=True,
+            download_unfetched_media=False,
             download_full_versions_of_fetched_media=False,
             download_highest_quality_assets_from_structures=False
         ),

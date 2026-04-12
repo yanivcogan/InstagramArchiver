@@ -16,7 +16,7 @@ from extractors.entity_types import Post, Account, Media, \
 from extractors.extract_photos import acquire_photos, PhotoAcquisitionConfig, Photo, \
     _is_image_request, extract_xpv_asset_id as _extract_photo_asset_id
 from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig, Video, \
-    MediaTrack, MediaSegment, extract_xpv_asset_id as _extract_video_xpv_asset_id
+    accumulate_video_segment, reconcile_video_dicts
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed, CommentsConnection
 from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1, LikersApiV1, FriendshipsApiV1
 from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection, FriendsListGraphQL
@@ -44,7 +44,9 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
     Replaces three separate ijson passes with one, roughly tripling parse speed.
     """
     structures: list[StructureType] = []
-    videos_dict: dict[str, Video] = {}
+    real_xpv_dict: dict[str, Video] = {}
+    fallback_dict: dict[str, Video] = {}
+    filename_to_xpv: dict[str, str] = {}
     photos_dict: dict = {}  # keys are str (filename) or int (hash fallback)
 
     with open(har_path, 'rb') as f:
@@ -83,42 +85,8 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
             # --- Video segment maps (.mp4 entries with base64 content) ---
             try:
                 if '.mp4' in url and 'text' in content:
-                    base_url = url.split('.mp4')[0]
-                    full_url = str(urllib_parse.urlunparse(
-                        urllib_parse.urlparse(url)._replace(
-                            query='&'.join(
-                                f"{k}={v[0]}" if len(v) == 1 else '&'.join(f"{k}={i}" for i in v)
-                                for k, v in urllib_parse.parse_qs(urllib_parse.urlparse(url).query).items()
-                                if k not in ('bytestart', 'byteend')
-                            )
-                        )
-                    ))
-                    xpv_asset_id = _extract_video_xpv_asset_id(url)
-                    filename = base_url.split('/')[-1]
-                    # If the URL's efg has no xpv_asset_id (e.g. clips/reels video_versions
-                    # URLs), fall back to the filename, which is content-addressed and
-                    # consistent across the same video's CDN URLs.
-                    if not xpv_asset_id:
-                        xpv_asset_id = filename
-                    if not xpv_asset_id:
-                        continue
-                    start = end = None
-                    if 'bytestart=' in url:
-                        start = int(url.split('bytestart=')[1].split('&')[0])
-                    if 'byteend=' in url:
-                        end = int(url.split('byteend=')[1].split('&')[0])
-                    segment_data = base64.b64decode(content['text'])
-                    if xpv_asset_id not in videos_dict:
-                        videos_dict[xpv_asset_id] = Video(xpv_asset_id=xpv_asset_id, fetched_tracks={})
-                    fetched_tracks = videos_dict[xpv_asset_id].fetched_tracks
-                    if fetched_tracks is not None:
-                        if filename not in fetched_tracks:
-                            fetched_tracks[filename] = MediaTrack(
-                                base_url=base_url, full_url=full_url, segments=[]
-                            )
-                        fetched_tracks[filename].segments.append(
-                            MediaSegment(start=start, end=end, data=segment_data)
-                        )
+                    body = base64.b64decode(content['text'])
+                    accumulate_video_segment(url, body, real_xpv_dict, fallback_dict, filename_to_xpv)
             except Exception as e:
                 print(f"Error processing video entry: {e}")
                 traceback.print_exc()
@@ -139,7 +107,8 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
             except Exception:
                 pass
 
-    return structures, list(videos_dict.values()), list(photos_dict.values())
+    reconcile_video_dicts(real_xpv_dict, fallback_dict, filename_to_xpv, structures=structures)
+    return structures, list(real_xpv_dict.values()), list(photos_dict.values())
 
 
 def extract_data_from_har(
