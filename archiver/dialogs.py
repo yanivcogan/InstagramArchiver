@@ -111,5 +111,7 @@ def show_dialog_form(dialog_form: DialogForm):
     # root.attributes("-alpha", 0)
     win = DialogFormWindow(root, dialog_form)
     root.wait_window(win)
+    result = win.result
+    win.widgets.clear()  # Release BooleanVar refs so __del__ fires while interpreter is alive
     root.destroy()
-    return win.result
+    return result
