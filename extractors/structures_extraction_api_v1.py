@@ -21,7 +21,7 @@ class ApiV1Response(BaseModel):
 def extract_data_from_api_v1_entry(api_data: dict, req: HarRequest) -> Optional[ApiV1Response]:
     res = ApiV1Response()
     res.context = ApiV1Context(url=req.url, media_id=req.url.split('media/')[1].split('/')[0] if 'media/' in req.url else None)
-    if "/friendships/" in req.url:
+    if "/friendships/" in req.url and "users" in api_data:
         res.friendships = FriendshipsApiV1(**api_data)
     elif "/likers/" in req.url:
         res.likers = LikersApiV1(**api_data)

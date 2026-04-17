@@ -502,6 +502,8 @@ class TaggedAccount(EntityBase):
             media_id = self.context_media_id_on_platform or ''
             if self.tagged_account_id_on_platform and (self.context_post_id_on_platform or self.context_media_id_on_platform):
                 self.id_on_platform = f"{tagged_id}_{post_id}_{media_id}"
+            elif self.tagged_account_url_suffix and (self.context_post_id_on_platform or self.context_media_id_on_platform):
+                self.id_on_platform = f"url_{self.tagged_account_url_suffix}_{post_id}_{media_id}"
         return self
 
 
