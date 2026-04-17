@@ -187,10 +187,10 @@ def synthesize_from_archives(records: list[T], reconcile_fn: Callable[[T, T], T]
     """
     if not records:
         return None
-    sorted_records = sorted(records, key=lambda r: getattr(r, 'create_date', None) or datetime.min)
+    sorted_records = sorted(records, key=lambda r: getattr(r, 'create_date', None) or datetime.min, reverse=True)
     result = sorted_records[0]
-    for newer in sorted_records[1:]:
-        result = reconcile_fn(newer, result)  # existing=result wins over newer
+    for older in sorted_records[1:]:
+        result = reconcile_fn(older, result)  # existing=result (newest) wins over older
     return result
 
 

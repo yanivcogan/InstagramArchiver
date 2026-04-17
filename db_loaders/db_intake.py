@@ -446,16 +446,33 @@ def preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: 
     (e.g. in platform URLs) and must only grow, never shrink. Apply the same
     first-non-empty rule but always favouring the existing canonical value.
 
+    For entities with an identifiers list (Account), the new url_suffix and
+    id_on_platform are accumulated into identifiers before url_suffix is
+    updated, so that username changes are recorded as a historical record.
+    url_suffix itself is updated to the newest known value (prefer synthesized
+    over existing_canonical), while id_on_platform remains frozen to the first
+    known value (platform IDs are immutable).
+
     FK integer IDs (e.g. post_id, account_id) are also copied from the existing
     canonical when the synthesized entity has None, to avoid redundant FK lookups
     inside store_entity for updated entities.
     """
+    if hasattr(synthesized, 'identifiers') and hasattr(existing_canonical, 'identifiers'):
+        ids = list(existing_canonical.identifiers or [])
+        new_id = getattr(synthesized, 'id_on_platform', None)
+        new_url = getattr(synthesized, 'url_suffix', None)
+        if new_id and f"id_{new_id}" not in ids:
+            ids.append(f"id_{new_id}")
+        if new_url and f"url_{new_url}" not in ids:
+            ids.append(f"url_{new_url}")
+        synthesized.identifiers = ids
+
     if hasattr(synthesized, 'id_on_platform'):
         synthesized.id_on_platform = reconcile_primitives(
             existing_canonical.id_on_platform, synthesized.id_on_platform
         )
     if hasattr(synthesized, 'url_suffix'):
-        synthesized.url_suffix = reconcile_primitives(existing_canonical.url_suffix, synthesized.url_suffix)
+        synthesized.url_suffix = reconcile_primitives(synthesized.url_suffix, existing_canonical.url_suffix)
     for fk_field in ('account_id', 'post_id', 'media_id', 'tagged_account_id',
                      'follower_account_id', 'followed_account_id'):
         if hasattr(synthesized, fk_field) and getattr(synthesized, fk_field) is None:
@@ -501,11 +518,15 @@ def get_all_archives_for_canonical_account(canonical_id: int) -> list[Account]:
 
 
 def store_account(account: Account, existing_account: Optional[Account], _: Optional[Path]) -> int:
-    account_identifiers: list[str] = (existing_account.identifiers if existing_account else None) or []
-    if account.id_on_platform and f"id_{account.id_on_platform}" not in account_identifiers:
-        account_identifiers.append(f"id_{account.id_on_platform}")
-    if account.url_suffix and f"url_{account.url_suffix}" not in account_identifiers:
-        account_identifiers.append(f"url_{account.url_suffix}")
+    if existing_account is not None:
+        # Identifiers already accumulated by preserve_canonical_identifiers before url_suffix was frozen.
+        account_identifiers: list[str] = account.identifiers or []
+    else:
+        account_identifiers = []
+        if account.id_on_platform and f"id_{account.id_on_platform}" not in account_identifiers:
+            account_identifiers.append(f"id_{account.id_on_platform}")
+        if account.url_suffix and f"url_{account.url_suffix}" not in account_identifiers:
+            account_identifiers.append(f"url_{account.url_suffix}")
     if existing_account is not None:
         db.execute_query(
             """UPDATE account
