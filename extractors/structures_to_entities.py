@@ -66,7 +66,8 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
                         structure = extract_graphql_from_response(json.loads(res_json), context=ctx)
                         if structure:
                             structures.append(structure)
-                elif 'instagram.com/api/v1/media/' in url and not mime.startswith('text/html'):
+                elif ('instagram.com/api/v1/media/' in url or
+                      'instagram.com/api/v1/friendships/' in url) and not mime.startswith('text/html'):
                     res_json: Optional[str] = content.get('text')
                     if res_json:
                         structure = extract_data_from_api_v1_entry(json.loads(res_json), HarRequest(**entry['request']))
@@ -213,17 +214,26 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
     orphaned_posts: list[PostAndAssociatedEntities] = []
     orphaned_media: list[MediaAndAssociatedEntities] = []
 
-    account_map: dict[str, AccountAndAssociatedEntities] = {}
+    account_suffix_map: dict[str, AccountAndAssociatedEntities] = {}
+    account_id_map: dict[str, AccountAndAssociatedEntities] = {}
     for account in entities.accounts:
         account_entity = AccountAndAssociatedEntities(
             **account.model_dump(),
             account_posts=[],
             account_relations=[]
         )
-        account_url = account.url
-        if account_url:
-            account_map[account_url] = account_entity
+        if account.url_suffix:
+            account_suffix_map[account.url_suffix] = account_entity
+        if account.id_on_platform:
+            account_id_map[account.id_on_platform] = account_entity
         nested_accounts.append(account_entity)
+
+    def _find_account(url_suffix: Optional[str], id_on_platform: Optional[str]) -> Optional[AccountAndAssociatedEntities]:
+        if url_suffix and url_suffix in account_suffix_map:
+            return account_suffix_map[url_suffix]
+        if id_on_platform and id_on_platform in account_id_map:
+            return account_id_map[id_on_platform]
+        return None
 
     post_map: dict[str, PostAndAssociatedEntities] = {}
     for post in entities.posts:
@@ -235,10 +245,10 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
             post_tagged_accounts=[],
             post_author=None
         )
-        account_url = post.account_url
-        if account_url is not None and account_url in account_map:
-            post_entity.post_author = account_map[account_url]
-            account_map[account_url].account_posts.append(post_entity)
+        account_entity = _find_account(post.account_url_suffix, post.account_id_on_platform)
+        if account_entity is not None:
+            post_entity.post_author = account_entity
+            account_entity.account_posts.append(post_entity)
         else:
             orphaned_posts.append(post_entity)
         if post.id_on_platform is not None:
@@ -269,12 +279,12 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
             post_map[tagged.context_post_id_on_platform].post_tagged_accounts.append(tagged)
 
     for relation in entities.account_relations:
-        follower_url = relation.follower_account_url
-        followed_url = relation.followed_account_url
-        if follower_url and follower_url in account_map:
-            account_map[follower_url].account_relations.append(relation)
-        elif followed_url and followed_url in account_map:
-            account_map[followed_url].account_relations.append(relation)
+        account_entity = (
+            _find_account(relation.follower_account_url_suffix, relation.follower_account_id_on_platform)
+            or _find_account(relation.followed_account_url_suffix, relation.followed_account_id_on_platform)
+        )
+        if account_entity is not None:
+            account_entity.account_relations.append(relation)
 
     return ExtractedEntitiesNested(
         accounts=nested_accounts,

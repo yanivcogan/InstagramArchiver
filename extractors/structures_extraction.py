@@ -30,7 +30,8 @@ def structures_from_har(har_path: Path) -> list[StructureType]:
                     if structure:
                         structures.append(structure)
                 # API v1
-                elif "instagram.com/api/v1/media/" in entry["request"]["url"] and not entry["response"]["content"].get("mimeType", "").startswith("text/html"):
+                elif ("instagram.com/api/v1/media/" in entry["request"]["url"] or
+                      "instagram.com/api/v1/friendships/" in entry["request"]["url"]) and not entry["response"]["content"].get("mimeType", "").startswith("text/html"):
                     res_json = entry["response"]["content"].get("text")
                     if not res_json:
                         continue
@@ -70,7 +71,8 @@ def keep_only_requests_for_instagram_structures(har_path: Path, clean_original: 
                     if structure:
                         is_relevant = True
                 # API v1
-                elif "instagram.com/api/v1/media/" in entry["request"]["url"] and not entry["response"]["content"].get("mimeType", "").startswith("text/html"):
+                elif ("instagram.com/api/v1/media/" in entry["request"]["url"] or
+                      "instagram.com/api/v1/friendships/" in entry["request"]["url"]) and not entry["response"]["content"].get("mimeType", "").startswith("text/html"):
                     res_json = entry["response"]["content"].get("text")
                     if not res_json:
                         continue
