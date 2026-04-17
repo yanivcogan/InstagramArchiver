@@ -256,6 +256,26 @@ def nest_entities_from_archive_session(entities: ExtractedEntitiesFlattened) -> 
                 media_parent_post=None
             ))
 
+    for comment in entities.comments:
+        if comment.post_id_on_platform and comment.post_id_on_platform in post_map:
+            post_map[comment.post_id_on_platform].post_comments.append(comment)
+
+    for like in entities.likes:
+        if like.post_id_on_platform and like.post_id_on_platform in post_map:
+            post_map[like.post_id_on_platform].post_likes.append(like)
+
+    for tagged in entities.tagged_accounts:
+        if tagged.context_post_id_on_platform and tagged.context_post_id_on_platform in post_map:
+            post_map[tagged.context_post_id_on_platform].post_tagged_accounts.append(tagged)
+
+    for relation in entities.account_relations:
+        follower_url = relation.follower_account_url
+        followed_url = relation.followed_account_url
+        if follower_url and follower_url in account_map:
+            account_map[follower_url].account_relations.append(relation)
+        elif followed_url and followed_url in account_map:
+            account_map[followed_url].account_relations.append(relation)
+
     return ExtractedEntitiesNested(
         accounts=nested_accounts,
         posts=orphaned_posts,
