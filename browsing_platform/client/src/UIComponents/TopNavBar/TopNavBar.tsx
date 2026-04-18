@@ -90,14 +90,16 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                         <ListItemIcon><LocalOfferIcon/></ListItemIcon>
                         <ListItemText primary="Tags"/>
                     </ListItemButton>
-                    <ListItemButton onClick={() => goToPage("upload")} href={"/upload"}>
+                    {isAdmin && (<ListItemButton onClick={() => goToPage("upload")} href={"/upload"}>
                         <ListItemIcon><UploadIcon/></ListItemIcon>
                         <ListItemText primary="Upload Archives"/>
                     </ListItemButton>
-                    <ListItemButton onClick={() => goToPage("incorporate")} href={"/incorporate"}>
+                    )}
+                    {isAdmin && (<ListItemButton onClick={() => goToPage("incorporate")} href={"/incorporate"}>
                         <ListItemIcon><StorageIcon/></ListItemIcon>
                         <ListItemText primary="Incorporate"/>
                     </ListItemButton>
+                    )}
                     <Divider/>
                     <ListItemButton onClick={() => goToPage("settings/security")} href={"/settings/security"}>
                         <ListItemIcon><SecurityIcon/></ListItemIcon>
