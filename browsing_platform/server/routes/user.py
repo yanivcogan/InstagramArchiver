@@ -48,7 +48,7 @@ class ChangePasswordVoluntary(BaseModel):
 async def change_password_preauth(
     data: ChangePasswordPreAuth,
 ) -> Union[LoginStepResponse, AuthTokenResponse]:
-    user_id = consume_pre_auth_token(data.pre_auth_token)
+    user_id = consume_pre_auth_token(data.pre_auth_token, "change_password")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -75,7 +75,7 @@ async def change_password_preauth(
         {"uid": user_id}, "single_row"
     )
     if not user_row or not user_row["totp_configured"]:
-        new_pre_auth = create_pre_auth_token(user_id)
+        new_pre_auth = create_pre_auth_token(user_id, "setup_totp")
         return LoginStepResponse(next_step="setup_totp", pre_auth_token=new_pre_auth)
 
     token = generate_token()

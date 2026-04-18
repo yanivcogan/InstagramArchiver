@@ -46,13 +46,18 @@ class TotpSetupResponse(BaseModel):
 
 @router.post("/setup")
 async def setup_totp(data: PreAuthRequest) -> TotpSetupResponse:
-    user_id = consume_pre_auth_token(data.pre_auth_token)
+    user_id = consume_pre_auth_token(data.pre_auth_token, "setup_totp")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired setup token")
 
-    user_row = db.execute_query("SELECT email FROM user WHERE id = %(uid)s", {"uid": user_id}, "single_row")
+    user_row = db.execute_query(
+        "SELECT email, totp_configured FROM user WHERE id = %(uid)s",
+        {"uid": user_id}, "single_row"
+    )
     if not user_row:
         raise HTTPException(status_code=401)
+    if user_row["totp_configured"]:
+        raise HTTPException(status_code=409, detail="2FA is already configured")
 
     secret = generate_totp_secret()
     db.execute_query(
@@ -60,7 +65,7 @@ async def setup_totp(data: PreAuthRequest) -> TotpSetupResponse:
         {"s": secret, "uid": user_id}, "none"
     )
 
-    new_pre_auth = create_pre_auth_token(user_id)
+    new_pre_auth = create_pre_auth_token(user_id, "setup_totp_enable")
     qr_code = generate_qr_code_png_b64(user_row["email"], secret)
 
     return TotpSetupResponse(qr_code=qr_code, secret=secret, pre_auth_token=new_pre_auth)
@@ -68,7 +73,7 @@ async def setup_totp(data: PreAuthRequest) -> TotpSetupResponse:
 
 @router.post("/enable")
 async def enable_totp(data: EnableRequest) -> AuthTokenResponse:
-    user_id = consume_pre_auth_token(data.pre_auth_token)
+    user_id = consume_pre_auth_token(data.pre_auth_token, "setup_totp_enable")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired setup token")
 

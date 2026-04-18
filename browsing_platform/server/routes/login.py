@@ -56,7 +56,7 @@ async def login_with_pass(data: LoginCredentialsPass, request: Request) -> Login
 @router.post("/verify-2fa")
 @limiter.limit("10/15minutes")
 async def verify_2fa(data: Verify2FARequest, request: Request) -> AuthTokenResponse:
-    user_id = consume_pre_auth_token(data.pre_auth_token)
+    user_id = consume_pre_auth_token(data.pre_auth_token, "verify_totp")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired 2FA token")
 

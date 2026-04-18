@@ -120,13 +120,20 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Lo
             )
         log_event("login_attempt", user["id"], json.dumps({"success": True, "step": "password"}), "{}")
 
-        pre_auth_token = create_pre_auth_token(user["id"])
-
         if user.get("force_pwd_reset"):
-            return LoginStepResponse(next_step="change_password", pre_auth_token=pre_auth_token)
+            return LoginStepResponse(
+                next_step="change_password",
+                pre_auth_token=create_pre_auth_token(user["id"], "change_password"),
+            )
         if not user.get("totp_configured"):
-            return LoginStepResponse(next_step="setup_totp", pre_auth_token=pre_auth_token)
-        return LoginStepResponse(next_step="verify_totp", pre_auth_token=pre_auth_token)
+            return LoginStepResponse(
+                next_step="setup_totp",
+                pre_auth_token=create_pre_auth_token(user["id"], "setup_totp"),
+            )
+        return LoginStepResponse(
+            next_step="verify_totp",
+            pre_auth_token=create_pre_auth_token(user["id"], "verify_totp"),
+        )
     else:
         db.execute_query(
             """UPDATE user
