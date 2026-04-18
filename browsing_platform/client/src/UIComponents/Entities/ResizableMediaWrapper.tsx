@@ -12,16 +12,32 @@ interface IProps {
 function parsePx(v: string | number | undefined | null): number | null {
     if (typeof v === 'number') return v;
     if (typeof v !== 'string') return null;
-    const m = v.match(/^(\d+(?:\.\d+)?)px$/);
-    return m ? parseFloat(m[1]) : null;
+    let m = v.match(/^(\d+(?:\.\d+)?)px$/);
+    if (m) return parseFloat(m[1]);
+    m = v.match(/^(\d+(?:\.\d+)?)vh$/);
+    if (m) return parseFloat(m[1]) * window.innerHeight / 100;
+    m = v.match(/^(\d+(?:\.\d+)?)vw$/);
+    if (m) return parseFloat(m[1]) * window.innerWidth / 100;
+    return null;
 }
 
 export default function ResizableMediaWrapper({
     initialStyle, compactMode, naturalAspectRatio, onResizeStart, onResizeStop, children
 }: IProps) {
+    const parsedW    = compactMode ? null : parsePx(initialStyle?.width);
+    const parsedMaxH = compactMode ? null : parsePx(initialStyle?.maxHeight);
+    // When both constraints are present, start at min(W, H) — the correct size for a 1:1
+    // placeholder, giving zero layout shift for square images (most common on Instagram).
+    const initialW = parsedW !== null
+        ? Math.round(parsedMaxH !== null ? Math.min(parsedW, parsedMaxH) : parsedW)
+        : null;
+
     const phaseOneRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState<number | null>(null);
-    const minWidthRef = useRef<number>(50);
+    const [width, setWidth] = useState<number | null>(initialW);
+    // maxWidthRef: the full intended width (parsedW), used by the naturalAspectRatio effect
+    // to expand landscape images to their correct width instead of staying at min(W,H).
+    const maxWidthRef = useRef<number | null>(parsedW !== null ? Math.round(parsedW) : null);
+    const minWidthRef = useRef<number>(initialW !== null ? Math.round(initialW * 0.5) : 50);
     const userResized = useRef(false);
     const widthRef = useRef<number | null>(null);
     widthRef.current = width;
@@ -50,7 +66,8 @@ export default function ResizableMediaWrapper({
         setWidth(prev => {
             if (prev === null) return null;
             const bound = Math.round(maxH * naturalAspectRatio);
-            return bound < prev ? bound : prev;
+            const correct = maxWidthRef.current !== null ? Math.min(maxWidthRef.current, bound) : bound;
+            return correct !== prev ? correct : prev;
         });
     }, [naturalAspectRatio, initialStyle?.maxHeight]); // eslint-disable-line react-hooks/exhaustive-deps
 

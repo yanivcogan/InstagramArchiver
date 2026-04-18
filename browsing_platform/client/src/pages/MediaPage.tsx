@@ -63,7 +63,8 @@ export default function MediaPage() {
                         },
                         media: {
                             style: {
-                                width: '70vw',
+                                width: '80vw',
+                                maxHeight: '80vh',
                             },
                             annotator: disableAnnotator ? "disable" : "show",
                         },
