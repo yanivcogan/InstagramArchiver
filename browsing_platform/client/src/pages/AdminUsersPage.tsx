@@ -21,7 +21,7 @@ import {
     Typography,
 } from "@mui/material";
 import {DataGrid, GridColDef} from "@mui/x-data-grid";
-import {Delete, Edit, Lock, LockOpen, PersonAdd, VpnKey} from "@mui/icons-material";
+import {Delete, Edit, Lock, LockOpen, PersonAdd, Visibility, VisibilityOff, VpnKey} from "@mui/icons-material";
 import PageShell from "./PageShell";
 
 interface UserRow {
@@ -60,12 +60,14 @@ export default function AdminUsersPage() {
     const [addAdmin, setAddAdmin] = useState(false);
     const [addBusy, setAddBusy] = useState(false);
     const [addError, setAddError] = useState<string | null>(null);
+    const [showAddPwd, setShowAddPwd] = useState(false);
 
     // Edit user dialog
     const [editUser, setEditUser] = useState<UserRow | null>(null);
     const [editData, setEditData] = useState<EditUserData>({email: "", admin: false, locked: false, force_pwd_reset: false, temp_password: ""});
     const [editBusy, setEditBusy] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
+    const [showEditPwd, setShowEditPwd] = useState(false);
 
     // Delete confirm
     const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
@@ -227,11 +229,21 @@ export default function AdminUsersPage() {
                         </Typography>
                         <FormControl variant="standard" fullWidth>
                             <InputLabel>Email</InputLabel>
-                            <Input value={addEmail} onChange={(e) => setAddEmail(e.target.value)} type="email"/>
+                            <Input value={addEmail} onChange={(e) => setAddEmail(e.target.value)} type="email" autoComplete="off"/>
                         </FormControl>
                         <FormControl variant="standard" fullWidth>
                             <InputLabel>Temporary Password</InputLabel>
-                            <Input value={addTempPwd} onChange={(e) => setAddTempPwd(e.target.value)} type="password"/>
+                            <Input
+                                value={addTempPwd}
+                                onChange={(e) => setAddTempPwd(e.target.value)}
+                                type={showAddPwd ? "text" : "password"}
+                                autoComplete="new-password"
+                                endAdornment={
+                                    <IconButton size="small" onClick={() => setShowAddPwd(p => !p)}>
+                                        {showAddPwd ? <VisibilityOff/> : <Visibility/>}
+                                    </IconButton>
+                                }
+                            />
                         </FormControl>
                         <FormControlLabel
                             control={<Switch checked={addAdmin} onChange={(e) => setAddAdmin(e.target.checked)}/>}
@@ -259,15 +271,21 @@ export default function AdminUsersPage() {
                         {editError && <Alert severity="error">{editError}</Alert>}
                         <FormControl variant="standard" fullWidth>
                             <InputLabel>Email</InputLabel>
-                            <Input value={editData.email} onChange={(e) => setEditData(d => ({...d, email: e.target.value}))} type="email"/>
+                            <Input value={editData.email} onChange={(e) => setEditData(d => ({...d, email: e.target.value}))} type="email" autoComplete="off"/>
                         </FormControl>
                         <FormControl variant="standard" fullWidth>
                             <InputLabel>New Temporary Password (optional)</InputLabel>
                             <Input
                                 value={editData.temp_password}
                                 onChange={(e) => setEditData(d => ({...d, temp_password: e.target.value}))}
-                                type="password"
+                                type={showEditPwd ? "text" : "password"}
+                                autoComplete="new-password"
                                 placeholder="Leave blank to keep current"
+                                endAdornment={
+                                    <IconButton size="small" onClick={() => setShowEditPwd(p => !p)}>
+                                        {showEditPwd ? <VisibilityOff/> : <Visibility/>}
+                                    </IconButton>
+                                }
                             />
                         </FormControl>
                         <FormControlLabel
