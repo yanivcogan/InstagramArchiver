@@ -90,11 +90,17 @@ def get_archiving_session_structures(session_id: int) -> tuple[bool, Optional[di
     return True, structures
 
 
+_ARCHIVE_SESSION_COLS = (
+    "id, create_date, external_id, archived_url_suffix, platform, archive_location, "
+    "summary_html, parse_algorithm_version, structures, metadata, attachments, "
+    "extract_algorithm_version, archiving_timestamp, notes, extraction_error, "
+    "source_type, incorporation_status"
+)
+
+
 def get_archiving_session_by_id(session_id: int) -> Optional[ArchiveSession]:
     session = db.execute_query(
-        """SELECT *
-           FROM archive_session
-           WHERE id = %(id)s""",
+        f"SELECT {_ARCHIVE_SESSION_COLS} FROM archive_session WHERE id = %(id)s",
         {"id": session_id},
         return_type="single_row"
     )

@@ -16,7 +16,7 @@ class User(BaseModel):
     password_hash: Optional[str] = None
     password_alg: Optional[str] = None
     password_set_at: Optional[datetime] = None
-    last_password_failure: Optional[datetime] = None
+    last_pwd_failure: Optional[datetime] = None
     force_pwd_reset: Optional[bool] = False
     last_login: Optional[datetime] = None
     login_attempts: Optional[int] = 0
