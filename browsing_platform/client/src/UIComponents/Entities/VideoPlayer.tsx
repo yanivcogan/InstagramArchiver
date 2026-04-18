@@ -10,6 +10,7 @@ import SkipNextIcon from '@mui/icons-material/SkipNext';
 const FPS = 30;
 const FRAME_DURATION = 1 / FPS;
 const CONTROL_BAR_HEIGHT = 44;
+const MIN_UNMUTE_VOLUME = 0.33;
 
 interface IProps {
     src: string | undefined;
@@ -36,6 +37,8 @@ export default function VideoPlayer({src, zoom, translateX, translateY, onCanPla
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(1);
     const [muted, setMuted] = useState(false);
+    const [volumeHovered, setVolumeHovered] = useState(false);
+    const lastNonZeroVolume = useRef(1);
     const [focused, setFocused] = useState(false);
     const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
     const [controlsVisible, setControlsVisible] = useState(true);
@@ -84,14 +87,23 @@ export default function VideoPlayer({src, zoom, translateX, translateY, onCanPla
     const toggleMute = () => {
         const v = videoRef.current;
         if (!v) return;
-        v.muted = !v.muted;
-        setMuted(v.muted);
+        if (v.muted || volume === 0) {
+            const restored = Math.max(MIN_UNMUTE_VOLUME, lastNonZeroVolume.current);
+            v.volume = restored;
+            v.muted = false;
+            setVolume(restored);
+            setMuted(false);
+        } else {
+            v.muted = true;
+            setMuted(true);
+        }
     };
 
     const handleVolumeChange = (_: Event, value: number | number[]) => {
         const v = videoRef.current;
         if (!v) return;
         const vol = value as number;
+        if (vol > 0) lastNonZeroVolume.current = vol;
         v.volume = vol;
         setVolume(vol);
         if (vol === 0) { v.muted = true; setMuted(true); }
@@ -206,18 +218,46 @@ export default function VideoPlayer({src, zoom, translateX, translateY, onCanPla
                         onChange={handleSeek}
                         sx={{color: '#fff', flexGrow: 1, mx: 0.5, '& .MuiSlider-thumb': {width: 10, height: 10}}}
                     />
-                    <IconButton size="small" onClick={toggleMute} sx={{color: '#fff', p: 0.25}}>
-                        {muted || volume === 0 ? <VolumeOffIcon fontSize="small"/> : <VolumeUpIcon fontSize="small"/>}
-                    </IconButton>
-                    <Slider
-                        size="small"
-                        value={muted ? 0 : volume}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        onChange={handleVolumeChange}
-                        sx={{color: '#fff', width: 60, '& .MuiSlider-thumb': {width: 10, height: 10}}}
-                    />
+                    <Box
+                        sx={{position: 'relative', display: 'flex', alignItems: 'center'}}
+                        onMouseEnter={() => setVolumeHovered(true)}
+                        onMouseLeave={() => setVolumeHovered(false)}
+                    >
+                        <IconButton size="small" onClick={toggleMute} sx={{color: '#fff', p: 0.25}}>
+                            {muted || volume === 0 ? <VolumeOffIcon fontSize="small"/> : <VolumeUpIcon fontSize="small"/>}
+                        </IconButton>
+                        <Fade in={volumeHovered} timeout={150}>
+                            <Box
+                                sx={{
+                                    position: 'absolute',
+                                    bottom: '100%',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    mb: 0.5,
+                                    backgroundColor: 'rgba(0,0,0,0.85)',
+                                    borderRadius: 1,
+                                    px: 1,
+                                    pt: 1.5,
+                                    pb: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    height: 90,
+                                    zIndex: 10,
+                                }}
+                            >
+                                <Slider
+                                    orientation="vertical"
+                                    size="small"
+                                    value={muted ? 0 : volume}
+                                    min={0}
+                                    max={1}
+                                    step={0.05}
+                                    onChange={handleVolumeChange}
+                                    sx={{color: '#fff', height: '100%', '& .MuiSlider-thumb': {width: 10, height: 10}}}
+                                />
+                            </Box>
+                        </Fade>
+                    </Box>
                 </Box>
             </Fade>
         </Box>
