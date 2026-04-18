@@ -62,7 +62,10 @@ export default function SessionPage() {
                 viewerConfig={
                     new EntityViewerConfig({
                         media: {
-                            style: {maxWidth: '100%', maxHeight: '50vh'},
+                            style: {
+                                width: '350px',
+                                maxHeight: '350px'
+                            },
                         }
                     })
                 }

@@ -65,9 +65,9 @@ export default function PostPage() {
                         media: {
                             annotator: "disable",
                             style: {
-                                maxWidth: '100%',
-                                maxHeight: '40vh',
-                            }
+                                width: '29vw',
+                                maxHeight: '29vw'
+                            },
                         }
                     })
                 }

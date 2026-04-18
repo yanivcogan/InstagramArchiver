@@ -62,7 +62,9 @@ export default function MediaPage() {
                             annotator: "disable",
                         },
                         media: {
-                            style: {maxWidth: '100%', maxHeight: '75vh'},
+                            style: {
+                                width: '70vw',
+                            },
                             annotator: disableAnnotator ? "disable" : "show",
                         },
                         mediaPart: {

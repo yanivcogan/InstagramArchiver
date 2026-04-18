@@ -121,9 +121,8 @@ export default function AccountPage() {
                         },
                         media: {
                             style: {
-                                maxWidth: '100%',
-                                maxHeight: '40vh',
-                                minHeight: '300px'
+                                width: '350px',
+                                maxHeight: '350px'
                             },
                             annotator: "disable",
                         }
