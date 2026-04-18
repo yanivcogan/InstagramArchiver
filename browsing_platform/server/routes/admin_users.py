@@ -1,7 +1,8 @@
 import logging
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from browsing_platform.server.services.password_authenticator import set_user_password
@@ -34,19 +35,36 @@ class UpdateUserRequest(BaseModel):
     temp_password: Optional[str] = None
 
 
+class AdminUserRow(BaseModel):
+    id: int
+    email: str
+    admin: bool
+    locked: bool
+    totp_configured: bool
+    force_pwd_reset: bool
+    last_login: Optional[datetime]
+    login_attempts: int
+    create_date: Optional[datetime]
+
+
+class CreatedUserResponse(BaseModel):
+    id: int
+    email: str
+
+
 @router.get("/")
-async def list_users():
+async def list_users() -> list[AdminUserRow]:
     rows = db.execute_query(
         """SELECT id, email, admin, locked, last_login, login_attempts,
                   totp_configured, force_pwd_reset, create_date
            FROM user ORDER BY id""",
-        {}, "all_rows"
+        {}, "rows"
     )
-    return rows or []
+    return [AdminUserRow(**row) for row in rows] if rows else []
 
 
 @router.post("/")
-async def create_user(data: CreateUserRequest):
+async def create_user(data: CreateUserRequest) -> CreatedUserResponse:
     existing = db.execute_query(
         "SELECT id FROM user WHERE email = %(e)s", {"e": data.email}, "single_row"
     )
@@ -63,11 +81,11 @@ async def create_user(data: CreateUserRequest):
         db.execute_query("DELETE FROM user WHERE id = %(id)s", {"id": new_id}, "none")
         raise HTTPException(status_code=422, detail=str(e))
 
-    return {"id": new_id, "email": data.email}
+    return CreatedUserResponse(id=new_id, email=data.email)
 
 
 @router.patch("/{user_id}")
-async def update_user(user_id: int, data: UpdateUserRequest):
+async def update_user(user_id: int, data: UpdateUserRequest) -> Any:
     user_row = db.execute_query(
         "SELECT id, locked FROM user WHERE id = %(uid)s", {"uid": user_id}, "single_row"
     )
@@ -106,7 +124,7 @@ async def update_user(user_id: int, data: UpdateUserRequest):
 
 
 @router.delete("/{user_id}")
-async def delete_user(user_id: int):
+async def delete_user(user_id: int) -> Any:
     user_row = db.execute_query(
         "SELECT id FROM user WHERE id = %(uid)s", {"uid": user_id}, "single_row"
     )
@@ -118,7 +136,7 @@ async def delete_user(user_id: int):
 
 
 @router.post("/{user_id}/reset-2fa")
-async def reset_2fa(user_id: int):
+async def reset_2fa(user_id: int) -> Any:
     user_row = db.execute_query(
         "SELECT id FROM user WHERE id = %(uid)s", {"uid": user_id}, "single_row"
     )
@@ -132,10 +150,6 @@ async def reset_2fa(user_id: int):
                totp_pending_secret = NULL,
                totp_last_used_at = NULL
            WHERE id = %(uid)s""",
-        {"uid": user_id}, "none"
-    )
-    db.execute_query(
-        "DELETE FROM totp_backup_code WHERE user_id = %(uid)s",
         {"uid": user_id}, "none"
     )
     remove_all_tokens_for_user(user_id)

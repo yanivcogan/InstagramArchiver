@@ -10,15 +10,14 @@ from browsing_platform.server.services.pre_auth_manager import (
     consume_pre_auth_token,
     create_pre_auth_token,
 )
+from browsing_platform.server.services.token_manager import AuthTokenResponse, generate_token
 from browsing_platform.server.services.totp_manager import (
-    generate_backup_codes,
+    TotpStatusResponse,
     generate_qr_code_png_b64,
     generate_totp_secret,
     get_totp_status,
-    store_backup_codes,
     verify_totp_code,
 )
-from browsing_platform.server.services.token_manager import generate_token
 from utils import db
 
 logger = logging.getLogger(__name__)
@@ -39,14 +38,14 @@ class EnableRequest(BaseModel):
     totp_code: str
 
 
-class RegenerateRequest(BaseModel):
-    totp_code: str
+class TotpSetupResponse(BaseModel):
+    qr_code: str
+    secret: str
+    pre_auth_token: str
 
 
 @router.post("/setup")
-async def setup_totp(data: PreAuthRequest):
-    """Step 1 of 2FA enrollment: generate a TOTP secret and return a QR code.
-    Requires a valid pre_auth_token (issued after password verification)."""
+async def setup_totp(data: PreAuthRequest) -> TotpSetupResponse:
     user_id = consume_pre_auth_token(data.pre_auth_token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired setup token")
@@ -61,20 +60,14 @@ async def setup_totp(data: PreAuthRequest):
         {"s": secret, "uid": user_id}, "none"
     )
 
-    # Issue a new pre_auth_token so the enable step can proceed
     new_pre_auth = create_pre_auth_token(user_id)
     qr_code = generate_qr_code_png_b64(user_row["email"], secret)
 
-    return {
-        "qr_code": qr_code,
-        "secret": secret,
-        "pre_auth_token": new_pre_auth,
-    }
+    return TotpSetupResponse(qr_code=qr_code, secret=secret, pre_auth_token=new_pre_auth)
 
 
 @router.post("/enable")
-async def enable_totp(data: EnableRequest):
-    """Step 2 of 2FA enrollment: verify first TOTP code, activate 2FA, return backup codes + session token."""
+async def enable_totp(data: EnableRequest) -> AuthTokenResponse:
     user_id = consume_pre_auth_token(data.pre_auth_token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired setup token")
@@ -89,9 +82,6 @@ async def enable_totp(data: EnableRequest):
     pending_secret = user_row["totp_pending_secret"]
     if not verify_totp_code(pending_secret, data.totp_code, user_id):
         raise HTTPException(status_code=400, detail="Invalid verification code")
-
-    plaintext_codes, hashes = generate_backup_codes()
-    store_backup_codes(user_id, hashes)
 
     db.execute_query(
         """UPDATE user
@@ -111,39 +101,11 @@ async def enable_totp(data: EnableRequest):
     )
     log_event("2fa_attempt", user_id, json.dumps({"success": True, "step": "enrollment_complete"}), "{}")
 
-    return {
-        "backup_codes": plaintext_codes,
-        "token": token,
-        "permissions": bool(user_row["admin"]),
-    }
-
-
-@router.post("/backup-codes/regenerate")
-async def regenerate_backup_codes(data: RegenerateRequest, request: Request, _=Depends(auth_user_access)):
-    """Regenerate backup codes (authenticated endpoint). Requires a valid TOTP code."""
-    user_id = get_user_id(request)
-    if user_id is None:
-        raise HTTPException(status_code=401)
-
-    user_row = db.execute_query(
-        "SELECT totp_secret FROM user WHERE id = %(uid)s",
-        {"uid": user_id}, "single_row"
-    )
-    if not user_row or not user_row["totp_secret"]:
-        raise HTTPException(status_code=409, detail="2FA is not configured")
-
-    if not verify_totp_code(user_row["totp_secret"], data.totp_code, user_id):
-        raise HTTPException(status_code=400, detail="Invalid TOTP code")
-
-    plaintext_codes, hashes = generate_backup_codes()
-    store_backup_codes(user_id, hashes)
-
-    return {"backup_codes": plaintext_codes}
+    return AuthTokenResponse(token=token, permissions=bool(user_row["admin"]))
 
 
 @router.get("/status")
-async def totp_status(request: Request, _=Depends(auth_user_access)):
-    """Return 2FA status for the current user."""
+async def totp_status(request: Request, _=Depends(auth_user_access)) -> TotpStatusResponse:
     user_id = get_user_id(request)
     if user_id is None:
         raise HTTPException(status_code=401)

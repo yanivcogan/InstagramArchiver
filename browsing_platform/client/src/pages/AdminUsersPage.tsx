@@ -21,7 +21,7 @@ import {
     Typography,
 } from "@mui/material";
 import {DataGrid, GridColDef} from "@mui/x-data-grid";
-import {Delete, LockOpen, Lock, PersonAdd, RestartAlt, Edit, VpnKey} from "@mui/icons-material";
+import {Delete, Edit, Lock, LockOpen, PersonAdd, VpnKey} from "@mui/icons-material";
 import PageShell from "./PageShell";
 
 interface UserRow {

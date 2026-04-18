@@ -1,8 +1,9 @@
 import json
 import re
-from typing import Optional
+from typing import Literal
 
 from argon2 import PasswordHasher, exceptions as argon_exc
+from pydantic import BaseModel
 
 
 class AuthenticationError(Exception):
@@ -15,8 +16,12 @@ class AccountLockedException(Exception):
     pass
 
 from browsing_platform.server.services.event_logger import log_event
-from browsing_platform.server.services.token_manager import generate_token
 from utils import db
+
+
+class LoginStepResponse(BaseModel):
+    next_step: Literal["change_password", "setup_totp", "verify_totp"]
+    pre_auth_token: str
 
 # Tuned Argon2id parameters (adjust memory/time for your infra)
 _ph = PasswordHasher(
@@ -80,7 +85,7 @@ def set_user_password(user_id: int, new_password: str):
         "none"
     )
 
-def login_with_password(email: str, password: str, max_failures: int = 10) -> dict:
+def login_with_password(email: str, password: str, max_failures: int = 10) -> LoginStepResponse:
     from browsing_platform.server.services.pre_auth_manager import create_pre_auth_token
     user = db.execute_query(
         "SELECT * FROM user WHERE email=%(e)s",
@@ -118,10 +123,10 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> di
         pre_auth_token = create_pre_auth_token(user["id"])
 
         if user.get("force_pwd_reset"):
-            return {"next_step": "change_password", "pre_auth_token": pre_auth_token}
+            return LoginStepResponse(next_step="change_password", pre_auth_token=pre_auth_token)
         if not user.get("totp_configured"):
-            return {"next_step": "setup_totp", "pre_auth_token": pre_auth_token}
-        return {"next_step": "verify_totp", "pre_auth_token": pre_auth_token}
+            return LoginStepResponse(next_step="setup_totp", pre_auth_token=pre_auth_token)
+        return LoginStepResponse(next_step="verify_totp", pre_auth_token=pre_auth_token)
     else:
         db.execute_query(
             """UPDATE user

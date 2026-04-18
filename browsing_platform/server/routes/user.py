@@ -1,12 +1,13 @@
 import json
 import logging
-from typing import Optional
+from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from browsing_platform.server.services.event_logger import log_event
 from browsing_platform.server.services.password_authenticator import (
+    LoginStepResponse,
     hash_password,
     verify_password,
 )
@@ -15,8 +16,12 @@ from browsing_platform.server.services.pre_auth_manager import (
     consume_pre_auth_token,
     create_pre_auth_token,
 )
-from browsing_platform.server.services.totp_manager import get_totp_status, verify_totp_code
-from browsing_platform.server.services.token_manager import generate_token, remove_all_tokens_for_user
+from browsing_platform.server.services.token_manager import (
+    AuthTokenResponse,
+    generate_token,
+    remove_all_tokens_for_user,
+)
+from browsing_platform.server.services.totp_manager import verify_totp_code
 from utils import db
 
 logger = logging.getLogger(__name__)
@@ -29,21 +34,20 @@ router = APIRouter(
 
 
 class ChangePasswordPreAuth(BaseModel):
-    """Used for forced first-time password change (no existing session token)."""
     pre_auth_token: str
     new_password: str
 
 
 class ChangePasswordVoluntary(BaseModel):
-    """Used from SecuritySettings (user already has a valid session)."""
     current_password: str
     new_password: str
     totp_code: str
 
 
 @router.post("/change-password/preauth")
-async def change_password_preauth(data: ChangePasswordPreAuth):
-    """Force password change for new/reset accounts. Uses a pre_auth_token instead of session."""
+async def change_password_preauth(
+    data: ChangePasswordPreAuth,
+) -> Union[LoginStepResponse, AuthTokenResponse]:
     user_id = consume_pre_auth_token(data.pre_auth_token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -66,27 +70,26 @@ async def change_password_preauth(data: ChangePasswordPreAuth):
     )
     log_event("password_change", user_id, json.dumps({"method": "preauth"}), "{}")
 
-    # Check whether 2FA still needs to be set up
     user_row = db.execute_query(
         "SELECT totp_configured, admin FROM user WHERE id = %(uid)s",
         {"uid": user_id}, "single_row"
     )
     if not user_row or not user_row["totp_configured"]:
         new_pre_auth = create_pre_auth_token(user_id)
-        return {"next_step": "setup_totp", "pre_auth_token": new_pre_auth}
+        return LoginStepResponse(next_step="setup_totp", pre_auth_token=new_pre_auth)
 
-    # 2FA already configured — issue session token
     token = generate_token()
     db.execute_query(
         "INSERT INTO token (user_id, token) VALUES (%(uid)s, %(tok)s)",
         {"uid": user_id, "tok": token}, "none"
     )
-    return {"token": token, "permissions": bool(user_row["admin"])}
+    return AuthTokenResponse(token=token, permissions=bool(user_row["admin"]))
 
 
 @router.post("/change-password")
-async def change_password(data: ChangePasswordVoluntary, request: Request, _=Depends(auth_user_access)):
-    """Voluntary password change from SecuritySettings. Requires current password + TOTP."""
+async def change_password(
+    data: ChangePasswordVoluntary, request: Request, _=Depends(auth_user_access)
+) -> AuthTokenResponse:
     user_id = get_user_id(request)
     if user_id is None:
         raise HTTPException(status_code=401)
@@ -122,18 +125,9 @@ async def change_password(data: ChangePasswordVoluntary, request: Request, _=Dep
     )
     log_event("password_change", user_id, json.dumps({"method": "voluntary"}), "{}")
 
-    # Issue a fresh session token so the caller stays logged in
     new_token = generate_token()
     db.execute_query(
         "INSERT INTO token (user_id, token) VALUES (%(uid)s, %(tok)s)",
         {"uid": user_id, "tok": new_token}, "none"
     )
-    return {"token": new_token, "permissions": bool(user_row["admin"])}
-
-
-@router.get("/security-status")
-async def security_status(request: Request, _=Depends(auth_user_access)):
-    user_id = get_user_id(request)
-    if user_id is None:
-        raise HTTPException(status_code=401)
-    return get_totp_status(user_id)
+    return AuthTokenResponse(token=new_token, permissions=bool(user_row["admin"]))

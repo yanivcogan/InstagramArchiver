@@ -30,6 +30,11 @@ class TokenPermissions(BaseModel):
     user_id: Optional[int]
 
 
+class AuthTokenResponse(BaseModel):
+    token: str
+    permissions: bool
+
+
 def check_token(token: Optional[str]) -> TokenPermissions:
     try:
         if not token:

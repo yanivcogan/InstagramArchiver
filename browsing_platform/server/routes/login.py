@@ -10,15 +10,13 @@ from browsing_platform.server.rate_limiter import limiter
 from browsing_platform.server.services.event_logger import log_event
 from browsing_platform.server.services.password_authenticator import (
     AccountLockedException,
+    LoginStepResponse,
     login_with_password,
 )
 from browsing_platform.server.services.permissions import parse_token_from_header
 from browsing_platform.server.services.pre_auth_manager import consume_pre_auth_token
-from browsing_platform.server.services.totp_manager import (
-    verify_and_consume_backup_code,
-    verify_totp_code,
-)
-from browsing_platform.server.services.token_manager import generate_token, remove_token
+from browsing_platform.server.services.token_manager import AuthTokenResponse, generate_token, remove_token
+from browsing_platform.server.services.totp_manager import verify_totp_code
 from utils import db
 
 logger = logging.getLogger(__name__)
@@ -31,7 +29,6 @@ router = APIRouter(
 )
 
 _TOTP_PATTERN = re.compile(r"^\d{6}$")
-_BACKUP_PATTERN = re.compile(r"^[0-9a-f]{8}$")
 
 
 class LoginCredentialsPass(BaseModel):
@@ -46,7 +43,7 @@ class Verify2FARequest(BaseModel):
 
 @router.post("/")
 @limiter.limit("10/15minutes")
-async def login_with_pass(data: LoginCredentialsPass, request: Request):
+async def login_with_pass(data: LoginCredentialsPass, request: Request) -> LoginStepResponse:
     try:
         return login_with_password(data.email, data.password)
     except AccountLockedException as e:
@@ -58,7 +55,7 @@ async def login_with_pass(data: LoginCredentialsPass, request: Request):
 
 @router.post("/verify-2fa")
 @limiter.limit("10/15minutes")
-async def verify_2fa(data: Verify2FARequest, request: Request):
+async def verify_2fa(data: Verify2FARequest, request: Request) -> AuthTokenResponse:
     user_id = consume_pre_auth_token(data.pre_auth_token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid or expired 2FA token")
@@ -71,14 +68,7 @@ async def verify_2fa(data: Verify2FARequest, request: Request):
         raise HTTPException(status_code=401, detail="2FA not configured")
 
     code = data.totp_code.strip()
-    verified = False
-
-    if _TOTP_PATTERN.match(code):
-        verified = verify_totp_code(user_row["totp_secret"], code, user_id)
-    elif _BACKUP_PATTERN.match(code):
-        verified = verify_and_consume_backup_code(user_id, code)
-
-    if not verified:
+    if not _TOTP_PATTERN.match(code) or not verify_totp_code(user_row["totp_secret"], code, user_id):
         log_event("2fa_attempt", user_id, json.dumps({"success": False}), "{}")
         raise HTTPException(status_code=401, detail="Invalid 2FA code")
 
@@ -89,7 +79,7 @@ async def verify_2fa(data: Verify2FARequest, request: Request):
     )
     log_event("2fa_attempt", user_id, json.dumps({"success": True}), "{}")
 
-    return {"token": token, "permissions": bool(user_row["admin"])}
+    return AuthTokenResponse(token=token, permissions=bool(user_row["admin"]))
 
 
 @router.post("/logout")

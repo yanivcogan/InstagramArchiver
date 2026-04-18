@@ -12,6 +12,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from browsing_platform.server.rate_limiter import limiter
@@ -21,8 +23,6 @@ from browsing_platform.server.routes import account, post, media, media_part, ar
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
 from utils.db import DbError
 
 load_dotenv()

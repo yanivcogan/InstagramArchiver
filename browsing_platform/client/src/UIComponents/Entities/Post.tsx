@@ -1,5 +1,12 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {IComment, ICommentsResponse, ILikesResponse, IPostAndAssociatedEntities, IPostAuxiliaryCounts, IPostLike} from "../../types/entities";
+import {
+    IComment,
+    ICommentsResponse,
+    ILikesResponse,
+    IPostAndAssociatedEntities,
+    IPostAuxiliaryCounts,
+    IPostLike
+} from "../../types/entities";
 import {ITagWithType} from "../../types/tags";
 import {Box, CircularProgress, Collapse, Link, Paper, Stack, Tab, Tabs, Tooltip, Typography} from "@mui/material";
 import Media from "./Media";

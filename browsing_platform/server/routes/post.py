@@ -10,7 +10,7 @@ from browsing_platform.server.services.enriched_entities import get_enriched_pos
 from browsing_platform.server.services.permissions import auth_entity_view_access, require_any_auth
 from browsing_platform.server.services.post import get_post_data_by_id, post_exists, \
     get_post_by_platform_id, get_post_by_url
-from extractors.entity_types import ExtractedEntitiesNested, Comment, Like
+from extractors.entity_types import ExtractedEntitiesNested
 
 router = APIRouter(
     prefix="/post",

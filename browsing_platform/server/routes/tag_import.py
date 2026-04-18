@@ -7,8 +7,7 @@ from browsing_platform.server.services.import_utils import parse_import_file
 from browsing_platform.server.services.permissions import auth_user_access
 from browsing_platform.server.services.tag_management import (
     get_tag_type_by_name, create_tag_type, upsert_tag,
-    add_hierarchy_ignore_duplicate, get_tag_by_name_and_type,
-)
+    add_hierarchy_ignore_duplicate, )
 
 router = APIRouter(
     prefix="/tag-management",

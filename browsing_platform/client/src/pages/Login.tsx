@@ -23,7 +23,7 @@ import zxcvbn from 'zxcvbn';
 
 const darkTheme = createTheme({palette: {mode: 'dark'}});
 
-type LoginStep = "password" | "verify_totp" | "change_password" | "setup_totp_qr" | "show_backup_codes";
+type LoginStep = "password" | "verify_totp" | "change_password" | "setup_totp_qr";
 
 const FORM_WIDTH = (window.innerWidth <= 768) ? "80%" : "500px";
 
@@ -54,10 +54,6 @@ export default function Login() {
     // Setup TOTP step
     const [qrCode, setQrCode] = useState("");
     const [totpSecret, setTotpSecret] = useState("");
-
-    // Backup codes step
-    const [backupCodes, setBackupCodes] = useState<string[]>([]);
-    const [pendingToken, setPendingToken] = useState("");
 
     const redirect = searchParams.get("redirect");
 
@@ -128,10 +124,6 @@ export default function Login() {
             setErrorMsg("Password is too weak. Please choose a stronger password.");
             return;
         }
-        if (newPassword !== confirmPassword) {
-            setErrorMsg("Passwords do not match.");
-            return;
-        }
         setBusy(true);
         setErrorMsg(null);
         try {
@@ -199,7 +191,6 @@ export default function Login() {
         }
     };
 
-    // Step: enable TOTP (first time setup confirmation)
     const submitEnableTotp = async () => {
         if (busy) return;
         setBusy(true);
@@ -209,10 +200,8 @@ export default function Login() {
                 pre_auth_token: preAuthToken,
                 totp_code: totpCode.trim(),
             }, undefined, {ignoreErrors: true});
-            if (res?.backup_codes && res?.token) {
-                setPendingToken(res.token);
-                setBackupCodes(res.backup_codes);
-                setStep("show_backup_codes");
+            if (res?.token) {
+                storeTokenAndProceed(res.token);
             } else {
                 setErrorMsg(res?.detail || res?.error || 'Invalid verification code');
             }
@@ -349,7 +338,13 @@ export default function Login() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') submitChangePassword(); }}
+                    onPaste={(e) => e.preventDefault()}
                 />
+                {confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                    <Typography sx={{fontSize: "0.8em", color: "error.main", mt: 0.5}}>
+                        Passwords do not match
+                    </Typography>
+                )}
             </FormControl>
             <Box sx={{width: FORM_WIDTH}}>
                 {busy
@@ -418,47 +413,13 @@ export default function Login() {
         </Stack>
     );
 
-    const renderShowBackupCodesStep = () => (
-        <Stack alignItems="center" gap={2} sx={{width: "100%"}}>
-            <h2>Save Your Backup Codes</h2>
-            <Typography sx={{width: FORM_WIDTH, color: "rgba(255,255,255,0.7)", fontSize: "0.9em"}}>
-                Store these 8 backup codes somewhere safe. Each can be used once if you lose access to
-                your authenticator app. <strong>These will not be shown again.</strong>
-            </Typography>
-            <Box sx={{
-                width: FORM_WIDTH,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                borderRadius: "8px",
-                padding: "16px",
-            }}>
-                <Stack gap={0.5}>
-                    {backupCodes.map((code, i) => (
-                        <Typography key={i} sx={{fontFamily: "monospace", fontSize: "1.1em", letterSpacing: "0.1em"}}>
-                            {code}
-                        </Typography>
-                    ))}
-                </Stack>
-            </Box>
-            <Box sx={{width: FORM_WIDTH}}>
-                <Button
-                    variant="contained"
-                    color="success"
-                    onClick={() => storeTokenAndProceed(pendingToken)}
-                >
-                    I've saved these codes — Continue
-                </Button>
-            </Box>
-        </Stack>
-    );
-
     return <React.Fragment>
         <div className='page-wrap-login'>
             <ThemeProvider theme={darkTheme}>
                 <Stack dir="column" alignItems="center" gap={2}>
                     {(window.innerWidth <= 768)
                         ? <Stack className={"welcome-title-wrap"} direction="column" justifyContent="center">
-                            <h1 className={"welcome-title"}>Welcome to the Magrefa</h1>
+                            <h1 className={"welcome-title"}>Welcome</h1>
                             <Stack className={"welcome-title-wrap"} direction="row" justifyContent="center">
                                 <h1 className={"title-adornments"}>°𓏲🌿. 🍁⋆˚࿔</h1>
                                 <h1 className={"title-adornments"}>༄˖°.🍂.ೃ࿔*</h1>
@@ -479,7 +440,6 @@ export default function Login() {
                     {step === "verify_totp" && renderVerifyTotpStep()}
                     {step === "change_password" && renderChangePasswordStep()}
                     {step === "setup_totp_qr" && renderSetupTotpQrStep()}
-                    {step === "show_backup_codes" && renderShowBackupCodesStep()}
                 </Stack>
             </ThemeProvider>
         </div>

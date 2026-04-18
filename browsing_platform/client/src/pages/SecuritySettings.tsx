@@ -1,15 +1,11 @@
 import React, {useEffect, useState} from 'react';
-import server, {HTTP_METHODS} from '../services/server';
+import server from '../services/server';
 import cookie from 'js-cookie';
 import {
     Alert,
     Box,
     Button,
     CircularProgress,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
     FormControl,
     IconButton,
     Input,
@@ -28,13 +24,8 @@ const strengthLabels = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 export default function SecuritySettings() {
     useEffect(() => {
         document.title = "Security Settings | Browsing Platform";
-        loadStatus();
     }, []);
 
-    const [backupCodesRemaining, setBackupCodesRemaining] = useState<number | null>(null);
-    const [statusLoading, setStatusLoading] = useState(true);
-
-    // Change password form
     const [currentPwd, setCurrentPwd] = useState("");
     const [newPwd, setNewPwd] = useState("");
     const [confirmPwd, setConfirmPwd] = useState("");
@@ -46,30 +37,10 @@ export default function SecuritySettings() {
     const [pwdSuccess, setPwdSuccess] = useState(false);
     const passwordStrength = newPwd ? zxcvbn(newPwd) : null;
 
-    // Regenerate backup codes dialog
-    const [regenDialogOpen, setRegenDialogOpen] = useState(false);
-    const [regenTotpCode, setRegenTotpCode] = useState("");
-    const [regenBusy, setRegenBusy] = useState(false);
-    const [regenError, setRegenError] = useState<string | null>(null);
-    const [newBackupCodes, setNewBackupCodes] = useState<string[]>([]);
-
-    const loadStatus = async () => {
-        setStatusLoading(true);
-        try {
-            const res = await server.get("user/security-status");
-            setBackupCodesRemaining(res?.backup_codes_remaining ?? 0);
-        } catch (e) {}
-        finally { setStatusLoading(false); }
-    };
-
     const submitChangePassword = async () => {
         if (pwdBusy) return;
         if (passwordStrength && passwordStrength.score < 3) {
             setPwdError("Password is too weak. Please choose a stronger password.");
-            return;
-        }
-        if (newPwd !== confirmPwd) {
-            setPwdError("New passwords do not match.");
             return;
         }
         setPwdBusy(true);
@@ -99,38 +70,8 @@ export default function SecuritySettings() {
         }
     };
 
-    const submitRegenBackupCodes = async () => {
-        if (regenBusy) return;
-        setRegenBusy(true);
-        setRegenError(null);
-        try {
-            const res = await server.post("2fa/backup-codes/regenerate", {
-                totp_code: regenTotpCode,
-            }, undefined, {ignoreErrors: true});
-            if (res?.backup_codes) {
-                setNewBackupCodes(res.backup_codes);
-                setBackupCodesRemaining(res.backup_codes.length);
-                setRegenTotpCode("");
-            } else {
-                setRegenError(res?.detail || res?.error || 'Invalid code');
-            }
-        } catch (e: any) {
-            setRegenError(e?.message || 'Invalid code');
-        } finally {
-            setRegenBusy(false);
-        }
-    };
-
-    const closeRegenDialog = () => {
-        setRegenDialogOpen(false);
-        setRegenTotpCode("");
-        setRegenError(null);
-        setNewBackupCodes([]);
-    };
-
     return (
         <PageShell title="Security Settings" subtitle={null}>
-            {/* Change Password */}
             <Stack gap={2}>
                 <Typography variant="h6">Change Password</Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -187,7 +128,13 @@ export default function SecuritySettings() {
                         type="password"
                         value={confirmPwd}
                         onChange={(e) => setConfirmPwd(e.target.value)}
+                        onPaste={(e) => e.preventDefault()}
                     />
+                    {confirmPwd.length > 0 && newPwd !== confirmPwd && (
+                        <Typography sx={{fontSize: "0.8em", color: "error.main", mt: 0.5}}>
+                            Passwords do not match
+                        </Typography>
+                    )}
                 </FormControl>
                 <FormControl variant="standard" sx={{maxWidth: 400}}>
                     <InputLabel>Authenticator Code</InputLabel>
@@ -214,89 +161,6 @@ export default function SecuritySettings() {
                     </Box>
                 }
             </Stack>
-
-            {/* Backup Codes */}
-            <Stack gap={2}>
-                <Typography variant="h6">Backup Codes</Typography>
-                <Typography variant="body2" color="text.secondary">
-                    Backup codes can be used in place of your authenticator app. Each code is single-use.
-                </Typography>
-                {statusLoading
-                    ? <CircularProgress size={20}/>
-                    : <Typography>
-                        Remaining unused codes: <strong>{backupCodesRemaining ?? "—"}</strong>
-                    </Typography>
-                }
-                <Box>
-                    <Button variant="outlined" onClick={() => setRegenDialogOpen(true)}>
-                        Regenerate Backup Codes
-                    </Button>
-                </Box>
-            </Stack>
-
-            {/* Regenerate Dialog */}
-            <Dialog open={regenDialogOpen} onClose={closeRegenDialog} maxWidth="xs" fullWidth>
-                <DialogTitle>Regenerate Backup Codes</DialogTitle>
-                <DialogContent>
-                    <Stack gap={2} sx={{mt: 1}}>
-                        {newBackupCodes.length === 0 ? (
-                            <>
-                                <Typography variant="body2">
-                                    This will invalidate your existing backup codes and generate 8 new ones.
-                                    Enter your authenticator code to confirm.
-                                </Typography>
-                                {regenError && <Alert severity="error">{regenError}</Alert>}
-                                <FormControl variant="standard" fullWidth>
-                                    <InputLabel>Authenticator Code</InputLabel>
-                                    <Input
-                                        value={regenTotpCode}
-                                        inputProps={{inputMode: "numeric", maxLength: 6}}
-                                        onChange={(e) => setRegenTotpCode(e.target.value.replace(/\D/g, ""))}
-                                    />
-                                </FormControl>
-                            </>
-                        ) : (
-                            <>
-                                <Alert severity="warning">
-                                    Save these codes now — they will not be shown again.
-                                </Alert>
-                                <Box sx={{
-                                    background: "rgba(0,0,0,0.05)",
-                                    border: "1px solid rgba(0,0,0,0.15)",
-                                    borderRadius: "8px",
-                                    padding: "12px",
-                                }}>
-                                    <Stack gap={0.5}>
-                                        {newBackupCodes.map((code, i) => (
-                                            <Typography key={i} sx={{fontFamily: "monospace", fontSize: "1.1em"}}>
-                                                {code}
-                                            </Typography>
-                                        ))}
-                                    </Stack>
-                                </Box>
-                            </>
-                        )}
-                    </Stack>
-                </DialogContent>
-                <DialogActions>
-                    {newBackupCodes.length === 0 ? (
-                        <>
-                            <Button onClick={closeRegenDialog}>Cancel</Button>
-                            <Button
-                                variant="contained"
-                                disabled={regenTotpCode.length !== 6 || regenBusy}
-                                onClick={submitRegenBackupCodes}
-                            >
-                                {regenBusy ? <CircularProgress size={18}/> : "Regenerate"}
-                            </Button>
-                        </>
-                    ) : (
-                        <Button variant="contained" onClick={closeRegenDialog}>
-                            I've saved these codes
-                        </Button>
-                    )}
-                </DialogActions>
-            </Dialog>
         </PageShell>
     );
 }

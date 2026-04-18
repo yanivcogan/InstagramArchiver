@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, UploadFile, File
 from pydantic import BaseModel
 
 from browsing_platform.server.services.account import get_account_by_id, get_account_by_url
-from browsing_platform.server.services.annotation import add_tags_batch, TagWithNotes
 from browsing_platform.server.services.import_utils import parse_import_file
 from browsing_platform.server.services.media import get_media_by_id
 from browsing_platform.server.services.media_part import get_media_part_by_id

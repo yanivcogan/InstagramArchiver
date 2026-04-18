@@ -23,11 +23,7 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import {toast} from 'material-react-toastify';
-import {
-    ITagImportExecuteResponse,
-    ITagImportRowInput,
-    ITagImportRowParsed,
-} from '../../types/tags';
+import {ITagImportExecuteResponse, ITagImportRowInput, ITagImportRowParsed,} from '../../types/tags';
 import {executeTagImport, previewTagImport} from '../../services/TagManagementService';
 
 const STEPS = ['Upload File', 'Preview & Edit', 'Results'];

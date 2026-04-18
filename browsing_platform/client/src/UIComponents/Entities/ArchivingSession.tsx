@@ -1,7 +1,8 @@
 import React from 'react';
 import {IArchiveSession} from "../../types/entities";
 import {
-    Box, Button,
+    Box,
+    Button,
     Card,
     CardContent,
     CardHeader,
@@ -9,7 +10,8 @@ import {
     Divider,
     IconButton,
     Skeleton,
-    Stack, Tooltip,
+    Stack,
+    Tooltip,
     Typography
 } from "@mui/material";
 import {DataGrid} from "@mui/x-data-grid";
