@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Optional
 
@@ -27,8 +28,8 @@ _ph = PasswordHasher(
 )
 
 PASSWORD_STRENGTH_ERROR = (  # nosec B105 - this is a user-facing error message, not a hardcoded credential
-    "Password must be at least 12 characters long and contain characters from "
-    "at least 3 of the following categories: lowercase letters (a-z), "
+    "Password must be at least 14 characters long and contain characters from "
+    "all 4 of the following categories: lowercase letters (a-z), "
     "uppercase letters (A-Z), digits (0-9), special characters (!@#… etc.)."
 )
 
@@ -41,13 +42,13 @@ def _check_password_strength(password: str) -> None:
         bool(re.search(r'[0-9]', password)),
         bool(re.search(r'[^a-zA-Z0-9]', password)),
     ])
-    if classes < 3:
+    if classes < 4:
         raise ValueError(PASSWORD_STRENGTH_ERROR)
 
 
 def hash_password(password: str) -> tuple[str, str]:
-    if len(password) < 12 or len(password) > 512:
-        raise ValueError("Password length invalid (12-512 chars required)")
+    if len(password) < 14 or len(password) > 512:
+        raise ValueError("Password length invalid (14-512 chars required)")
     _check_password_strength(password)
     h = _ph.hash(password)
     return h, "argon2id"
@@ -79,15 +80,15 @@ def set_user_password(user_id: int, new_password: str):
         "none"
     )
 
-def login_with_password(email: str, password: str, max_failures: int = 10) -> Optional[int]:
+def login_with_password(email: str, password: str, max_failures: int = 10) -> dict:
+    from browsing_platform.server.services.pre_auth_manager import create_pre_auth_token
     user = db.execute_query(
         "SELECT * FROM user WHERE email=%(e)s",
         {"e": email},
         "single_row"
     )
-    token = generate_token()
     if not user:
-        # a fake verify to equalize timing
+        # fake verify to equalize timing
         verify_password(
             "$argon2id$v=19$m=65536,t=3,p=4$abcdefghijklmnopqrstuv$01234567890123456789012345678901",
             password
@@ -112,16 +113,15 @@ def login_with_password(email: str, password: str, max_failures: int = 10) -> Op
                 {"h": ok, "id": user["id"]},
                 "none"
             )
-        db.execute_query(
-            '''INSERT INTO token (user_id, token) VALUES (%(user_id)s, %(token)s)'''
-            , {"user_id": user["id"], "token": token}, "id"
-        )
-        log_event(
-            "login_attempt", user["id"],
-            "{'success': true}",
-            "{}"
-        )
-        return {"token": token, "permissions": user["admin"]}
+        log_event("login_attempt", user["id"], json.dumps({"success": True, "step": "password"}), "{}")
+
+        pre_auth_token = create_pre_auth_token(user["id"])
+
+        if user.get("force_pwd_reset"):
+            return {"next_step": "change_password", "pre_auth_token": pre_auth_token}
+        if not user.get("totp_configured"):
+            return {"next_step": "setup_totp", "pre_auth_token": pre_auth_token}
+        return {"next_step": "verify_totp", "pre_auth_token": pre_auth_token}
     else:
         db.execute_query(
             """UPDATE user

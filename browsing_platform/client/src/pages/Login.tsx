@@ -2,16 +2,33 @@ import React, {useEffect, useState} from 'react';
 import server from '../services/server';
 import cookie from 'js-cookie';
 import './login/Login.scss';
-import {CircularProgress, FormControl, IconButton, Input, InputLabel, Modal, Stack, Tooltip} from "@mui/material";
+import {
+    Alert,
+    Box,
+    Button,
+    CircularProgress,
+    FormControl,
+    IconButton,
+    Input,
+    InputLabel,
+    LinearProgress,
+    Stack,
+    Tooltip,
+    Typography,
+} from "@mui/material";
 import {createTheme, ThemeProvider} from '@mui/material/styles';
-import {LocalFlorist, Visibility, VisibilityOff} from "@mui/icons-material";
+import {ArrowBack, LocalFlorist, Visibility, VisibilityOff} from "@mui/icons-material";
 import {useNavigate, useSearchParams} from "react-router";
+import zxcvbn from 'zxcvbn';
 
-const darkTheme = createTheme({
-    palette: {
-        mode: 'dark',
-    },
-});
+const darkTheme = createTheme({palette: {mode: 'dark'}});
+
+type LoginStep = "password" | "verify_totp" | "change_password" | "setup_totp_qr" | "show_backup_codes";
+
+const FORM_WIDTH = (window.innerWidth <= 768) ? "80%" : "500px";
+
+const strengthColors = ["#d32f2f", "#f57c00", "#fbc02d", "#388e3c", "#1b5e20"];
+const strengthLabels = ["Very weak", "Weak", "Fair", "Strong", "Very strong"];
 
 export default function Login() {
     const navigate = useNavigate();
@@ -20,22 +37,48 @@ export default function Login() {
     const [email, setEmail] = useState(searchParams.get("email") || "");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
-    const [awaitingAuthentication, setAwaitingAuthentication] = useState(false);
-    const [authenticationError, setAuthenticationError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+    // Multi-step state
+    const [step, setStep] = useState<LoginStep>("password");
+    const [preAuthToken, setPreAuthToken] = useState("");
+    const [totpCode, setTotpCode] = useState("");
+
+    // Change-password step
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const passwordStrength = newPassword ? zxcvbn(newPassword) : null;
+
+    // Setup TOTP step
+    const [qrCode, setQrCode] = useState("");
+    const [totpSecret, setTotpSecret] = useState("");
+
+    // Backup codes step
+    const [backupCodes, setBackupCodes] = useState<string[]>([]);
+    const [pendingToken, setPendingToken] = useState("");
 
     const redirect = searchParams.get("redirect");
 
     useEffect(() => {
         document.title = `Login | Browsing Platform`;
         const token = cookie.get('token');
-        if (token && token.length) {
+        if (token) {
             server.get("permissions/", {ignoreErrors: true}).then((res) => {
-                if (res?.valid) {
-                    proceedToSite();
-                }
+                if (res?.valid) proceedToSite();
             }).catch(() => {});
         }
     }, []);
+
+    const storeTokenAndProceed = (token: string) => {
+        cookie.set('token', token, {
+            expires: 30,
+            sameSite: 'strict',
+            secure: window.location.protocol === 'https:',
+        });
+        proceedToSite();
+    };
 
     const proceedToSite = () => {
         if (redirect) {
@@ -45,122 +88,400 @@ export default function Login() {
                     navigate(decoded);
                     return;
                 }
-            } catch (e) {
-                console.log(e);
-            }
+            } catch (e) {}
         }
         navigate("/search/");
     };
 
-    const verifyPasswordLogin = async () => {
-        if (awaitingAuthentication) return;
-        setAwaitingAuthentication(true);
+    // Step 1: password
+    const submitPassword = async () => {
+        if (busy) return;
+        setBusy(true);
+        setErrorMsg(null);
         try {
             const res = await server.post("login/", {email, password}, undefined, {ignoreErrors: true});
-            if (res?.token) {
-                cookie.set('token', res.token, {
-                    expires: 30,
-                    sameSite: 'strict',
-                    secure: window.location.protocol === 'https:',
-                });
-                proceedToSite();
-            } else {
-                setAuthenticationError(res?.error || 'An Unknown Error Has Occurred');
+            const next = res?.next_step;
+            const pat = res?.pre_auth_token;
+            if (!next || !pat) {
+                setErrorMsg(res?.detail || res?.error || 'An unknown error occurred');
+                return;
+            }
+            setPreAuthToken(pat);
+            if (next === "change_password") {
+                setStep("change_password");
+            } else if (next === "setup_totp") {
+                await loadTotpSetup(pat);
+            } else if (next === "verify_totp") {
+                setStep("verify_totp");
             }
         } catch (e: any) {
-            setAuthenticationError(e?.message || 'An Unknown Error Has Occurred');
+            setErrorMsg(e?.message || 'An unknown error occurred');
         } finally {
-            setAwaitingAuthentication(false);
+            setBusy(false);
         }
     };
+
+    // Step: forced password change
+    const submitChangePassword = async () => {
+        if (busy) return;
+        if (passwordStrength && passwordStrength.score < 3) {
+            setErrorMsg("Password is too weak. Please choose a stronger password.");
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setErrorMsg("Passwords do not match.");
+            return;
+        }
+        setBusy(true);
+        setErrorMsg(null);
+        try {
+            const res = await server.post("user/change-password/preauth", {
+                pre_auth_token: preAuthToken,
+                new_password: newPassword,
+            }, undefined, {ignoreErrors: true});
+            if (res?.token) {
+                storeTokenAndProceed(res.token);
+                return;
+            }
+            if (res?.next_step === "setup_totp" && res?.pre_auth_token) {
+                await loadTotpSetup(res.pre_auth_token);
+            } else {
+                setErrorMsg(res?.detail || res?.error || 'An unknown error occurred');
+            }
+        } catch (e: any) {
+            setErrorMsg(e?.message || 'An unknown error occurred');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Load QR code for TOTP setup
+    const loadTotpSetup = async (pat: string) => {
+        setBusy(true);
+        setErrorMsg(null);
+        try {
+            const res = await server.post("2fa/setup", {pre_auth_token: pat}, undefined, {ignoreErrors: true});
+            if (res?.qr_code) {
+                setQrCode(res.qr_code);
+                setTotpSecret(res.secret);
+                setPreAuthToken(res.pre_auth_token);
+                setTotpCode("");
+                setStep("setup_totp_qr");
+            } else {
+                setErrorMsg(res?.detail || res?.error || 'Failed to start 2FA setup');
+            }
+        } catch (e: any) {
+            setErrorMsg(e?.message || 'An unknown error occurred');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Step: verify TOTP code (normal login)
+    const submitVerifyTotp = async () => {
+        if (busy) return;
+        setBusy(true);
+        setErrorMsg(null);
+        try {
+            const res = await server.post("login/verify-2fa", {
+                pre_auth_token: preAuthToken,
+                totp_code: totpCode.trim(),
+            }, undefined, {ignoreErrors: true});
+            if (res?.token) {
+                storeTokenAndProceed(res.token);
+            } else {
+                setErrorMsg(res?.detail || res?.error || 'Invalid code');
+            }
+        } catch (e: any) {
+            setErrorMsg(e?.message || 'Invalid code');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Step: enable TOTP (first time setup confirmation)
+    const submitEnableTotp = async () => {
+        if (busy) return;
+        setBusy(true);
+        setErrorMsg(null);
+        try {
+            const res = await server.post("2fa/enable", {
+                pre_auth_token: preAuthToken,
+                totp_code: totpCode.trim(),
+            }, undefined, {ignoreErrors: true});
+            if (res?.backup_codes && res?.token) {
+                setPendingToken(res.token);
+                setBackupCodes(res.backup_codes);
+                setStep("show_backup_codes");
+            } else {
+                setErrorMsg(res?.detail || res?.error || 'Invalid verification code');
+            }
+        } catch (e: any) {
+            setErrorMsg(e?.message || 'Invalid verification code');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const renderPasswordStep = () => (
+        <Stack alignItems="center" gap={2} sx={{width: "100%"}}>
+            <h2>Login</h2>
+            <FormControl variant="outlined" sx={{width: FORM_WIDTH}}>
+                <InputLabel>Email Address</InputLabel>
+                <Input
+                    value={email}
+                    dir="ltr"
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && password.length) submitPassword(); }}
+                />
+            </FormControl>
+            <FormControl variant="outlined" sx={{width: FORM_WIDTH}}>
+                <InputLabel>Password</InputLabel>
+                <Input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && password.length) submitPassword(); }}
+                    endAdornment={
+                        <Stack direction="row" alignItems="center" gap={0.5}>
+                            <IconButton size="small" onClick={() => setShowPassword(p => !p)}>
+                                {showPassword ? <VisibilityOff/> : <Visibility/>}
+                            </IconButton>
+                            {busy
+                                ? <CircularProgress size={20}/>
+                                : <Tooltip title="Login" placement="top" arrow disableInteractive>
+                                    <IconButton
+                                        color="success" size="small"
+                                        disabled={!password.length || !email.length}
+                                        onClick={submitPassword}
+                                    >
+                                        <LocalFlorist/>
+                                    </IconButton>
+                                </Tooltip>
+                            }
+                        </Stack>
+                    }
+                />
+            </FormControl>
+        </Stack>
+    );
+
+    const renderVerifyTotpStep = () => (
+        <Stack alignItems="center" gap={2} sx={{width: "100%"}}>
+            <Stack direction="row" alignItems="center" gap={1} sx={{width: FORM_WIDTH}}>
+                <IconButton size="small" onClick={() => { setStep("password"); setTotpCode(""); }}>
+                    <ArrowBack fontSize="small"/>
+                </IconButton>
+                <h2 style={{margin: 0}}>Two-Factor Authentication</h2>
+            </Stack>
+            <Typography sx={{width: FORM_WIDTH, color: "rgba(255,255,255,0.7)", fontSize: "0.9em"}}>
+                Enter the 6-digit code from your authenticator app, or one of your 8-character backup codes.
+            </Typography>
+            <FormControl variant="outlined" sx={{width: FORM_WIDTH}}>
+                <InputLabel>Verification Code</InputLabel>
+                <Input
+                    value={totpCode}
+                    dir="ltr"
+                    inputProps={{inputMode: "numeric", maxLength: 8}}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\s/g, ""))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && totpCode.length >= 6) submitVerifyTotp(); }}
+                    endAdornment={
+                        busy
+                            ? <CircularProgress size={20}/>
+                            : <Tooltip title="Verify" placement="top" arrow disableInteractive>
+                                <IconButton
+                                    color="success" size="small"
+                                    disabled={totpCode.length < 6}
+                                    onClick={submitVerifyTotp}
+                                >
+                                    <LocalFlorist/>
+                                </IconButton>
+                            </Tooltip>
+                    }
+                />
+            </FormControl>
+        </Stack>
+    );
+
+    const renderChangePasswordStep = () => (
+        <Stack alignItems="center" gap={2} sx={{width: "100%"}}>
+            <h2>Set Your Password</h2>
+            <Typography sx={{width: FORM_WIDTH, color: "rgba(255,255,255,0.7)", fontSize: "0.9em"}}>
+                You need to set a new permanent password before continuing.
+                Minimum 14 characters with uppercase, lowercase, digits, and a special character.
+            </Typography>
+            <FormControl variant="outlined" sx={{width: FORM_WIDTH}}>
+                <InputLabel>New Password</InputLabel>
+                <Input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    endAdornment={
+                        <IconButton size="small" onClick={() => setShowNewPassword(p => !p)}>
+                            {showNewPassword ? <VisibilityOff/> : <Visibility/>}
+                        </IconButton>
+                    }
+                />
+            </FormControl>
+            {newPassword.length > 0 && passwordStrength && (
+                <Box sx={{width: FORM_WIDTH}}>
+                    <LinearProgress
+                        variant="determinate"
+                        value={(passwordStrength.score / 4) * 100}
+                        sx={{
+                            height: 6,
+                            borderRadius: 3,
+                            backgroundColor: "rgba(255,255,255,0.15)",
+                            "& .MuiLinearProgress-bar": {
+                                backgroundColor: strengthColors[passwordStrength.score],
+                            }
+                        }}
+                    />
+                    <Typography sx={{fontSize: "0.8em", color: strengthColors[passwordStrength.score], mt: 0.5}}>
+                        {strengthLabels[passwordStrength.score]}
+                    </Typography>
+                </Box>
+            )}
+            <FormControl variant="outlined" sx={{width: FORM_WIDTH}}>
+                <InputLabel>Confirm New Password</InputLabel>
+                <Input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') submitChangePassword(); }}
+                />
+            </FormControl>
+            <Box sx={{width: FORM_WIDTH}}>
+                {busy
+                    ? <CircularProgress size={24}/>
+                    : <Button
+                        variant="contained"
+                        color="success"
+                        disabled={
+                            newPassword.length < 14
+                            || !passwordStrength
+                            || passwordStrength.score < 3
+                            || newPassword !== confirmPassword
+                        }
+                        onClick={submitChangePassword}
+                    >
+                        Set Password & Continue
+                    </Button>
+                }
+            </Box>
+        </Stack>
+    );
+
+    const renderSetupTotpQrStep = () => (
+        <Stack alignItems="center" gap={2} sx={{width: "100%"}}>
+            <h2>Set Up Two-Factor Authentication</h2>
+            <Typography sx={{width: FORM_WIDTH, color: "rgba(255,255,255,0.7)", fontSize: "0.9em"}}>
+                2FA is required. Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.),
+                then enter the 6-digit code it shows to confirm.
+            </Typography>
+            {qrCode && (
+                <Box sx={{background: "white", padding: "12px", borderRadius: "8px", display: "inline-block"}}>
+                    <img src={`data:image/png;base64,${qrCode}`} alt="TOTP QR Code" style={{width: 200, height: 200, display: "block"}}/>
+                </Box>
+            )}
+            {totpSecret && (
+                <Typography sx={{
+                    width: FORM_WIDTH, fontSize: "0.75em", color: "rgba(255,255,255,0.5)",
+                    wordBreak: "break-all", textAlign: "center"
+                }}>
+                    Manual entry: <strong style={{color: "rgba(255,255,255,0.8)"}}>{totpSecret}</strong>
+                </Typography>
+            )}
+            <FormControl variant="outlined" sx={{width: FORM_WIDTH}}>
+                <InputLabel>6-Digit Verification Code</InputLabel>
+                <Input
+                    value={totpCode}
+                    dir="ltr"
+                    inputProps={{inputMode: "numeric", maxLength: 6}}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && totpCode.length === 6) submitEnableTotp(); }}
+                    endAdornment={
+                        busy
+                            ? <CircularProgress size={20}/>
+                            : <Tooltip title="Verify & Activate" placement="top" arrow disableInteractive>
+                                <IconButton
+                                    color="success" size="small"
+                                    disabled={totpCode.length !== 6}
+                                    onClick={submitEnableTotp}
+                                >
+                                    <LocalFlorist/>
+                                </IconButton>
+                            </Tooltip>
+                    }
+                />
+            </FormControl>
+        </Stack>
+    );
+
+    const renderShowBackupCodesStep = () => (
+        <Stack alignItems="center" gap={2} sx={{width: "100%"}}>
+            <h2>Save Your Backup Codes</h2>
+            <Typography sx={{width: FORM_WIDTH, color: "rgba(255,255,255,0.7)", fontSize: "0.9em"}}>
+                Store these 8 backup codes somewhere safe. Each can be used once if you lose access to
+                your authenticator app. <strong>These will not be shown again.</strong>
+            </Typography>
+            <Box sx={{
+                width: FORM_WIDTH,
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: "8px",
+                padding: "16px",
+            }}>
+                <Stack gap={0.5}>
+                    {backupCodes.map((code, i) => (
+                        <Typography key={i} sx={{fontFamily: "monospace", fontSize: "1.1em", letterSpacing: "0.1em"}}>
+                            {code}
+                        </Typography>
+                    ))}
+                </Stack>
+            </Box>
+            <Box sx={{width: FORM_WIDTH}}>
+                <Button
+                    variant="contained"
+                    color="success"
+                    onClick={() => storeTokenAndProceed(pendingToken)}
+                >
+                    I've saved these codes — Continue
+                </Button>
+            </Box>
+        </Stack>
+    );
 
     return <React.Fragment>
         <div className='page-wrap-login'>
             <ThemeProvider theme={darkTheme}>
                 <Stack dir="column" alignItems="center" gap={2}>
-                    {
-                        (window.innerWidth <= 768)
-                            ?
-                            <Stack className={"welcome-title-wrap"} direction="column" justifyContent="center">
-                                <h1 className={"welcome-title"}>Welcome to the Magrefa</h1>
-                                <Stack className={"welcome-title-wrap"} direction="row" justifyContent="center">
-                                    <h1 className={"title-adornments"}>°𓏲🌿. 🍁⋆˚࿔</h1>
-                                    <h1 className={"title-adornments"}>༄˖°.🍂.ೃ࿔*</h1>
-                                </Stack>
-                            </Stack>
-                            : <Stack className={"welcome-title-wrap"} justifyContent="center" direction="row" gap={2}>
-                                <h1 className={"title-adornments"}>°𓏲⋆🌿🍁⋆˚࿔</h1>
-                                <h1 className={"welcome-title"}>Welcome</h1>
+                    {(window.innerWidth <= 768)
+                        ? <Stack className={"welcome-title-wrap"} direction="column" justifyContent="center">
+                            <h1 className={"welcome-title"}>Welcome to the Magrefa</h1>
+                            <Stack className={"welcome-title-wrap"} direction="row" justifyContent="center">
+                                <h1 className={"title-adornments"}>°𓏲🌿. 🍁⋆˚࿔</h1>
                                 <h1 className={"title-adornments"}>༄˖°.🍂.ೃ࿔*</h1>
                             </Stack>
+                        </Stack>
+                        : <Stack className={"welcome-title-wrap"} justifyContent="center" direction="row" gap={2}>
+                            <h1 className={"title-adornments"}>°𓏲⋆🌿🍁⋆˚࿔</h1>
+                            <h1 className={"welcome-title"}>Welcome</h1>
+                            <h1 className={"title-adornments"}>༄˖°.🍂.ೃ࿔*</h1>
+                        </Stack>
                     }
-                    <Stack dir="column" alignItems="center" gap={2} sx={{width: "100%"}}>
-                        <h2>{`Login`}</h2>
-                        <FormControl
-                            variant="outlined"
-                            sx={{width: (window.innerWidth <= 768) ? "80%" : "500px"}}
-                        >
-                            <InputLabel>{`Email Address`}</InputLabel>
-                            <Input
-                                value={email}
-                                dir="ltr"
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
-                        </FormControl>
-                    </Stack>
-                    <FormControl
-                        variant="outlined"
-                        sx={{width: (window.innerWidth <= 768) ? "80%" : "500px"}}
-                    >
-                        <InputLabel>{`Password`}</InputLabel>
-                        <Input
-                            type={showPassword ? "text" : "password"}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && password.length) {
-                                    verifyPasswordLogin();
-                                }
-                            }}
-                            endAdornment={
-                                <Stack direction="row" alignItems="center" gap={0.5}>
-                                    <IconButton
-                                        size="small"
-                                        onClick={() => setShowPassword(prev => !prev)}
-                                        aria-label={`Toggle password visibility`}
-                                    >
-                                        {showPassword ? <VisibilityOff/> : <Visibility/>}
-                                    </IconButton>
-                                    {
-                                        awaitingAuthentication
-                                            ? <CircularProgress size={20}/>
-                                            : <Tooltip title={`Login`} placement="top" arrow disableInteractive>
-                                                <IconButton
-                                                    color="success"
-                                                    size="small"
-                                                    disabled={!password.length}
-                                                    onClick={verifyPasswordLogin}
-                                                >
-                                                    <LocalFlorist/>
-                                                </IconButton>
-                                            </Tooltip>
-                                    }
-                                </Stack>
-                            }
-                        />
-                    </FormControl>
+                    {errorMsg && (
+                        <Box sx={{width: FORM_WIDTH}}>
+                            <Alert severity="error" onClose={() => setErrorMsg(null)}>{errorMsg}</Alert>
+                        </Box>
+                    )}
+                    {step === "password" && renderPasswordStep()}
+                    {step === "verify_totp" && renderVerifyTotpStep()}
+                    {step === "change_password" && renderChangePasswordStep()}
+                    {step === "setup_totp_qr" && renderSetupTotpQrStep()}
+                    {step === "show_backup_codes" && renderShowBackupCodesStep()}
                 </Stack>
             </ThemeProvider>
         </div>
-        <Modal
-            open={!!authenticationError}
-            onClose={() => setAuthenticationError(null)}
-            className={"modal-center"}
-        >
-            <div className={"authentication-modal"}>
-                <h2>Authentication Error</h2>
-                <p>{authenticationError}</p>
-            </div>
-        </Modal>
-    </React.Fragment>
+    </React.Fragment>;
 }

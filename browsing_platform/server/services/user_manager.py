@@ -22,6 +22,10 @@ class User(BaseModel):
     login_attempts: Optional[int] = 0
     admin: Optional[bool] = False
     password_to_set: Optional[str] = None
+    totp_configured: Optional[bool] = False
+    totp_secret: Optional[str] = None
+    totp_pending_secret: Optional[str] = None
+    totp_method: Optional[str] = None
 
 
 def get_user_by_email(email: str):

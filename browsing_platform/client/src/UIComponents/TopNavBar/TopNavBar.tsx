@@ -1,4 +1,4 @@
-import React, {ReactNode, useState} from 'react';
+import React, {ReactNode, useEffect, useState} from 'react';
 import server from '../../services/server';
 import cookie from 'js-cookie';
 import {useNavigate} from "react-router";
@@ -21,6 +21,8 @@ import UploadIcon from "@mui/icons-material/Upload";
 import StorageIcon from "@mui/icons-material/Storage";
 import LogoutIcon from '@mui/icons-material/Logout';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import SecurityIcon from '@mui/icons-material/Security';
+import PeopleIcon from '@mui/icons-material/People';
 
 interface IProps {
     children: ReactNode;
@@ -30,6 +32,13 @@ interface IProps {
 export default function TopNavBar({children, hideMenuButton}: IProps) {
     const navigate = useNavigate();
     const [menuOpened, setMenuOpened] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
+
+    useEffect(() => {
+        server.get("permissions/", {ignoreErrors: true}).then((res) => {
+            if (res?.admin) setIsAdmin(true);
+        }).catch(() => {});
+    }, []);
 
     const logout = () => {
         server.post('login/logout', {}).then(() => {
@@ -89,6 +98,18 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                         <ListItemIcon><StorageIcon/></ListItemIcon>
                         <ListItemText primary="Incorporate"/>
                     </ListItemButton>
+                    <Divider/>
+                    <ListItemButton onClick={() => goToPage("settings/security")} href={"/settings/security"}>
+                        <ListItemIcon><SecurityIcon/></ListItemIcon>
+                        <ListItemText primary="Security Settings"/>
+                    </ListItemButton>
+                    {isAdmin && (
+                        <ListItemButton onClick={() => goToPage("admin/users")} href={"/admin/users"}>
+                            <ListItemIcon><PeopleIcon/></ListItemIcon>
+                            <ListItemText primary="User Management"/>
+                        </ListItemButton>
+                    )}
+                    <Divider/>
                     <ListItemButton onClick={logout}>
                         <ListItemIcon><LogoutIcon/></ListItemIcon>
                         <ListItemText primary="Logout"/>

@@ -19,9 +19,9 @@ class Token(BaseModel):
     last_use: datetime
 
 
-def generate_token() -> str:
-    """Generate a random token string of TOKEN_LENGTH characters."""
-    return ''.join(choice(string.ascii_letters + string.digits) for _ in range(TOKEN_LENGTH))
+def generate_token(length: int = TOKEN_LENGTH) -> str:
+    """Generate a cryptographically random token string."""
+    return ''.join(choice(string.ascii_letters + string.digits) for _ in range(length))
 
 
 class TokenPermissions(BaseModel):
@@ -61,3 +61,10 @@ def remove_token(token: str):
         , {"token": token}, "none"
     )
     return True
+
+
+def remove_all_tokens_for_user(user_id: int) -> None:
+    db.execute_query(
+        "DELETE FROM token WHERE user_id = %(uid)s",
+        {"uid": user_id}, "none"
+    )

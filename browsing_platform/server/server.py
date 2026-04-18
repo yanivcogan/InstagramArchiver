@@ -14,11 +14,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from browsing_platform.server.rate_limiter import limiter
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
-    permissions, tags, annotate, share, upload, incorporate, tag_management, tag_import, annotation_import
+    permissions, tags, annotate, share, upload, incorporate, tag_management, tag_import, annotation_import, \
+    twofa, user as user_route, admin_users
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from utils.db import DbError
 
 load_dotenv()
@@ -100,12 +104,16 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     from browsing_platform.server.services import ws_manager
     from browsing_platform.server.services.incorporation_service import cleanup_stale_jobs
+    from browsing_platform.server.services.pre_auth_manager import cleanup_expired_pre_auth_tokens
     ws_manager.set_event_loop(asyncio.get_event_loop())
     cleanup_stale_jobs()
+    cleanup_expired_pre_auth_tokens()
     yield
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.exception_handler(DbError)
@@ -215,6 +223,9 @@ for r in [
     tag_management.router,
     tag_import.router,
     annotation_import.router,
+    twofa.router,
+    user_route.router,
+    admin_users.router,
 ]:
     app.include_router(r, prefix="/api")
 

@@ -24,6 +24,8 @@ import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/Upload";
 import IncorporatePage from "./pages/Incorporate";
 import TagManagementPage from "./pages/TagManagementPage";
+import SecuritySettings from "./pages/SecuritySettings";
+import AdminUsersPage from "./pages/AdminUsersPage";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
@@ -77,6 +79,8 @@ export default function App() {
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>
                     <Route path="/tags" element={<TagManagementPage/>}/>
+                    <Route path="/settings/security" element={<SecuritySettings/>}/>
+                    <Route path="/admin/users" element={<AdminUsersPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
                 <ToastContainer
