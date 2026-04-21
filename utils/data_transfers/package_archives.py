@@ -42,7 +42,10 @@ def package_archives_zip():
     else:
         batch_counter = 0
 
-    to_archive: list[Path] = [a for a in archive_dirs if a.name not in already_packaged]
+    to_archive: list[Path] = sorted(
+        [a for a in archive_dirs if a.name not in already_packaged],
+        key=lambda p: p.stat().st_ctime,
+    )
     current_batch: list[Path] = []
     current_batch_size = 0
     for i in range(len(to_archive)):
@@ -90,7 +93,10 @@ def package_archives_zstd(single_archive: bool = False):
     else:
         batch_counter = 0
 
-    to_archive: list[Path] = [a for a in archive_dirs if a.name not in already_packaged]
+    to_archive: list[Path] = sorted(
+        [a for a in archive_dirs if a.name not in already_packaged],
+        key=lambda p: p.stat().st_ctime,
+    )
     current_batch: list[Path] = []
     current_batch_size = 0
     for i in range(len(to_archive)):
