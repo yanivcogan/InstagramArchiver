@@ -375,22 +375,11 @@ def merge_har_attachments(har_path: Path) -> Path:
     return final_path
 
 
-def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
-    # Guard against browsers that have already disconnected/crashed — both
-    # close() calls can throw Playwright errors in that case.
-    try:
-        context.close()
-    except Exception as e:
-        print(f"Warning: context.close() raised an error (browser may have already closed): {e}")
-    try:
-        browser.close()
-    except Exception as e:
-        print(f"Warning: browser.close() raised an error (browser may have already closed): {e}")
-
+def finish_recording(recording_thread: threading.Thread, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
     # Stop the recording loop. The thread now exits quickly (no FFmpeg inside it).
     if stop_event is not None:
         stop_event.set()
-    if recording_thread.is_alive():
+    if recording_thread is not None and recording_thread.is_alive():
         recording_thread.join()
 
     # Show the dialog immediately — screen recording has stopped so the form
@@ -594,56 +583,73 @@ def archive_instagram_content(profile: Profile, target_url: str):
     with open(profile_path / "state.json", "r") as f:
         storage_state = json.load(f)
 
-    with sync_playwright() as p:
-        # Start screen recording in a separate thread
-        video_path = archive_dir / "screen_recording.mp4"
-        stop_event = threading.Event()
-        recording_start_timestamp = datetime.datetime.now().isoformat()
-        metadata = ArchiveSessionMetadata(
-            commit_id=commit_id,
-            profile_name=profile.insta_username,
-            target_url=target_url,
-            archiving_start_timestamp=archiving_start_timestamp,
-            recording_start_timestamp=recording_start_timestamp,
-            archiving_timezone=datetime.datetime.now().astimezone().tzname(),
-            har_archive=archive_dir / "har_workspace" / "archive.har",
-            my_ip=my_public_ip,
-            platform=get_system_info(),
-            tls_cert=tls_cert,
-        )
-        # Launch browser with the saved state
-        browser = p.firefox.launch(headless=False)
-        browser_build_id = f"{browser.browser_type.name}_{browser.version}"
-        metadata.browser_build_id = browser_build_id
-        context = browser.new_context(
-            storage_state=storage_state,
-            record_har_path=metadata.har_archive,
-            record_har_content="attach",
-            record_video_dir=archive_dir / "screen_recordings",
-        )
+    stop_event = threading.Event()
+    recording_thread = None
+    video_path = archive_dir / "screen_recording.mp4"
+    metadata = ArchiveSessionMetadata(
+        commit_id=commit_id,
+        profile_name=profile.insta_username,
+        target_url=target_url,
+        archiving_start_timestamp=archiving_start_timestamp,
+        recording_start_timestamp=datetime.datetime.now().isoformat(),
+        archiving_timezone=datetime.datetime.now().astimezone().tzname(),
+        har_archive=archive_dir / "har_workspace" / "archive.har",
+        my_ip=my_public_ip,
+        platform=get_system_info(),
+        tls_cert=tls_cert,
+    )
 
-        page = context.new_page()
-        frame_hashes_path = archive_dir / "frame_hashes.jsonl"
-        recording_thread = threading.Thread(
-            target=screen_record,
-            args=(str(video_path), stop_event, str(frame_hashes_path))
-        )
-        recording_thread.start()
+    try:
+        with sync_playwright() as p:
+            # Launch browser with the saved state
+            browser = p.firefox.launch(headless=False)
+            browser_build_id = f"{browser.browser_type.name}_{browser.version}"
+            metadata.browser_build_id = browser_build_id
+            context = browser.new_context(
+                storage_state=storage_state,
+                record_har_path=metadata.har_archive,
+                record_har_content="attach",
+                record_video_dir=archive_dir / "screen_recordings",
+            )
 
-        try:
-            # Navigate to the target URL
-            page.goto(target_url)
+            page = context.new_page()
+            frame_hashes_path = archive_dir / "frame_hashes.jsonl"
+            recording_thread = threading.Thread(
+                target=screen_record,
+                args=(str(video_path), stop_event, str(frame_hashes_path))
+            )
+            recording_thread.start()
 
-            # Allow user to do whatever they want
-            print(f"Archiving content from {target_url}")
-            page.wait_for_event("close", timeout=0)
-        except Exception as e:
-            if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
-                print("Browser shutdown detected, wrapping up archiving session...")
-            else:
-                print(f"Error during archiving: {e}")
-        finally:
-            finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event)
+            try:
+                # Navigate to the target URL
+                page.goto(target_url)
+
+                # Allow user to do whatever they want
+                print(f"Archiving content from {target_url}")
+                page.wait_for_event("close", timeout=0)
+            except Exception as e:
+                if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
+                    print("Browser shutdown detected, wrapping up archiving session...")
+                else:
+                    print(f"Error during archiving: {e}")
+            finally:
+                # Close browser inside the sync_playwright context. Both calls may fail
+                # if the browser already disconnected — that's expected and safe.
+                try:
+                    context.close()
+                except Exception as e:
+                    print(f"Warning: context.close() raised an error (browser may have already closed): {e}")
+                try:
+                    browser.close()
+                except Exception as e:
+                    print(f"Warning: browser.close() raised an error (browser may have already closed): {e}")
+    except Exception as e:
+        # sync_playwright().__exit__ can raise if the Playwright server subprocess
+        # crashed (e.g. due to an unhandled Node.js error during HAR flush). We
+        # catch it here so that post-processing always runs.
+        print(f"Playwright session ended with an error: {e}")
+
+    finish_recording(recording_thread, archive_dir, metadata, stop_event)
 
 
 
