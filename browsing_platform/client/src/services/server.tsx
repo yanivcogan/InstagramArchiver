@@ -106,10 +106,10 @@ export const anchor_local_static_files = (path?: string) => {
         return null;
     }
     const baseUrl = config.serverPath.replace(/\/$/, '');
-    if (path && path.startsWith("local_archive_har")) {
+    if (path && path.startsWith("local_archive_")) {
         // todo test on dev with pnpm start ie not a prod build.
-        //  path = path.replace("local_archive_har", "http://127.0.0.1:4444/archives");
-        path = path.replace("local_archive_har", `${baseUrl}/archives`);
+        //  path = path.replace(/^local_archive_(har|wacz)/, "http://127.0.0.1:4444/archives");
+        path = path.replace(/^local_archive_(har|wacz)/, `${baseUrl}/archives`);
     } else if (path && path.startsWith("local_thumbnails")) {
         //  path = path.replace("local_thumbnails", "http://127.0.0.1:4444/thumbnails");
         path = path.replace("local_thumbnails", `${baseUrl}/thumbnails`);

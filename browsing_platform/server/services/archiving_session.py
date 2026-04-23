@@ -7,7 +7,7 @@ from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from pydantic import BaseModel, computed_field, field_validator
 
 from browsing_platform.server.services.file_tokens import generate_file_token
-from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, LOCAL_WACZ_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import ExtractedEntitiesNested, reconstruct_url
 from utils import db
 
@@ -130,6 +130,7 @@ def sign_archiving_session(session: ArchiveSession, transform: ArchivingSessionT
     _REDACT_MAP = {
         'screen_recordings': transform.include_screen_recordings,
         'har_archives': transform.include_har,
+        'wacz_archives': transform.include_har, # intentional reuse of include_har
     }
     for key, allowed in _REDACT_MAP.items():
         if not allowed and attachments.get(key):
@@ -143,6 +144,7 @@ def sign_archiving_session(session: ArchiveSession, transform: ArchivingSessionT
             attachment: str = attachments.get(attachment_type)[i]
             local_path = session.archive_location + "/" + attachment
             local_path = local_path.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+            local_path = local_path.replace(LOCAL_WACZ_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
             parsed = urlparse(local_path)
             qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
             qs['ft'] = generate_file_token(
