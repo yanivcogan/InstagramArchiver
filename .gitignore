@@ -36,3 +36,4 @@ gitleaks.exe
 logs_db_loader/*
 issues.md
 browsing_platform/client/.fallow/cache.bin
+utils/commit_tracker/branch.txt

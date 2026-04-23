@@ -42,6 +42,7 @@ from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
+branch = None
 load_dotenv()
 
 
@@ -74,6 +75,7 @@ class ArchiveSessionMetadata(BaseModel):
     tls_cert: Optional[TLSCertInfo] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = None
+    branch: Optional[str] = None
     signature: Optional[str] = None
     notes: Optional[str] = None
 
@@ -196,7 +198,7 @@ The archiving process started at {metadata.archiving_start_timestamp} and was co
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
 The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
-None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
+None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (branch {metadata.branch}, commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
 MD5 hash of the screen recording: {metadata.video_hash}
 At the time of archiving, the following domains were contacted and resolved to the following IP addresses: {metadata.domain_resolutions}
@@ -588,6 +590,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
     video_path = archive_dir / "screen_recording.mp4"
     metadata = ArchiveSessionMetadata(
         commit_id=commit_id,
+        branch=branch,
         profile_name=profile.insta_username,
         target_url=target_url,
         archiving_start_timestamp=archiving_start_timestamp,
@@ -654,7 +657,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
 
 if __name__ == "__main__":
-    commit_id = ensure_committed()
+    commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
     selected_profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")

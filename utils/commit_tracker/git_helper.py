@@ -43,6 +43,26 @@ def has_uncommitted_changes():
         return True
 
 
+def get_current_branch() -> Optional[str]:
+    if is_bundled():
+        branch_file = os.path.join(getattr(sys, '_MEIPASS'), 'utils', 'commit_tracker', 'branch.txt')
+        try:
+            with open(branch_file, 'r') as f:
+                return f.read().strip()
+        except:
+            return "unknown-bundled"
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
 def get_current_commit_id() -> Optional[str]:
     if is_bundled():
         # When running as executable, use the pre-stored commit ID
@@ -89,7 +109,7 @@ def get_github_permalink() -> Optional[str]:
         print("Error: Unable to retrieve the remote origin URL.")
         return None
 
-def ensure_committed() -> str:
+def ensure_committed() -> tuple[Optional[str], Optional[str]]:
     if (not is_bundled()) and has_uncommitted_changes():
         proceed_despite_uncommited_changes = (input("You have may have uncommitted changes. Are you sure you want to proceed? (yes/no): ")
                     .strip().lower())
@@ -98,8 +118,9 @@ def ensure_committed() -> str:
             sys.exit(0)
     print("Proceeding with execution...")
     commit_id = get_current_commit_id()
-    print(f"Commit ID: {commit_id}")
-    return commit_id
+    branch = get_current_branch()
+    print(f"Branch: {branch}, Commit ID: {commit_id}")
+    return commit_id, branch
 
 
 if __name__ == "__main__":
