@@ -576,20 +576,23 @@ create table tag_type
     name            varchar(200)                        not null,
     description     text                                null,
     notes           text                                null,
-    entity_affinity json                                null comment 'e.g. ["account","post"] — which entity types this type is most used for. NULL = unrestricted.'
+    entity_affinity json                                null comment 'e.g. ["account","post"] — which entity types this type is most used for. NULL = unrestricted.',
+    quick_access    tinyint(1) default 0               not null
 )
     engine = InnoDB;
 
 create table tag
 (
-    id           int auto_increment
+    id                          int auto_increment
         primary key,
-    create_date  timestamp  default CURRENT_TIMESTAMP not null,
-    update_date  timestamp  default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    name         varchar(200)                         not null,
-    description  text                                 null,
-    tag_type_id  int                                  null,
-    quick_access tinyint(1) default 0                 not null,
+    create_date                 timestamp  default CURRENT_TIMESTAMP not null,
+    update_date                 timestamp  default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    name                        varchar(200)                         not null,
+    description                 text                                 null,
+    tag_type_id                 int                                  null,
+    quick_access                tinyint(1) default 0                 not null,
+    omit_from_tag_type_dropdown tinyint(1) default 0                 not null,
+    notes_recommended           tinyint(1) default 1                 not null,
     constraint name
         unique (name, tag_type_id),
     constraint tag_tag_type_id_fk

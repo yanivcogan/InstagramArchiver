@@ -13,6 +13,7 @@ export interface ITagWithType extends ITag {
     tag_type_notes: string | null;
     assignment_notes?: string | null;
     tag_type_entity_affinity?: string[] | null;
+    notes_recommended?: boolean;
 }
 
 export interface ITagType {
@@ -21,6 +22,7 @@ export interface ITagType {
     description?: string | null;
     notes?: string | null;
     entity_affinity?: string[] | null;
+    quick_access?: boolean;
 }
 
 interface ITagParent {
@@ -35,7 +37,20 @@ export interface ITagDetail {
     tag_type_id?: number | null;
     tag_type_name?: string | null;
     quick_access?: boolean;
+    omit_from_tag_type_dropdown?: boolean;
+    notes_recommended?: boolean;
     parents?: ITagParent[];
+}
+
+export interface IQuickAccessTypeDropdown {
+    type_id: number;
+    type_name: string;
+    tags: ITagWithType[];
+}
+
+export interface IQuickAccessData {
+    individual_tags: ITagWithType[];
+    type_dropdowns: IQuickAccessTypeDropdown[];
 }
 
 export interface ITagHierarchyEntry {

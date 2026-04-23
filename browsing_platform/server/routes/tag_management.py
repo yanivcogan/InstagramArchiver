@@ -4,11 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from browsing_platform.server.services.permissions import auth_user_access
-from browsing_platform.server.services.tag import ITagWithType
 from browsing_platform.server.services.tag_management import (
-    ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, list_tag_types, create_tag_type, update_tag_type,
-    delete_tag_type,
-    list_tags, list_quick_access_tags, create_tag, update_tag, delete_tag, get_tag_usage_counts,
+    ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, IQuickAccessData,
+    list_tag_types, create_tag_type, update_tag_type, delete_tag_type,
+    list_tags, list_quick_access_data, create_tag, update_tag, delete_tag, get_tag_usage_counts,
     list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle, update_hierarchy_notes,
     get_tag_counts_by_type,
 )
@@ -28,6 +27,7 @@ class TagTypeBody(BaseModel):
     description: Optional[str] = None
     notes: Optional[str] = None
     entity_affinity: Optional[list] = None
+    quick_access: bool = False
 
 
 # ── Tag request bodies ─────────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ class TagBody(BaseModel):
     description: Optional[str] = None
     tag_type_id: Optional[int] = None
     quick_access: bool = False
+    omit_from_tag_type_dropdown: bool = False
+    notes_recommended: bool = True
 
     @field_validator('name')
     @classmethod
@@ -80,13 +82,13 @@ async def get_tag_types() -> list[ITagType]:
 @router.post("/types/")
 @router.post("/types")
 async def post_tag_type(body: TagTypeBody) -> ITagType:
-    return create_tag_type(body.name, body.description, body.notes, body.entity_affinity)
+    return create_tag_type(body.name, body.description, body.notes, body.entity_affinity, body.quick_access)
 
 
 @router.put("/types/{type_id}/")
 @router.put("/types/{type_id}")
 async def put_tag_type(type_id: int, body: TagTypeBody) -> ITagType:
-    update_tag_type(type_id, body.name, body.description, body.notes, body.entity_affinity)
+    update_tag_type(type_id, body.name, body.description, body.notes, body.entity_affinity, body.quick_access)
     return ITagType(id=type_id, **body.model_dump())
 
 
@@ -103,8 +105,8 @@ async def del_tag_type(type_id: int) -> dict:
 
 @router.get("/quick-access/")
 @router.get("/quick-access")
-async def get_quick_access_tags() -> list[ITagWithType]:
-    return list_quick_access_tags()
+async def get_quick_access_tags() -> IQuickAccessData:
+    return list_quick_access_data()
 
 
 @router.get("/tags/")
@@ -121,13 +123,13 @@ async def get_tags(
 @router.post("/tags/")
 @router.post("/tags")
 async def post_tag(body: TagBody) -> ITagDetail:
-    return create_tag(body.name, body.description, body.tag_type_id, body.quick_access)
+    return create_tag(body.name, body.description, body.tag_type_id, body.quick_access, body.omit_from_tag_type_dropdown, body.notes_recommended)
 
 
 @router.put("/tags/{tag_id}/")
 @router.put("/tags/{tag_id}")
 async def put_tag(tag_id: int, body: TagBody) -> ITagDetail:
-    update_tag(tag_id, body.name, body.description, body.tag_type_id, body.quick_access)
+    update_tag(tag_id, body.name, body.description, body.tag_type_id, body.quick_access, body.omit_from_tag_type_dropdown, body.notes_recommended)
     return ITagDetail(id=tag_id, **body.model_dump())
 
 

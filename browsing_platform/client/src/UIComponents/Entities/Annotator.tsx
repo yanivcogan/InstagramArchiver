@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {AnnotatableEntityType, IAnnotatableEntity, IMediaPart} from "../../types/entities";
 import {
     Button,
@@ -12,11 +12,13 @@ import {
     Typography
 } from "@mui/material";
 import AddIcon from '@mui/icons-material/Add';
-import {ITagWithType} from "../../types/tags";
+import CheckIcon from '@mui/icons-material/Check';
+import {IQuickAccessData, ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
 import InlineTagsDisplay from "../Tags/InlineTagsDisplay";
+import QuickAccessTypeDropdown from "../Tags/QuickAccessTypeDropdown";
 import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
-import {fetchQuickAccessTags} from "../../services/TagManagementService";
+import {fetchQuickAccessData} from "../../services/TagManagementService";
 import {toast} from "material-react-toastify";
 
 interface IProps {
@@ -29,14 +31,15 @@ interface IProps {
 export default function EntityAnnotator({entity, entityType, readonly, onSave}: IProps) {
     const [tags, setTags] = useState<ITagWithType[]>(entity.tags || []);
     const [noteModalTag, setNoteModalTag] = useState<ITagWithType | null>(null);
-    const [quickAccessTags, setQuickAccessTags] = useState<ITagWithType[]>([]);
+    const [quickAccessData, setQuickAccessData] = useState<IQuickAccessData>({individual_tags: [], type_dropdowns: []});
 
     useEffect(() => {
         if (!readonly) {
-            fetchQuickAccessTags().then(setQuickAccessTags).catch(() => {
-            });
+            fetchQuickAccessData().then(setQuickAccessData).catch(() => {});
         }
     }, [readonly]);
+
+    const assignedTagIds = useMemo(() => new Set(tags.map(t => t.id)), [tags]);
 
     const saveToServer = async (newTags: ITagWithType[]) => {
         try {
@@ -56,14 +59,17 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     };
 
     const handleQuickAccess = (qTag: ITagWithType) => {
-        const alreadyHas = tags.some(t => t.id === qTag.id);
-        if (!alreadyHas) {
-            const newTags = [...tags, {...qTag, assignment_notes: ""}];
-            setTags(newTags);
-            saveToServer(newTags);
+        const existingTag = tags.find(t => t.id === qTag.id);
+        if (existingTag) {
+            setNoteModalTag({...existingTag});
+            return;
         }
-        // Open notes modal so the user can immediately annotate the quick-added tag
-        setNoteModalTag({...qTag, assignment_notes: qTag.assignment_notes ?? ""});
+        const newTags = [...tags, {...qTag, assignment_notes: ""}];
+        setTags(newTags);
+        saveToServer(newTags);
+        if (qTag.notes_recommended !== false) {
+            setNoteModalTag({...qTag, assignment_notes: ""});
+        }
     };
 
     if (readonly) {
@@ -78,23 +84,33 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             label={`Tags on ${entityType} ${entity.id}`}
         />
         <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-            {quickAccessTags.map(qTag => (
-                <Tooltip key={qTag.id}
-                         title={`Quick-add: ${qTag.tag_type_name ? `${qTag.tag_type_name} / ` : ""}${qTag.name}`}
-                         disableInteractive>
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() => handleQuickAccess(qTag)}
-                        startIcon={<AddIcon/>}
-                    >
-                        {qTag.name}
-                    </Button>
-                </Tooltip>
+            {quickAccessData.individual_tags.map(qTag => {
+                const assigned = assignedTagIds.has(qTag.id);
+                return (
+                    <Tooltip key={qTag.id}
+                             title={assigned ? `Edit/remove: ${qTag.name}` : `Quick-add: ${qTag.tag_type_name ? `${qTag.tag_type_name} / ` : ""}${qTag.name}`}
+                             disableInteractive>
+                        <Button
+                            variant={assigned ? "contained" : "outlined"}
+                            size="small"
+                            onClick={() => handleQuickAccess(qTag)}
+                            startIcon={assigned ? <CheckIcon/> : <AddIcon/>}
+                        >
+                            {qTag.name}
+                        </Button>
+                    </Tooltip>
+                );
+            })}
+            {quickAccessData.type_dropdowns.map(dropdown => (
+                <QuickAccessTypeDropdown
+                    key={dropdown.type_id}
+                    dropdown={dropdown}
+                    assignedTagIds={assignedTagIds}
+                    onSelect={handleQuickAccess}
+                />
             ))}
         </Stack>
 
-        {/* Notes modal — opens when a tag chip is clicked */}
         <Dialog
             open={noteModalTag !== null}
             onClose={() => setNoteModalTag(null)}

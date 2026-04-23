@@ -21,6 +21,7 @@ class ITagWithType(ITag):
     tag_type_notes: Optional[str] = None
     assignment_notes: Optional[str] = None
     tag_type_entity_affinity: Optional[list] = None
+    notes_recommended: bool = True
 
     @field_validator('tag_type_entity_affinity', mode='before')
     def parse_entity_affinity(cls, v):

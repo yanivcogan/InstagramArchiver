@@ -103,7 +103,7 @@ function TagTypesTab() {
     const [loading, setLoading] = useState(true);
     const [editTarget, setEditTarget] = useState<ITagType | null>(null);
     const [formOpen, setFormOpen] = useState(false);
-    const [form, setForm] = useState<Omit<ITagType, "id">>({name: "", description: null, notes: null, entity_affinity: null});
+    const [form, setForm] = useState<Omit<ITagType, "id">>({name: "", description: null, notes: null, entity_affinity: null, quick_access: false});
 
     const load = () => {
         setLoading(true);
@@ -119,7 +119,7 @@ function TagTypesTab() {
 
     const openEdit = (tt: ITagType) => {
         setEditTarget(tt);
-        setForm({name: tt.name, description: tt.description ?? null, notes: tt.notes ?? null, entity_affinity: tt.entity_affinity ?? null});
+        setForm({name: tt.name, description: tt.description ?? null, notes: tt.notes ?? null, entity_affinity: tt.entity_affinity ?? null, quick_access: tt.quick_access ?? false});
         setFormOpen(true);
     };
 
@@ -204,6 +204,10 @@ function TagTypesTab() {
                             {ENTITY_AFFINITY_OPTIONS.map(o => <MenuItem key={o} value={o}>{o}</MenuItem>)}
                         </Select>
                     </FormControl>
+                    <FormControlLabel
+                        control={<Checkbox checked={form.quick_access ?? false} onChange={e => setForm(f => ({...f, quick_access: e.target.checked}))}/>}
+                        label="Quick access (show dropdown of this type's tags in annotator)"
+                    />
                 </Stack>
             </DialogContent>
             <DialogActions>
@@ -335,8 +339,8 @@ function TagsTab() {
     const PAGE_SIZE = 50;
     const [formOpen, setFormOpen] = useState(false);
     const [editTarget, setEditTarget] = useState<ITagDetail | null>(null);
-    const [form, setForm] = useState<{name: string; description: string; tag_type_id: number | null; quick_access: boolean}>({
-        name: "", description: "", tag_type_id: null, quick_access: false
+    const [form, setForm] = useState<{name: string; description: string; tag_type_id: number | null; quick_access: boolean; omit_from_tag_type_dropdown: boolean; notes_recommended: boolean}>({
+        name: "", description: "", tag_type_id: null, quick_access: false, omit_from_tag_type_dropdown: false, notes_recommended: true
     });
     const [editUsage, setEditUsage] = useState<ITagUsage | null>(null);
 
@@ -375,7 +379,7 @@ function TagsTab() {
 
     const openCreate = () => {
         setEditTarget(null);
-        setForm({name: "", description: "", tag_type_id: selectedTypeId, quick_access: false});
+        setForm({name: "", description: "", tag_type_id: selectedTypeId, quick_access: false, omit_from_tag_type_dropdown: false, notes_recommended: true});
         setHierarchyParents([]);
         setHierarchyChildren([]);
         setAddParentTag(null);
@@ -385,7 +389,7 @@ function TagsTab() {
 
     const openEdit = (t: ITagDetail) => {
         setEditTarget(t);
-        setForm({name: t.name, description: t.description ?? "", tag_type_id: t.tag_type_id ?? null, quick_access: t.quick_access ?? false});
+        setForm({name: t.name, description: t.description ?? "", tag_type_id: t.tag_type_id ?? null, quick_access: t.quick_access ?? false, omit_from_tag_type_dropdown: t.omit_from_tag_type_dropdown ?? false, notes_recommended: t.notes_recommended ?? true});
         setHierarchyParents([]);
         setHierarchyChildren([]);
         setAddParentTag(null);
@@ -401,9 +405,9 @@ function TagsTab() {
     const handleSave = async () => {
         try {
             if (editTarget?.id) {
-                await updateTag(editTarget.id, {name: form.name, description: form.description || null, tag_type_id: form.tag_type_id, quick_access: form.quick_access});
+                await updateTag(editTarget.id, {name: form.name, description: form.description || null, tag_type_id: form.tag_type_id, quick_access: form.quick_access, omit_from_tag_type_dropdown: form.omit_from_tag_type_dropdown, notes_recommended: form.notes_recommended});
             } else {
-                await createTag({name: form.name, description: form.description || null, tag_type_id: form.tag_type_id, quick_access: form.quick_access});
+                await createTag({name: form.name, description: form.description || null, tag_type_id: form.tag_type_id, quick_access: form.quick_access, omit_from_tag_type_dropdown: form.omit_from_tag_type_dropdown, notes_recommended: form.notes_recommended});
             }
             setFormOpen(false);
             loadTags();
@@ -427,7 +431,7 @@ function TagsTab() {
         const newValue = !t.quick_access;
         setTags(prev => prev.map(tag => tag.id === t.id ? {...tag, quick_access: newValue} : tag));
         try {
-            await updateTag(t.id, {name: t.name, description: t.description ?? null, tag_type_id: t.tag_type_id ?? null, quick_access: newValue});
+            await updateTag(t.id, {name: t.name, description: t.description ?? null, tag_type_id: t.tag_type_id ?? null, quick_access: newValue, omit_from_tag_type_dropdown: t.omit_from_tag_type_dropdown ?? false, notes_recommended: t.notes_recommended ?? true});
         } catch (e: any) {
             setTags(prev => prev.map(tag => tag.id === t.id ? {...tag, quick_access: !newValue} : tag));
             toast.error(e?.message || "Error updating quick access");
@@ -589,6 +593,14 @@ function TagsTab() {
                     <FormControlLabel
                         control={<Checkbox checked={form.quick_access} onChange={e => setForm(f => ({...f, quick_access: e.target.checked}))}/>}
                         label="Quick access (show as shortcut button in annotator)"
+                    />
+                    <FormControlLabel
+                        control={<Checkbox checked={form.notes_recommended} onChange={e => setForm(f => ({...f, notes_recommended: e.target.checked}))}/>}
+                        label="Prompt for notes on quick-assign"
+                    />
+                    <FormControlLabel
+                        control={<Checkbox checked={form.omit_from_tag_type_dropdown} onChange={e => setForm(f => ({...f, omit_from_tag_type_dropdown: e.target.checked}))}/>}
+                        label="Exclude from type dropdown (when type has quick access)"
                     />
 
                     {/* Hierarchy — only shown when editing an existing tag */}

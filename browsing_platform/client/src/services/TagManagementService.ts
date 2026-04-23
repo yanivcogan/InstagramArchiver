@@ -2,6 +2,7 @@ import server, {HTTP_METHODS} from "./server";
 import {
     IAnnotationImportExecuteResponse,
     IAnnotationImportRowInput,
+    IQuickAccessData,
     IResolvedAnnotationRow,
     ITagDetail,
     ITagHierarchyEntry,
@@ -15,7 +16,7 @@ import {
 
 const BASE = "tag-management";
 
-export const fetchQuickAccessTags = async (): Promise<ITagWithType[]> =>
+export const fetchQuickAccessData = async (): Promise<IQuickAccessData> =>
     server.get(`${BASE}/quick-access/`);
 
 /* Tag Types */

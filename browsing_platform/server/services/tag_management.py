@@ -15,6 +15,7 @@ class ITagType(BaseModel):
     description: Optional[str] = None
     notes: Optional[str] = None
     entity_affinity: Optional[list] = None
+    quick_access: bool = False
 
 
 class ITagParent(BaseModel):
@@ -29,6 +30,8 @@ class ITagDetail(BaseModel):
     tag_type_id: Optional[int] = None
     tag_type_name: Optional[str] = None
     quick_access: bool = False
+    omit_from_tag_type_dropdown: bool = False
+    notes_recommended: bool = True
     parents: list[ITagParent] = []
 
 
@@ -58,7 +61,7 @@ class ITagStat(BaseModel):
 
 def list_tag_types() -> list[ITagType]:
     rows = db.execute_query(
-        "SELECT id, name, description, notes, entity_affinity FROM tag_type ORDER BY name",
+        "SELECT id, name, description, notes, entity_affinity, quick_access FROM tag_type ORDER BY name",
         {},
         return_type="rows"
     )
@@ -76,25 +79,26 @@ def list_tag_types() -> list[ITagType]:
             description=row.get("description"),
             notes=row.get("notes"),
             entity_affinity=ea,
+            quick_access=bool(row.get("quick_access")),
         ))
     return result
 
 
-def create_tag_type(name: str, description: Optional[str], notes: Optional[str], entity_affinity: Optional[list]) -> ITagType:
+def create_tag_type(name: str, description: Optional[str], notes: Optional[str], entity_affinity: Optional[list], quick_access: bool = False) -> ITagType:
     ea_json = json.dumps(entity_affinity) if entity_affinity is not None else None
     new_id = db.execute_query(
-        "INSERT INTO tag_type (name, description, notes, entity_affinity) VALUES (%(name)s, %(description)s, %(notes)s, %(entity_affinity)s)",
-        {"name": name, "description": description, "notes": notes, "entity_affinity": ea_json},
+        "INSERT INTO tag_type (name, description, notes, entity_affinity, quick_access) VALUES (%(name)s, %(description)s, %(notes)s, %(entity_affinity)s, %(quick_access)s)",
+        {"name": name, "description": description, "notes": notes, "entity_affinity": ea_json, "quick_access": quick_access},
         return_type="id"
     )
-    return ITagType(id=new_id, name=name, description=description, notes=notes, entity_affinity=entity_affinity)
+    return ITagType(id=new_id, name=name, description=description, notes=notes, entity_affinity=entity_affinity, quick_access=quick_access)
 
 
-def update_tag_type(tag_type_id: int, name: str, description: Optional[str], notes: Optional[str], entity_affinity: Optional[list]) -> bool:
+def update_tag_type(tag_type_id: int, name: str, description: Optional[str], notes: Optional[str], entity_affinity: Optional[list], quick_access: bool = False) -> bool:
     ea_json = json.dumps(entity_affinity) if entity_affinity is not None else None
     db.execute_query(
-        "UPDATE tag_type SET name=%(name)s, description=%(description)s, notes=%(notes)s, entity_affinity=%(entity_affinity)s WHERE id=%(id)s",
-        {"id": tag_type_id, "name": name, "description": description, "notes": notes, "entity_affinity": ea_json},
+        "UPDATE tag_type SET name=%(name)s, description=%(description)s, notes=%(notes)s, entity_affinity=%(entity_affinity)s, quick_access=%(quick_access)s WHERE id=%(id)s",
+        {"id": tag_type_id, "name": name, "description": description, "notes": notes, "entity_affinity": ea_json, "quick_access": quick_access},
         return_type="none"
     )
     return True
@@ -142,6 +146,7 @@ def list_tags(tag_type_id: Optional[int] = None, q: Optional[str] = None, page: 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     rows = db.execute_query(
         f"""SELECT t.id, t.name, t.description, t.tag_type_id, t.quick_access,
+                   t.omit_from_tag_type_dropdown, t.notes_recommended,
                    tt.name AS tag_type_name,
                    (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pt.id, 'name', pt.name))
                     FROM tag_hierarchy th JOIN tag pt ON th.super_tag_id = pt.id
@@ -164,37 +169,68 @@ def list_tags(tag_type_id: Optional[int] = None, q: Optional[str] = None, page: 
     return results
 
 
-def list_quick_access_tags() -> list[ITagWithType]:
-    rows = db.execute_query(
-        """SELECT
-               tag.*,
-               tag_type.name AS tag_type_name,
-               tag_type.description AS tag_type_description,
-               tag_type.notes AS tag_type_notes,
-               tag_type.entity_affinity AS tag_type_entity_affinity
-           FROM tag
-           LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id
-           WHERE tag.quick_access = 1
-           ORDER BY tag.name""",
+class IQuickAccessTypeDropdown(BaseModel):
+    type_id: int
+    type_name: str
+    tags: list[ITagWithType]
+
+
+class IQuickAccessData(BaseModel):
+    individual_tags: list[ITagWithType]
+    type_dropdowns: list[IQuickAccessTypeDropdown]
+
+
+_QUICK_ACCESS_TAG_COLS = """
+    tag.*,
+    tag_type.name AS tag_type_name,
+    tag_type.description AS tag_type_description,
+    tag_type.notes AS tag_type_notes,
+    tag_type.entity_affinity AS tag_type_entity_affinity
+"""
+
+
+def list_quick_access_data() -> IQuickAccessData:
+    individual_rows = db.execute_query(
+        f"SELECT {_QUICK_ACCESS_TAG_COLS} FROM tag LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id WHERE tag.quick_access = 1 ORDER BY tag.name",
         {},
         return_type="rows"
     )
-    return [ITagWithType(**row) for row in rows]
+    individual_tags = [ITagWithType(**row) for row in individual_rows]
+
+    dropdown_rows = db.execute_query(
+        f"""SELECT {_QUICK_ACCESS_TAG_COLS}
+            FROM tag
+            JOIN tag_type ON tag.tag_type_id = tag_type.id
+            WHERE tag_type.quick_access = 1 AND tag.omit_from_tag_type_dropdown = 0
+            ORDER BY tag_type.name, tag.name""",
+        {},
+        return_type="rows"
+    )
+    type_dropdowns_map: dict[int, IQuickAccessTypeDropdown] = {}
+    for row in dropdown_rows:
+        type_id = row["tag_type_id"]
+        if type_id not in type_dropdowns_map:
+            type_dropdowns_map[type_id] = IQuickAccessTypeDropdown(
+                type_id=type_id, type_name=row["tag_type_name"], tags=[]
+            )
+        type_dropdowns_map[type_id].tags.append(ITagWithType(**row))
+
+    return IQuickAccessData(individual_tags=individual_tags, type_dropdowns=list(type_dropdowns_map.values()))
 
 
-def create_tag(name: str, description: Optional[str], tag_type_id: Optional[int], quick_access: bool = False) -> ITagDetail:
+def create_tag(name: str, description: Optional[str], tag_type_id: Optional[int], quick_access: bool = False, omit_from_tag_type_dropdown: bool = False, notes_recommended: bool = True) -> ITagDetail:
     new_id = db.execute_query(
-        "INSERT INTO tag (name, description, tag_type_id, quick_access) VALUES (%(name)s, %(description)s, %(tag_type_id)s, %(quick_access)s)",
-        {"name": name, "description": description, "tag_type_id": tag_type_id, "quick_access": quick_access},
+        "INSERT INTO tag (name, description, tag_type_id, quick_access, omit_from_tag_type_dropdown, notes_recommended) VALUES (%(name)s, %(description)s, %(tag_type_id)s, %(quick_access)s, %(omit_from_tag_type_dropdown)s, %(notes_recommended)s)",
+        {"name": name, "description": description, "tag_type_id": tag_type_id, "quick_access": quick_access, "omit_from_tag_type_dropdown": omit_from_tag_type_dropdown, "notes_recommended": notes_recommended},
         return_type="id"
     )
-    return ITagDetail(id=new_id, name=name, description=description, tag_type_id=tag_type_id, quick_access=quick_access)
+    return ITagDetail(id=new_id, name=name, description=description, tag_type_id=tag_type_id, quick_access=quick_access, omit_from_tag_type_dropdown=omit_from_tag_type_dropdown, notes_recommended=notes_recommended)
 
 
-def update_tag(tag_id: int, name: str, description: Optional[str], tag_type_id: Optional[int], quick_access: bool = False) -> bool:
+def update_tag(tag_id: int, name: str, description: Optional[str], tag_type_id: Optional[int], quick_access: bool = False, omit_from_tag_type_dropdown: bool = False, notes_recommended: bool = True) -> bool:
     db.execute_query(
-        "UPDATE tag SET name=%(name)s, description=%(description)s, tag_type_id=%(tag_type_id)s, quick_access=%(quick_access)s WHERE id=%(id)s",
-        {"id": tag_id, "name": name, "description": description, "tag_type_id": tag_type_id, "quick_access": quick_access},
+        "UPDATE tag SET name=%(name)s, description=%(description)s, tag_type_id=%(tag_type_id)s, quick_access=%(quick_access)s, omit_from_tag_type_dropdown=%(omit_from_tag_type_dropdown)s, notes_recommended=%(notes_recommended)s WHERE id=%(id)s",
+        {"id": tag_id, "name": name, "description": description, "tag_type_id": tag_type_id, "quick_access": quick_access, "omit_from_tag_type_dropdown": omit_from_tag_type_dropdown, "notes_recommended": notes_recommended},
         return_type="none"
     )
     return True
