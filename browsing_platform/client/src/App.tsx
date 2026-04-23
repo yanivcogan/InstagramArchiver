@@ -26,6 +26,7 @@ import IncorporatePage from "./pages/Incorporate";
 import TagManagementPage from "./pages/TagManagementPage";
 import SecuritySettings from "./pages/SecuritySettings";
 import AdminUsersPage from "./pages/AdminUsersPage";
+import SharePasswordGate from "./UIComponents/LinkSharing/SharePasswordGate";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
@@ -66,15 +67,15 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<Login/>}/>
                     <Route path="/login" element={<Login/>}/>
-                    <Route path="/account/pk/:platformId" element={<AccountPage/>}/>
-                    <Route path="/account/url/*" element={<AccountPage/>}/>
-                    <Route path="/account/:id" element={<AccountPage/>}/>
-                    <Route path="/post/pk/:platformId" element={<PostPage/>}/>
-                    <Route path="/post/url/*" element={<PostPage/>}/>
-                    <Route path="/post/:id" element={<PostPage/>}/>
-                    <Route path="/media/pk/:platformId" element={<MediaPage/>}/>
-                    <Route path="/media/:id" element={<MediaPage/>}/>
-                    <Route path="/archive/:id" element={<SessionPage/>}/>
+                    <Route path="/account/pk/:platformId" element={<SharePasswordGate><AccountPage/></SharePasswordGate>}/>
+                    <Route path="/account/url/*" element={<SharePasswordGate><AccountPage/></SharePasswordGate>}/>
+                    <Route path="/account/:id" element={<SharePasswordGate><AccountPage/></SharePasswordGate>}/>
+                    <Route path="/post/pk/:platformId" element={<SharePasswordGate><PostPage/></SharePasswordGate>}/>
+                    <Route path="/post/url/*" element={<SharePasswordGate><PostPage/></SharePasswordGate>}/>
+                    <Route path="/post/:id" element={<SharePasswordGate><PostPage/></SharePasswordGate>}/>
+                    <Route path="/media/pk/:platformId" element={<SharePasswordGate><MediaPage/></SharePasswordGate>}/>
+                    <Route path="/media/:id" element={<SharePasswordGate><MediaPage/></SharePasswordGate>}/>
+                    <Route path="/archive/:id" element={<SharePasswordGate><SessionPage/></SharePasswordGate>}/>
                     <Route path="/search" element={<SearchPage/>}/>
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>

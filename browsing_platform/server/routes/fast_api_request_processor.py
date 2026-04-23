@@ -41,7 +41,8 @@ def extract_session_transform_config(request: Request) -> ArchivingSessionTransf
     if not token:
         share_link = request.headers.get("X-Share-Link")
         if share_link:
-            share_perms = get_link_permissions(share_link)
+            password_token = request.headers.get("X-Share-Password-Token")
+            share_perms = get_link_permissions(share_link, password_token)
             include_screen_recordings = share_perms.include_screen_recordings
             include_har = share_perms.include_har
 

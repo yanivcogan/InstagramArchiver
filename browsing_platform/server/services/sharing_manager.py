@@ -11,6 +11,8 @@ from browsing_platform.server.services.media_part import get_media_part_by_id
 from browsing_platform.server.services.post import get_post_by_id
 from utils import db
 
+_MIN_SHARE_PASSWORD_LEN = 6
+
 SHARE_LINK_LENGTH = 24
 
 
@@ -28,6 +30,9 @@ class EntityShareLink(EntityShare):
     link_suffix: str
     include_screen_recordings: bool = True
     include_har: bool = True
+    password_hash: Optional[str] = None
+    password_alg: Optional[str] = None
+    password_protected: bool = False  # derived field, always safe to expose
 
 
 def generate_suffix() -> str:
@@ -41,6 +46,7 @@ class SharePermissions(BaseModel):
     censored_session_properties: Optional[list[str]] = None
     include_screen_recordings: bool = True
     include_har: bool = True
+    password_protected: bool = False
 
 
 class EntitySharePermissions(SharePermissions):
@@ -51,6 +57,10 @@ class ShareLinkCreationResult(BaseModel):
     success: bool
     link_suffix: Optional[str] = None
     error: Optional[str] = None
+
+
+class SetPasswordRequest(BaseModel):
+    password: Optional[str] = None
 
 
 _ENTITY_TABLE: dict[str, str] = {
@@ -114,8 +124,60 @@ def get_existing_share_link(entity: T_Entities, entity_id: int) -> Optional[Enti
     )
     if not link_share or not isinstance(link_share, dict):
         return None
+    link = EntityShareLink(**link_share)
+    link.password_protected = link.password_hash is not None
+    link.password_hash = None  # never expose the hash to callers
+    return link
+
+
+def set_link_password(link_suffix: str, password: Optional[str]):
+    if password is None:
+        db.execute_query(
+            'UPDATE entity_share_link SET password_hash = NULL, password_alg = NULL '
+            'WHERE link_suffix = %(link_suffix)s',
+            {"link_suffix": link_suffix},
+            "none",
+        )
     else:
-        return EntityShareLink(**link_share)
+        if len(password) < _MIN_SHARE_PASSWORD_LEN:
+            raise ValueError(f"Password must be at least {_MIN_SHARE_PASSWORD_LEN} characters")
+        from browsing_platform.server.services.password_authenticator import hash_raw
+        h, alg = hash_raw(password)
+        db.execute_query(
+            'UPDATE entity_share_link SET password_hash = %(h)s, password_alg = %(alg)s '
+            'WHERE link_suffix = %(link_suffix)s',
+            {"h": h, "alg": alg, "link_suffix": link_suffix},
+            "none",
+        )
+
+
+def verify_share_link_password(link_suffix: str, password: str) -> Optional[str]:
+    """Verify a password for a share link. Returns a signed token on success, None on failure."""
+    row = db.execute_query(
+        'SELECT password_hash, valid FROM entity_share_link WHERE link_suffix = %(s)s',
+        {"s": link_suffix},
+        "single_row",
+    )
+    if not row or not isinstance(row, dict):
+        return None
+    if not row.get("valid"):
+        return None
+    stored_hash = row.get("password_hash")
+    if not stored_hash:
+        return None  # link has no password — no token needed
+    from browsing_platform.server.services.password_authenticator import verify_password
+    from browsing_platform.server.services.share_password_tokens import generate_password_token
+    result = verify_password(stored_hash, password)
+    if result is False:
+        return None
+    if isinstance(result, str):
+        # Hash needs upgrading; persist the new hash
+        db.execute_query(
+            'UPDATE entity_share_link SET password_hash = %(h)s WHERE link_suffix = %(s)s',
+            {"h": result, "s": link_suffix},
+            "none",
+        )
+    return generate_password_token(link_suffix)
 
 
 def set_link_attachment_access(link_suffix: str, include_screen_recordings: bool, include_har: bool):
@@ -141,7 +203,7 @@ def set_link_validity(link_suffix: str, valid: bool):
     )
 
 
-def get_link_permissions(link_suffix: str) -> EntitySharePermissions:
+def get_link_permissions(link_suffix: str, password_token: Optional[str] = None, skip_password_check: bool = False) -> EntitySharePermissions:
     try:
         if not link_suffix:
             return EntitySharePermissions(view=False)
@@ -152,23 +214,25 @@ def get_link_permissions(link_suffix: str) -> EntitySharePermissions:
         )
         if not token_check or not isinstance(token_check, dict):
             return EntitySharePermissions(view=False)
-        else:
-            share_link = EntityShareLink(**token_check)
-            if not share_link.valid:
-                return EntitySharePermissions(view=False)
-            else:
-                return EntitySharePermissions(
-                    view=True,
-                    shared_entity=EntityShare(entity=share_link.entity, entity_id=share_link.entity_id),
-                    include_screen_recordings=share_link.include_screen_recordings,
-                    include_har=share_link.include_har,
-                )
+        share_link = EntityShareLink(**token_check)
+        if not share_link.valid:
+            return EntitySharePermissions(view=False)
+        if share_link.password_hash and not skip_password_check:
+            from browsing_platform.server.services.share_password_tokens import validate_password_token
+            if not password_token or not validate_password_token(link_suffix, password_token):
+                return EntitySharePermissions(view=False, password_protected=True)
+        return EntitySharePermissions(
+            view=True,
+            shared_entity=EntityShare(entity=share_link.entity, entity_id=share_link.entity_id),
+            include_screen_recordings=share_link.include_screen_recordings,
+            include_har=share_link.include_har,
+        )
     except Exception:
         return EntitySharePermissions(view=False)
 
 
-def check_share_permissions(link_suffix: str, requested_entity: T_Entities, requested_entity_id: int) -> SharePermissions:
-    share_scope = get_link_permissions(link_suffix)
+def check_share_permissions(link_suffix: str, requested_entity: T_Entities, requested_entity_id: int, password_token: Optional[str] = None) -> SharePermissions:
+    share_scope = get_link_permissions(link_suffix, password_token)
     share_permissions = SharePermissions(**share_scope.model_dump(exclude={"shared_entity"}))
     shared_entity = share_scope.shared_entity
     if not shared_entity:

@@ -51,6 +51,12 @@ def _check_password_strength(password: str) -> None:
         raise ValueError(PASSWORD_STRENGTH_ERROR)
 
 
+def hash_raw(password: str) -> tuple[str, str]:
+    """Hash a password without enforcing strength requirements. Use when the caller validates strength."""
+    h = _ph.hash(password)
+    return h, "argon2id"
+
+
 def hash_password(password: str) -> tuple[str, str]:
     if len(password) < 14 or len(password) > 512:
         raise ValueError("Password length invalid (14-512 chars required)")

@@ -3,7 +3,7 @@ import PubSub from "pubsub-js";
 import events from "../lib/events";
 import cookie from "js-cookie";
 import {IPopupAlert} from "./alerts/alerts";
-import {getShareTokenFromHref} from "./linkSharing";
+import {getSharePasswordToken, getShareTokenFromHref} from "./linkSharing";
 
 const apiPath = 'api/';
 
@@ -53,6 +53,10 @@ const post = async (
     const shareLink = getShareTokenFromHref();
     if (shareLink) {
         headers.set("X-Share-Link", shareLink);
+        const pwToken = getSharePasswordToken(shareLink);
+        if (pwToken) {
+            headers.set("X-Share-Password-Token", pwToken);
+        }
     }
     const res = await fetch(config.serverPath + apiPath + path, {
         method: HTTP_METHODS[fixedMethod],
@@ -123,6 +127,10 @@ const postFormData = async (path: string, formData: FormData): Promise<any> => {
     const shareLink = getShareTokenFromHref();
     if (shareLink) {
         headers.set("X-Share-Link", shareLink);
+        const pwToken = getSharePasswordToken(shareLink);
+        if (pwToken) {
+            headers.set("X-Share-Password-Token", pwToken);
+        }
     }
     const res = await fetch(config.serverPath + apiPath + path, {
         method: 'POST',

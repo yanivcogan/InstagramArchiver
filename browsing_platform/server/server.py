@@ -20,6 +20,7 @@ from browsing_platform.server.rate_limiter import limiter
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
     permissions, tags, annotate, share, upload, incorporate, tag_management, tag_import, annotation_import, \
     twofa, user as user_route, admin_users
+from browsing_platform.server.routes.share import public_router as share_public_router
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 from browsing_platform.server.services.sharing_manager import get_link_permissions
 from browsing_platform.server.services.token_manager import check_token
@@ -174,7 +175,7 @@ class StaticFilesAuthMiddleware(BaseHTTPMiddleware):
             # access is allowed if the user supplied a valid login token or a share token
             # share tokens can be used to access static media even if the entities the media is attached to is beyond the share scope
             # this is fine because a user can not generate an encrypted payload containing their share token for arbitrary files without knowing the server secret
-            if not check_token(payload.login_token).valid and not get_link_permissions(payload.login_token).view:
+            if not check_token(payload.login_token).valid and not get_link_permissions(payload.login_token, skip_password_check=True).view:
                 logger.warning(f"Invalid embedded login token for {request.url.path}")
                 return Response("Unauthorized", status_code=401)
         response = await call_next(request)
@@ -218,6 +219,7 @@ for r in [
     search.router,
     login.router,
     permissions.router,
+    share_public_router,
     share.router,
     upload.router,
     incorporate.router,
