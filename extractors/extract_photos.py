@@ -21,6 +21,13 @@ from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 
+
+def _safe_id(identifier: str, max_len: int = 60) -> str:
+    """Return identifier truncated to max_len, using an md5 suffix to stay unique."""
+    if len(identifier) <= max_len:
+        return identifier
+    return identifier[:max_len - 9] + '_' + md5(identifier.encode()).hexdigest()[:8]
+
 # Supported image extensions
 IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'heic', 'heif'}
 
@@ -222,24 +229,15 @@ def extract_photos_from_structures(structures: list[StructureType]) -> list[Phot
 # ---------- Existing files ----------
 
 def get_existing_photos(working_dir: Path) -> dict[str, Path]:
+    """Return a dict mapping lowercased filename to Path for every image file in working_dir."""
     existing = {}
     for file in working_dir.iterdir():
         if not file.is_file():
             continue
         file_name = file.name.lower()
         if any(file_name.endswith('.' + ext) for ext in IMAGE_EXTENSIONS):
-            asset_id = file_name
-            try:
-                if 'photo_full_' in asset_id:
-                    asset_id = asset_id.split('photo_full_')[1] if 'photo_' in asset_id else asset_id
-                elif 'photo_' in asset_id:
-                    asset_id = asset_id.split('photo_')[1] if 'photo_' in asset_id else asset_id
-            except IndexError:
-                pass
-            # asset_part may include prefixes; keep simple
-            if asset_id not in existing or file.stat().st_size > existing[asset_id].stat().st_size:
-                existing[asset_id] = file
-
+            if file_name not in existing or file.stat().st_size > existing[file_name].stat().st_size:
+                existing[file_name] = file
     return existing
 
 
@@ -250,7 +248,7 @@ def save_fetched_photo(photo: Photo, output_dir: Path) -> AssetSaveResult:
         return AssetSaveResult(success=False)
     # choose largest (by bytes) fetched asset
     best_name, best_bytes = max(photo.fetched_assets.items(), key=lambda kv: len(kv[1]))
-    out_name = f"photo_{photo.asset_id}_{best_name}"
+    out_name = f"photo_{_safe_id(str(photo.asset_id))}_{_safe_id(best_name)}"
     out_path = output_dir / out_name
     try:
         with open(out_path, 'wb') as f:
@@ -274,7 +272,7 @@ def download_full_asset(photo: Photo, output_dir: Path) -> AssetSaveResult:
     # infer extension
     from urllib import parse as urllib_parse
     path_part = urllib_parse.urlparse(photo.full_asset).path
-    out_name = f"photo_full_{photo.asset_id}"
+    out_name = f"photo_full_{_safe_id(str(photo.asset_id))}"
     out_path = output_dir / out_name
     try:
         with open(out_path, 'wb') as f:
@@ -336,22 +334,15 @@ def acquire_photos(
             combined[p.asset_id] = p
 
     for photo in combined.values():
-        possible_ids = {str(photo.asset_id)}
-        if photo.full_asset:
-            try:
-                fn = photo.full_asset.split('/')[-1].split('?')[0]
-                possible_ids.add(fn)
-            except Exception:
-                pass
-        if photo.fetched_assets:
-            for fn in photo.fetched_assets:
-                possible_ids.add(fn)
-                if "." in fn:
-                    file_ext = fn.split('.')[-1]
-                    possible_ids.add(fn + '.' + file_ext)
-        if any(pid in existing for pid in possible_ids):
+        safe_asset = _safe_id(str(photo.asset_id)).lower()
+        possible_names = {f"photo_full_{safe_asset}"}
+        for fn in (photo.fetched_assets or {}):
+            possible_names.add(f"photo_{safe_asset}_{_safe_id(fn).lower()}")
+
+        matching = [existing[name] for name in possible_names if name in existing]
+        if matching:
             print(f"Skipping image {photo.asset_id} as it already exists in the output directory.")
-            photo.local_files = [existing[pid] for pid in possible_ids if pid in existing]
+            photo.local_files = matching
 
     downloaded_hashes: dict[str, str] = {}
     downloaded_fuzzy_hashes: dict[str, str] = {}

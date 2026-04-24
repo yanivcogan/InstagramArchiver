@@ -18,6 +18,13 @@ from pydantic import BaseModel, field_validator
 
 from extractors.models import VideoVersion
 from extractors.structures_extraction import StructureType, structures_from_har
+
+
+def _safe_id(identifier: str, max_len: int = 60) -> str:
+    """Return identifier truncated to max_len, using an md5 suffix to stay unique."""
+    if len(identifier) <= max_len:
+        return identifier
+    return identifier[:max_len - 9] + '_' + md5(identifier.encode()).hexdigest()[:8]
 from extractors.structures_extraction_api_v1 import ApiV1Response
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
@@ -570,7 +577,7 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
                 download_type = "har_segments"
 
         source_type = "har_segments" if download_type == "har_segments" else "full_track"
-        single_track_file = f"track_{xpv_asset_id}_{track_name}_{source_type}.mp4"
+        single_track_file = f"track_{_safe_id(xpv_asset_id)}_{_safe_id(track_name)}_{source_type}.mp4"
         if track_data is not None and len(track_data) > 0:
             with open(output_dir / single_track_file, 'wb') as f:
                 f.write(track_data)
@@ -638,7 +645,7 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
                     temp_video_file = new_file
 
     if temp_audio_file is not None and temp_video_file is not None:
-        merged_file_path = output_dir / f"xpv_{video.xpv_asset_id}.mp4"
+        merged_file_path = output_dir / f"xpv_{_safe_id(video.xpv_asset_id)}.mp4"
         merge_success = merge_video_and_audio_tracks(
             temp_video_file,
             temp_audio_file,
@@ -772,31 +779,14 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
 
 
 def get_existing_videos(working_dir: Path) -> dict[str, Path]:
-    # Existing files in the output directory
-    existing_files_name_size_tuples = [
-        (file.name, file.stat().st_size) for file in working_dir.iterdir() if file.is_file()
-    ]
-
-    largest_version_of_files: dict[str, tuple[str, int]] = dict()
-
-    for file_name, file_size in existing_files_name_size_tuples:
-        print(f"Extracting {file_name}...")
-        asset_id = file_name
-        try:
-            asset_id = asset_id.split('track_')[1] if 'track_' in asset_id else asset_id
-            asset_id = asset_id.split('xpv_')[1] if 'xpv_' in asset_id else asset_id
-            asset_id = asset_id.split('_')[0] if '_' in asset_id else asset_id
-            asset_id = asset_id.split('.mp4')[0] if '.mp4' in asset_id else asset_id
-        except IndexError:
-            pass
-        if (
-                asset_id not in largest_version_of_files or
-                file_size > largest_version_of_files[asset_id][1]
-        ):
-            largest_version_of_files[asset_id] = (file_name, file_size)
-
-    return {track_name: Path(working_dir / file_name) for track_name, (file_name, _) in
-            largest_version_of_files.items()}
+    """Return a dict mapping filename stem (no .mp4) to Path for every .mp4 in working_dir."""
+    result: dict[str, Path] = {}
+    for file in working_dir.iterdir():
+        if file.is_file() and file.suffix == '.mp4':
+            stem = file.stem
+            if stem not in result or file.stat().st_size > result[stem].stat().st_size:
+                result[stem] = file
+    return result
 
 
 def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
@@ -807,7 +797,7 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
         if download_result is not None:
             hashed_contents = md5(download_result).hexdigest()
             fuzzy_hashed_contents = ppdeep.hash(download_result)
-            file_name = f"xpv_{video.xpv_asset_id}_full.mp4"
+            file_name = f"xpv_{_safe_id(video.xpv_asset_id)}_full.mp4"
             file_path = output_dir / file_name
             with open(file_path, 'wb') as f:
                 f.write(download_result)
@@ -911,24 +901,20 @@ def acquire_videos(
     combined_videos = list(combined_videos_dict.values())
     # attach existing local files to the videos
     for video in combined_videos:
-        # check if any of the tracks, xpv_asset_ids, or full_asset urls are already in existing_videos
-        possible_asset_ids = [f"{video.xpv_asset_id}"]
-        try:
-            possible_asset_ids.append(video.full_asset.split(".mp4")[0].split("/")[-1])
-        except Exception:
-            pass
-        if video.fetched_tracks:
-            for track_name in video.fetched_tracks:
-                try:
-                    possible_asset_ids.append(track_name.split(".mp4")[0].split("/")[-1])
-                except Exception:
-                    pass
+        safe_xpv = _safe_id(video.xpv_asset_id)
+        possible_stems = [
+            f"xpv_{safe_xpv}",
+            f"xpv_{safe_xpv}_full",
+        ]
+        for track_name in (video.fetched_tracks or {}):
+            safe_track = _safe_id(track_name)
+            possible_stems.append(f"track_{safe_xpv}_{safe_track}_har_segments")
+            possible_stems.append(f"track_{safe_xpv}_{safe_track}_full_track")
 
-        if any(asset_id in existing_videos for asset_id in possible_asset_ids):
+        matching = [existing_videos[s] for s in possible_stems if s in existing_videos]
+        if matching:
             print(f"Skipping video {video.xpv_asset_id} as it already exists in the output directory.")
-            video.local_files = [
-                existing_videos[asset_id] for asset_id in possible_asset_ids if asset_id in existing_videos
-            ]
+            video.local_files = matching
             continue
 
     downloaded_video_hashes: dict[int, str] = dict()
