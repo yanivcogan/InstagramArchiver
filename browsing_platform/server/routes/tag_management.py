@@ -7,7 +7,7 @@ from browsing_platform.server.services.permissions import auth_user_access
 from browsing_platform.server.services.tag_management import (
     ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, IQuickAccessData,
     list_tag_types, create_tag_type, update_tag_type, delete_tag_type,
-    list_tags, list_quick_access_data, create_tag, update_tag, delete_tag, get_tag_usage_counts,
+    list_tags, get_tag as get_tag_service, list_quick_access_data, create_tag, update_tag, delete_tag, get_tag_usage_counts,
     list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle, update_hierarchy_notes,
     get_tag_counts_by_type,
 )
@@ -118,6 +118,15 @@ async def get_tags(
     page_size: int = 50,
 ) -> list[ITagDetail]:
     return list_tags(tag_type_id, q, page, page_size)
+
+
+@router.get("/tags/{tag_id}/")
+@router.get("/tags/{tag_id}")
+async def get_tag(tag_id: int) -> ITagDetail:
+    tag = get_tag_service(tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    return tag
 
 
 @router.post("/tags/")

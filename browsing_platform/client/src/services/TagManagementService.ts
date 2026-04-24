@@ -56,6 +56,9 @@ export const updateTag = async (id: number, body: Omit<ITagDetail, "id" | "tag_t
 export const deleteTag = async (id: number): Promise<void> =>
     server.post(`${BASE}/tags/${id}`, {}, HTTP_METHODS.delete);
 
+export const fetchTag = async (id: number): Promise<ITagDetail> =>
+    server.get(`${BASE}/tags/${id}/`);
+
 export const fetchTagUsage = async (id: number): Promise<ITagUsage> =>
     server.get(`${BASE}/tags/${id}/usage/`);
 

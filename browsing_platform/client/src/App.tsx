@@ -24,6 +24,7 @@ import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/Upload";
 import IncorporatePage from "./pages/Incorporate";
 import TagManagementPage from "./pages/TagManagementPage";
+import EditTagPage from "./pages/EditTagPage";
 import SecuritySettings from "./pages/SecuritySettings";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import SharePasswordGate from "./UIComponents/LinkSharing/SharePasswordGate";
@@ -80,6 +81,7 @@ export default function App() {
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>
                     <Route path="/tags" element={<TagManagementPage/>}/>
+                    <Route path="/tags/:tag_id" element={<EditTagPage/>}/>
                     <Route path="/settings/security" element={<SecuritySettings/>}/>
                     <Route path="/admin/users" element={<AdminUsersPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>

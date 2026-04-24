@@ -218,6 +218,30 @@ def list_quick_access_data() -> IQuickAccessData:
     return IQuickAccessData(individual_tags=individual_tags, type_dropdowns=list(type_dropdowns_map.values()))
 
 
+def get_tag(tag_id: int) -> Optional[ITagDetail]:
+    rows = db.execute_query(
+        """SELECT t.id, t.name, t.description, t.tag_type_id, t.quick_access,
+                  t.omit_from_tag_type_dropdown, t.notes_recommended,
+                  tt.name AS tag_type_name,
+                  (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pt.id, 'name', pt.name))
+                   FROM tag_hierarchy th JOIN tag pt ON th.super_tag_id = pt.id
+                   WHERE th.sub_tag_id = t.id) AS parents_json
+           FROM tag t
+           LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+           WHERE t.id = %(id)s""",
+        {"id": tag_id},
+        return_type="rows"
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    parents_raw = row.pop("parents_json", None)
+    if isinstance(parents_raw, str):
+        parents_raw = json.loads(parents_raw)
+    row["parents"] = parents_raw or []
+    return ITagDetail(**row)
+
+
 def create_tag(name: str, description: Optional[str], tag_type_id: Optional[int], quick_access: bool = False, omit_from_tag_type_dropdown: bool = False, notes_recommended: bool = True) -> ITagDetail:
     new_id = db.execute_query(
         "INSERT INTO tag (name, description, tag_type_id, quick_access, omit_from_tag_type_dropdown, notes_recommended) VALUES (%(name)s, %(description)s, %(tag_type_id)s, %(quick_access)s, %(omit_from_tag_type_dropdown)s, %(notes_recommended)s)",

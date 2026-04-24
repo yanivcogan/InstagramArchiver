@@ -297,7 +297,6 @@ export default function SearchPage() {
                                 if (reason !== 'reset') setTypedSearchTerm(value);
                             }}
                             onChange={(_, value) => {
-                                debugger;
                                 if (typeof value === 'string' && value) {
                                     addSearch(query.search_mode, value);
                                     performSearch({search_term: value});
