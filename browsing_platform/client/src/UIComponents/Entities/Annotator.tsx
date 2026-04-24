@@ -8,15 +8,12 @@ import {
     DialogTitle,
     Stack,
     TextField,
-    Tooltip,
     Typography
 } from "@mui/material";
-import AddIcon from '@mui/icons-material/Add';
-import CheckIcon from '@mui/icons-material/Check';
 import {IQuickAccessData, ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
 import InlineTagsDisplay from "../Tags/InlineTagsDisplay";
-import QuickAccessTypeDropdown from "../Tags/QuickAccessTypeDropdown";
+import QuickAccessBar from "../Tags/QuickAccessBar";
 import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
 import {fetchQuickAccessData} from "../../services/TagManagementService";
 import {toast} from "material-react-toastify";
@@ -37,7 +34,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
         if (!readonly) {
             fetchQuickAccessData(entityType).then(setQuickAccessData).catch(() => {});
         }
-    }, [readonly]);
+    }, [readonly, entityType]);
 
     const assignedTagIds = useMemo(() => new Set(tags.map(t => t.id)), [tags]);
 
@@ -84,33 +81,11 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             label={`Tags on ${entityType} ${entity.id}`}
             entity={entityType}
         />
-        <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-            {quickAccessData.individual_tags.map(qTag => {
-                const assigned = assignedTagIds.has(qTag.id);
-                return (
-                    <Tooltip key={qTag.id}
-                             title={assigned ? `Edit/remove: ${qTag.name}` : `Quick-add: ${qTag.tag_type_name ? `${qTag.tag_type_name} / ` : ""}${qTag.name}`}
-                             disableInteractive>
-                        <Button
-                            variant={assigned ? "contained" : "outlined"}
-                            size="small"
-                            onClick={() => handleQuickAccess(qTag)}
-                            startIcon={assigned ? <CheckIcon/> : <AddIcon/>}
-                        >
-                            {qTag.name}
-                        </Button>
-                    </Tooltip>
-                );
-            })}
-            {quickAccessData.type_dropdowns.map(dropdown => (
-                <QuickAccessTypeDropdown
-                    key={dropdown.type_id}
-                    dropdown={dropdown}
-                    assignedTagIds={assignedTagIds}
-                    onSelect={handleQuickAccess}
-                />
-            ))}
-        </Stack>
+        <QuickAccessBar
+            quickAccessData={quickAccessData}
+            selectedTagIds={assignedTagIds}
+            onSelect={handleQuickAccess}
+        />
 
         <Dialog
             open={noteModalTag !== null}

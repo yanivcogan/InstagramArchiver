@@ -90,7 +90,11 @@ const parseSearchMode = (raw: string | null): T_Search_Mode => {
 
 const parseAdvancedFilters = (raw: string | null): JsonLogicFunction | null => {
     if (!raw) return null;
-    try { return rison.decode(raw); } catch { return null; }
+    try {
+        return rison.decode(raw);
+    } catch {
+        return null;
+    }
 };
 
 const parsePageInt = (raw: string | null, fallback: number, min: number): number => {
@@ -272,11 +276,11 @@ export default function SearchPage() {
     const SearchShortcuts = SEARCH_SHORTCUTS[query.search_mode];
 
     const renderAdvancedFiltersBuilder = (props: BuilderProps) => (
-        <div className="query-builder-container" style={{padding: "10px"}}>
-            <div className="query-builder qb-lite">
+        <Box className="query-builder-container" style={{padding: "10px 0"}}>
+            <Box className="query-builder">
                 <Builder {...props} />
-            </div>
-        </div>
+            </Box>
+        </Box>
     );
 
     return <div className={"page-wrap"}>
@@ -302,8 +306,12 @@ export default function SearchPage() {
                                     performSearch({search_term: value});
                                 }
                             }}
-                            onOpen={() => { isDropdownOpen.current = true; }}
-                            onClose={() => { isDropdownOpen.current = false; }}
+                            onOpen={() => {
+                                isDropdownOpen.current = true;
+                            }}
+                            onClose={() => {
+                                isDropdownOpen.current = false;
+                            }}
                             filterOptions={x => x}
                             renderOption={(props, option) => (
                                 <Box component="li" {...props}
@@ -454,6 +462,7 @@ export default function SearchPage() {
                                         tagIds={query.tag_ids || []}
                                         tagFilterMode={query.tag_filter_mode || "any"}
                                         selectedTagObjects={tagFilterObjects}
+                                        entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}
                                         onChange={(tagIds, mode, tagObjects) => {
                                             setTagFilterObjects(tagObjects);
                                             encodeQueryToParams({
@@ -467,13 +476,33 @@ export default function SearchPage() {
                                     />
                                 </Box>
                             )}
-                            <Query
-                                {...InitialConfig}
-                                fields={ADVANCED_FILTERS_CONFIG[query.search_mode]}
-                                value={advancedFiltersTree}
-                                onChange={onAdvancedFiltersChange}
-                                renderBuilder={renderAdvancedFiltersBuilder}
-                            />
+                            <Box
+                                sx={{
+                                    // Target the drag handlers and action buttons inside the query builder
+                                    '& .qb-lite': {
+                                        '& .group--drag-handler, & .group--actions': {
+                                            opacity: '1 !important',
+                                            visibility: 'visible !important', // Sometimes visibility is toggled too
+                                        },
+
+                                        // Specifically neutralizing the "hide when not hovering" logic
+                                        // for headers, rule groups, and count rules
+                                        '& .group--header:not(:hover), & .rule_group:not(:hover), & .group--field--count--rule:not(:hover)': {
+                                            '& .group--drag-handler, & .group--actions': {
+                                                opacity: '1 !important',
+                                            }
+                                        }
+                                    }
+                                }}
+                            >
+                                <Query
+                                    {...InitialConfig}
+                                    fields={ADVANCED_FILTERS_CONFIG[query.search_mode]}
+                                    value={advancedFiltersTree}
+                                    onChange={onAdvancedFiltersChange}
+                                    renderBuilder={renderAdvancedFiltersBuilder}
+                                />
+                            </Box>
                         </Box>
                         <Button variant={"contained"} onClick={() => performSearch()}>Apply Filters</Button>
                     </Stack>
