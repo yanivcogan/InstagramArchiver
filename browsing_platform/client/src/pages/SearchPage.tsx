@@ -68,17 +68,6 @@ const getEmptyTree = (search_mode: T_Search_Mode): ImmutableTree => {
         id: QbUtils.uuid(),
         type: "group",
         children1: [
-            {
-                type: "rule",
-                id: QbUtils.uuid(),
-                properties: {
-                    fieldSrc: "field",
-                    field: Object.keys(ADVANCED_FILTERS_CONFIG[search_mode])?.[0],
-                    operator: null,
-                    value: [""],
-                    valueSrc: ["value"]
-                }
-            }
         ]
     })
 };
@@ -425,27 +414,7 @@ export default function SearchPage() {
                         </Tooltip>
                     </Stack>
                 </Box>
-                {/* Search shortcuts — always-visible, mode-specific quick controls */}
-                {(SearchShortcuts || SEARCH_MODE_TO_ENTITY[query.search_mode]) && (
-                    <Box>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            {SearchShortcuts
-                                ? <SearchShortcuts tree={advancedFiltersTree} onChange={onShortcutChange}/>
-                                : <Box/>}
-                            {SEARCH_MODE_TO_ENTITY[query.search_mode] && (
-                                <Button
-                                    size="small"
-                                    variant={taggingMode ? 'contained' : 'outlined'}
-                                    startIcon={<LocalOfferIcon fontSize="small"/>}
-                                    onClick={toggleTaggingMode}
-                                    sx={{flexShrink: 0, ml: 2}}
-                                >
-                                    Tag Mode
-                                </Button>
-                            )}
-                        </Stack>
-                    </Box>
-                )}
+                {/* Advanced Query Builder */}
                 <Collapse in={showAdvancedFilters} timeout="auto" unmountOnExit>
                     <Stack direction={"column"} gap={1} sx={{width: "100%"}}>
                         <Box onKeyDown={(e: React.KeyboardEvent) => {
@@ -507,6 +476,27 @@ export default function SearchPage() {
                         <Button variant={"contained"} onClick={() => performSearch()}>Apply Filters</Button>
                     </Stack>
                 </Collapse>
+                {/* Search shortcuts — always-visible, mode-specific quick controls */}
+                {(SearchShortcuts || SEARCH_MODE_TO_ENTITY[query.search_mode]) && (
+                    <Box>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            {SearchShortcuts
+                                ? <SearchShortcuts tree={advancedFiltersTree} onChange={onShortcutChange}/>
+                                : <Box/>}
+                            {SEARCH_MODE_TO_ENTITY[query.search_mode] && (
+                                <Button
+                                    size="small"
+                                    variant={taggingMode ? 'contained' : 'outlined'}
+                                    startIcon={<LocalOfferIcon fontSize="small"/>}
+                                    onClick={toggleTaggingMode}
+                                    sx={{flexShrink: 0, ml: 2}}
+                                >
+                                    Tag Mode
+                                </Button>
+                            )}
+                        </Stack>
+                    </Box>
+                )}
                 {/* Search Results */}
                 <Box sx={{minHeight: 200}}>
                     {isLoading ? (

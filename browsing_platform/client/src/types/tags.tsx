@@ -46,6 +46,7 @@ export interface IQuickAccessTypeDropdown {
     type_id: number;
     type_name: string;
     tags: ITagWithType[];
+    hierarchy?: Array<{super_tag_id: number; sub_tag_id: number}>;
 }
 
 export interface IQuickAccessData {

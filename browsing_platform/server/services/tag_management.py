@@ -173,6 +173,7 @@ class IQuickAccessTypeDropdown(BaseModel):
     type_id: int
     type_name: str
     tags: list[ITagWithType]
+    hierarchy: list[ITagHierarchyEntry] = []
 
 
 class IQuickAccessData(BaseModel):
@@ -220,6 +221,26 @@ def list_quick_access_data(entity: Optional[str] = None) -> IQuickAccessData:
                 type_id=type_id, type_name=row["tag_type_name"], tags=[]
             )
         type_dropdowns_map[type_id].tags.append(ITagWithType(**row))
+
+    hierarchy_rows = db.execute_query(
+        f"""SELECT th.super_tag_id, th.sub_tag_id, sup.tag_type_id
+            FROM tag_hierarchy th
+            JOIN tag sup ON th.super_tag_id = sup.id
+            JOIN tag sub ON th.sub_tag_id = sub.id
+            JOIN tag_type ON sup.tag_type_id = tag_type.id
+            WHERE tag_type.quick_access = 1
+              AND sup.omit_from_tag_type_dropdown = 0
+              AND sub.omit_from_tag_type_dropdown = 0
+              AND sup.tag_type_id = sub.tag_type_id{affinity_clause}""",
+        args,
+        return_type="rows"
+    )
+    for row in hierarchy_rows:
+        type_id = row["tag_type_id"]
+        if type_id in type_dropdowns_map:
+            type_dropdowns_map[type_id].hierarchy.append(
+                ITagHierarchyEntry(super_tag_id=row["super_tag_id"], sub_tag_id=row["sub_tag_id"])
+            )
 
     return IQuickAccessData(individual_tags=individual_tags, type_dropdowns=list(type_dropdowns_map.values()))
 

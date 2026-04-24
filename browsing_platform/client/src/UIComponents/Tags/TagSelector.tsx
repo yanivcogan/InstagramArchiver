@@ -72,6 +72,7 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
                 const {key, onDelete, ...itemProps} = getItemProps({index});
                 return (
                     <Tooltip
+                        key={key}
                         arrow
                         disableInteractive
                         title={
@@ -85,7 +86,6 @@ export default function TagSelector({selectedTags, readOnly, onChange, onChipCli
                         <Chip
                             variant={option.assignment_notes ? "filled" : "outlined"}
                             label={option.name}
-                            key={key}
                             {...itemProps}
                             onDelete={() => {
                                 if(disableDeletionCheck){

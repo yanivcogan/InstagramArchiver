@@ -94,10 +94,10 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             fullWidth
         >
             <DialogTitle sx={{pb: 0}}>
-                <Typography variant="subtitle2" color="text.secondary">
+                <Typography component="span" display="block" variant="subtitle2" color="text.secondary">
                     {noteModalTag?.tag_type_name ?? 'Tag'}
                 </Typography>
-                <Typography variant="h6">{noteModalTag?.name}</Typography>
+                <Typography component="span" display="block" variant="h6">{noteModalTag?.name}</Typography>
             </DialogTitle>
             <DialogContent>
                 <TextField
