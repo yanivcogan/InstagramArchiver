@@ -105,8 +105,8 @@ async def del_tag_type(type_id: int) -> dict:
 
 @router.get("/quick-access/")
 @router.get("/quick-access")
-async def get_quick_access_tags() -> IQuickAccessData:
-    return list_quick_access_data()
+async def get_quick_access_tags(entity: Optional[str] = None) -> IQuickAccessData:
+    return list_quick_access_data(entity)
 
 
 @router.get("/tags/")

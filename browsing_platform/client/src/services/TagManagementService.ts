@@ -16,8 +16,8 @@ import {
 
 const BASE = "tag-management";
 
-export const fetchQuickAccessData = async (): Promise<IQuickAccessData> =>
-    server.get(`${BASE}/quick-access/`);
+export const fetchQuickAccessData = async (entity?: string): Promise<IQuickAccessData> =>
+    server.get(`${BASE}/quick-access/${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`);
 
 /* Tag Types */
 export const fetchTagTypes = async (): Promise<ITagType[]> =>

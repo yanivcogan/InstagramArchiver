@@ -35,7 +35,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
 
     useEffect(() => {
         if (!readonly) {
-            fetchQuickAccessData().then(setQuickAccessData).catch(() => {});
+            fetchQuickAccessData(entityType).then(setQuickAccessData).catch(() => {});
         }
     }, [readonly]);
 
@@ -82,6 +82,7 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             onChange={handleTagsChange}
             onChipClick={tag => setNoteModalTag({...tag})}
             label={`Tags on ${entityType} ${entity.id}`}
+            entity={entityType}
         />
         <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
             {quickAccessData.individual_tags.map(qTag => {

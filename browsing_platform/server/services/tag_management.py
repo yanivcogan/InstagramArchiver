@@ -189,10 +189,16 @@ _QUICK_ACCESS_TAG_COLS = """
 """
 
 
-def list_quick_access_data() -> IQuickAccessData:
+def list_quick_access_data(entity: Optional[str] = None) -> IQuickAccessData:
+    affinity_clause = ""
+    args: dict = {}
+    if entity is not None:
+        affinity_clause = " AND (tag_type.entity_affinity IS NULL OR JSON_CONTAINS(tag_type.entity_affinity, %(entity_json)s))"
+        args["entity_json"] = json.dumps(entity)
+
     individual_rows = db.execute_query(
-        f"SELECT {_QUICK_ACCESS_TAG_COLS} FROM tag LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id WHERE tag.quick_access = 1 ORDER BY tag.name",
-        {},
+        f"SELECT {_QUICK_ACCESS_TAG_COLS} FROM tag LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id WHERE tag.quick_access = 1{affinity_clause} ORDER BY tag.name",
+        args,
         return_type="rows"
     )
     individual_tags = [ITagWithType(**row) for row in individual_rows]
@@ -201,9 +207,9 @@ def list_quick_access_data() -> IQuickAccessData:
         f"""SELECT {_QUICK_ACCESS_TAG_COLS}
             FROM tag
             JOIN tag_type ON tag.tag_type_id = tag_type.id
-            WHERE tag_type.quick_access = 1 AND tag.omit_from_tag_type_dropdown = 0
+            WHERE tag_type.quick_access = 1 AND tag.omit_from_tag_type_dropdown = 0{affinity_clause}
             ORDER BY tag_type.name, tag.name""",
-        {},
+        args,
         return_type="rows"
     )
     type_dropdowns_map: dict[int, IQuickAccessTypeDropdown] = {}
