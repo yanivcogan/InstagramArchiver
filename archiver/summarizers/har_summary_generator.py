@@ -23,7 +23,7 @@ def generate_stylesheet() -> str:
     --card-bg: #ffffff;
     --border: #e8eaed;
     --text-primary: #1c1e21;
-    --text-secondary: #65676b;
+    --text-secondary: #1c1e21;
     --text-link: #1877f2;
     --radius: 12px;
     --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
