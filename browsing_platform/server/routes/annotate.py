@@ -5,7 +5,8 @@ from pydantic import BaseModel
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.account import get_account_by_id, annotate_account
-from browsing_platform.server.services.annotation import Annotation, TagWithNotes, add_tags_batch, validate_tags_entity_affinity
+from browsing_platform.server.services.annotation import Annotation, TagWithNotes, add_tags_batch, \
+    validate_tags_entity_affinity
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, get_enriched_post_by_id, \
     get_enriched_media_by_id
 from browsing_platform.server.services.media import get_media_by_id, annotate_media

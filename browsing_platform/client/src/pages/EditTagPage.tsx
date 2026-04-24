@@ -5,6 +5,7 @@ import {
     Box,
     Button,
     Checkbox,
+    Chip,
     CircularProgress,
     Divider,
     FormControl,
@@ -16,22 +17,21 @@ import {
     Stack,
     TextField,
     Tooltip,
-    Chip,
     Typography,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
-import {ITagDetail, ITagHierarchyEntry, ITagType, ITagUsage, ITagWithType} from '../types/tags';
+import {ITagHierarchyEntry, ITagType, ITagUsage, ITagWithType} from '../types/tags';
 import {
+    addHierarchy,
     fetchTag,
-    fetchTagParents,
     fetchTagChildren,
+    fetchTagParents,
     fetchTagTypes,
     fetchTagUsage,
-    updateTag,
-    addHierarchy,
     removeHierarchy,
     updateHierarchyNotes,
+    updateTag,
 } from '../services/TagManagementService';
 import {lookupTags} from '../services/DataFetcher';
 import {toast} from 'material-react-toastify';

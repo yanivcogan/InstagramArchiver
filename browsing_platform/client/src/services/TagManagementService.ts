@@ -11,7 +11,6 @@ import {
     ITagImportRowParsed,
     ITagType,
     ITagUsage,
-    ITagWithType,
 } from "../types/tags";
 
 const BASE = "tag-management";

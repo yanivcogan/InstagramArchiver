@@ -1,15 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {AnnotatableEntityType, IAnnotatableEntity, IMediaPart} from "../../types/entities";
-import {
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    Stack,
-    TextField,
-    Typography
-} from "@mui/material";
+import {Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography} from "@mui/material";
 import {IQuickAccessData, ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
 import InlineTagsDisplay from "../Tags/InlineTagsDisplay";

@@ -7,7 +7,8 @@ from browsing_platform.server.services.permissions import auth_user_access
 from browsing_platform.server.services.tag_management import (
     ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, IQuickAccessData,
     list_tag_types, create_tag_type, update_tag_type, delete_tag_type,
-    list_tags, get_tag as get_tag_service, list_quick_access_data, create_tag, update_tag, delete_tag, get_tag_usage_counts,
+    list_tags, get_tag as get_tag_service, list_quick_access_data, create_tag, update_tag, delete_tag,
+    get_tag_usage_counts,
     list_children, list_parents, add_hierarchy, remove_hierarchy, would_create_cycle, update_hierarchy_notes,
     get_tag_counts_by_type,
 )
