@@ -185,6 +185,8 @@ export const SEARCH_MODES: readonly { key: string, label: string }[] = [
 
 export type T_Search_Mode = typeof SEARCH_MODES[number]['key'];
 
+export const DEFAULT_PAGE_SIZES: Partial<Record<T_Search_Mode, number>> = {media: 100};
+export const defaultPageSize = (mode: T_Search_Mode): number => DEFAULT_PAGE_SIZES[mode] ?? 20;
 
 const disabled_operators_by_type: { [key: string]: string[] } = {
     'text': ['starts_with', 'ends_with', 'proximity'],

@@ -36,6 +36,7 @@ import {
 import '@react-awesome-query-builder/mui/css/styles.css';
 import {
     ADVANCED_FILTERS_CONFIG,
+    defaultPageSize,
     fetchTagsForSearchResults,
     ISearchQuery,
     SEARCH_MODE_TO_ENTITY,
@@ -183,6 +184,11 @@ export default function SearchPanel(props: SearchPanelProps) {
         });
     }, [onSearch]);
 
+    // Ref keeps doSearch stable in the effect below without requiring it as a dep
+    // (onSearch may be an unstable inline function at the call site)
+    const doSearchRef = useRef(doSearch);
+    doSearchRef.current = doSearch;
+
     useEffect(() => {
         if (!isAutoSearch) return;
         if (!typedSearchTerm.trim()) {
@@ -190,10 +196,10 @@ export default function SearchPanel(props: SearchPanelProps) {
             return;
         }
         const t = setTimeout(() => {
-            doSearch({...query, search_term: typedSearchTerm, page_number: 1});
+            doSearchRef.current({...query, search_term: typedSearchTerm, page_number: 1});
         }, props.autoSearch as number);
         return () => clearTimeout(t);
-    }, [typedSearchTerm, isAutoSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [typedSearchTerm, isAutoSearch, query, props.autoSearch]);
 
     // ── Checked entries toggle (kernel membership in community page) ──────────
 
@@ -246,7 +252,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                 onChange={e => {
                     const newMode = e.target.value as T_Search_Mode;
                     setAdvancedFiltersTree(getEmptyTree());
-                    performSearch({search_mode: newMode, advanced_filters: null, page_size: query.page_size});
+                    performSearch({search_mode: newMode, advanced_filters: null, page_size: defaultPageSize(newMode)});
                 }}
                 sx={{
                     width: '100%',

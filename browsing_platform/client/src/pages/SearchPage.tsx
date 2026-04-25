@@ -5,6 +5,7 @@ import {ITagWithType} from '../types/tags';
 import {
     ADVANCED_FILTERS_CONFIG,
     batchAnnotate,
+    defaultPageSize,
     fetchTagsForSearchResults,
     ISearchQuery,
     SEARCH_MODE_TO_ENTITY,
@@ -21,9 +22,6 @@ import rison from 'rison';
 import {removeUndefinedValues} from '../services/utils';
 
 const InitialConfig = MuiConfig;
-
-const DEFAULT_PAGE_SIZES: Partial<Record<T_Search_Mode, number>> = {media: 100};
-const defaultPageSize = (mode: T_Search_Mode) => DEFAULT_PAGE_SIZES[mode] ?? 20;
 
 const emptyFiltersCache: Partial<Record<T_Search_Mode, unknown>> = {};
 const getEmptyFilters = (mode: T_Search_Mode) => {
