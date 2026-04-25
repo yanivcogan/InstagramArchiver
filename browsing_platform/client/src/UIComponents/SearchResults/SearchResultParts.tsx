@@ -21,16 +21,23 @@ export function SearchResultList({results, children}: SearchResultListProps) {
 interface SelectableResultBoxProps {
     id: number;
     page: string;
+    result?: SearchResult;
     selectedIds?: Set<number>;
     onToggleSelected?: (id: number) => void;
+    onPrimaryClick?: (result: SearchResult) => void;
     children: React.ReactNode;
 }
 
-export function SelectableResultBox({id, page, selectedIds, onToggleSelected, children}: SelectableResultBoxProps) {
+export function SelectableResultBox({id, page, result, selectedIds, onToggleSelected, onPrimaryClick, children}: SelectableResultBoxProps) {
+    const interactive = onToggleSelected || onPrimaryClick;
     return (
         <Box
-            sx={{position: 'relative', cursor: onToggleSelected ? 'pointer' : undefined}}
-            onClick={onToggleSelected ? (e) => { e.preventDefault(); onToggleSelected(id); } : undefined}
+            sx={{position: 'relative', cursor: interactive ? 'pointer' : undefined}}
+            onClick={interactive ? (e) => {
+                e.preventDefault();
+                if (onToggleSelected) onToggleSelected(id);
+                else if (onPrimaryClick && result) onPrimaryClick(result);
+            } : undefined}
         >
             {onToggleSelected && (
                 <Checkbox
@@ -40,7 +47,8 @@ export function SelectableResultBox({id, page, selectedIds, onToggleSelected, ch
                     size="small"
                 />
             )}
-            <a href={`/${page}/${id}`} style={{textDecoration: 'none'}}>
+            <a href={`/${page}/${id}`} style={{textDecoration: 'none'}}
+               onClick={onPrimaryClick ? e => e.preventDefault() : undefined}>
                 {children}
             </a>
         </Box>

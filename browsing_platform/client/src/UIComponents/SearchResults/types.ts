@@ -6,4 +6,6 @@ export interface SearchResultsProps {
     tagsMap?: Record<number, ITagWithType[]>;
     selectedIds?: Set<number>;
     onToggleSelected?: (id: number) => void;
+    // When set, clicking the result calls this instead of navigating to the entity page
+    onPrimaryClick?: (result: SearchResult) => void;
 }

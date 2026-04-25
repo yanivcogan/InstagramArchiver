@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
     Box,
     Button,
@@ -8,28 +8,26 @@ import {
     CircularProgress,
     Collapse,
     Divider,
-    List,
-    ListItemButton,
-    ListItemText,
-    OutlinedInput,
-    Paper,
+    IconButton,
+    Link,
     Stack,
     Tooltip,
     Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import SearchIcon from '@mui/icons-material/Search';
+import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import {SearchResultThumbnails} from '../UIComponents/SearchResults/SearchResultParts';
 import NumberField from '../UIComponents/MUINumberField/NumberField';
+import SearchPanel from '../UIComponents/Search/SearchPanel';
 import {
     CandidateAccount,
     CommunityCandidatesResponse,
     DEFAULT_TIE_WEIGHTS,
     fetchCommunityCandidates,
+    ISearchQuery,
     SearchResult,
-    searchData,
     TieWeights,
 } from '../services/DataFetcher';
 
@@ -37,6 +35,38 @@ function candidateTitle(c: Pick<CandidateAccount, 'id' | 'url_suffix' | 'display
     return c.display_name
         ? `${c.url_suffix} (${c.display_name})`
         : (c.url_suffix ?? `Account ${c.id}`);
+}
+
+// ── Kernel account pill ───────────────────────────────────────────────────────
+
+interface KernelAccountPillProps {
+    account: SearchResult;
+    onRemove: () => void;
+}
+
+function KernelAccountPill({account, onRemove}: KernelAccountPillProps) {
+    return (
+        <Box sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 0.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 4,
+            px: 1,
+            py: 0.25,
+            bgcolor: 'background.paper',
+        }}>
+            <Link href={`/account/${account.id}`} underline="hover" color="text.primary"
+                  sx={{fontSize: '0.875rem', lineHeight: 1.5}}>
+                {account.title}
+            </Link>
+            <IconButton size="small" onClick={onRemove}
+                        sx={{p: 0.25, ml: 0.25}} aria-label={`Remove ${account.title} from kernel`}>
+                <CloseIcon sx={{fontSize: '0.875rem'}}/>
+            </IconButton>
+        </Box>
+    );
 }
 
 // ── Candidate card ────────────────────────────────────────────────────────────
@@ -49,7 +79,6 @@ interface CandidateCardProps {
 
 function CandidateCard({candidate, onAddToKernel, onExclude}: CandidateCardProps) {
     const title = candidateTitle(candidate);
-
     return (
         <Card variant="outlined">
             <CardContent sx={{pb: '12px !important'}}>
@@ -63,21 +92,15 @@ function CandidateCard({candidate, onAddToKernel, onExclude}: CandidateCardProps
                                 {candidate.bio}
                             </Typography>
                         )}
-                        <SearchResultThumbnails
-                            thumbnails={candidate.thumbnails}
-                            totalCount={candidate.media_count}
-                        />
+                        <SearchResultThumbnails thumbnails={candidate.thumbnails} totalCount={candidate.media_count}/>
                         <Stack direction="row" gap={0.75} flexWrap="wrap" sx={{mt: 0.75}}>
                             <Chip
                                 label={`Score: ${candidate.score % 1 === 0 ? candidate.score : candidate.score.toFixed(2)}`}
-                                size="small"
-                                color="primary"
-                                variant="outlined"
+                                size="small" color="primary" variant="outlined"
                             />
                             <Chip
                                 label={`${candidate.kernel_connections} kernel connection${candidate.kernel_connections !== 1 ? 's' : ''}`}
-                                size="small"
-                                variant="outlined"
+                                size="small" variant="outlined"
                             />
                             {candidate.is_verified && (
                                 <Chip label="Verified" size="small" color="info" variant="outlined"/>
@@ -85,12 +108,8 @@ function CandidateCard({candidate, onAddToKernel, onExclude}: CandidateCardProps
                         </Stack>
                     </Box>
                     <Stack direction="column" gap={1} sx={{flexShrink: 0}}>
-                        <Button size="small" variant="outlined" onClick={onAddToKernel}>
-                            Add to Kernel
-                        </Button>
-                        <Button size="small" variant="outlined" color="warning" onClick={onExclude}>
-                            Exclude
-                        </Button>
+                        <Button size="small" variant="outlined" onClick={onAddToKernel}>Add to Kernel</Button>
+                        <Button size="small" variant="outlined" color="warning" onClick={onExclude}>Exclude</Button>
                     </Stack>
                 </Stack>
             </CardContent>
@@ -101,11 +120,17 @@ function CandidateCard({candidate, onAddToKernel, onExclude}: CandidateCardProps
 // ── Tie weight labels ─────────────────────────────────────────────────────────
 
 const TIE_LABELS: Record<keyof TieWeights, string> = {
-    follow: 'Follow',
-    suggested: 'Suggested',
-    like: 'Like',
-    comment: 'Comment',
-    tag: 'Tag',
+    follow: 'Follow', suggested: 'Suggested', like: 'Like', comment: 'Comment', tag: 'Tag',
+};
+
+const KERNEL_SEARCH_QUERY: ISearchQuery = {
+    search_mode: 'accounts',
+    search_term: '',
+    page_number: 1,
+    page_size: 20,
+    advanced_filters: null,
+    tag_ids: [],
+    tag_filter_mode: 'any',
 };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -113,14 +138,6 @@ const TIE_LABELS: Record<keyof TieWeights, string> = {
 export default function CommunityDetectionPage() {
     // Kernel
     const [kernelAccounts, setKernelAccounts] = useState<SearchResult[]>([]);
-
-    // Kernel search
-    const [kernelSearchTerm, setKernelSearchTerm] = useState('');
-    const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-    const [isSearching, setIsSearching] = useState(false);
-    const searchAbortRef = useRef<AbortController | null>(null);
-    const searchBoxRef = useRef<HTMLDivElement | null>(null);
-    const [searchFocused, setSearchFocused] = useState(false);
 
     // Weights
     const [weights, setWeights] = useState<TieWeights>({...DEFAULT_TIE_WEIGHTS});
@@ -136,50 +153,22 @@ export default function CommunityDetectionPage() {
     const [excludedOpen, setExcludedOpen] = useState(false);
 
     // Derived
-    const kernelIds = kernelAccounts.map(a => a.id);
-    const kernelIdSet = new Set(kernelIds);
-    const excludedIds = excludedAccounts.map(a => a.id);
-    const excludedIdSet = new Set(excludedIds);
-    const visibleCandidates = candidates.filter(c => !excludedIdSet.has(c.id));
-    const hasVerifiedVisible = visibleCandidates.some(c => c.is_verified === true);
+    const kernelIds = useMemo(() => kernelAccounts.map(a => a.id), [kernelAccounts]);
+    const kernelIdSet = useMemo(() => new Set(kernelIds), [kernelIds]);
+    const excludedIds = useMemo(() => excludedAccounts.map(a => a.id), [excludedAccounts]);
+    const excludedIdSet = useMemo(() => new Set(excludedIds), [excludedIds]);
+    const visibleCandidates = useMemo(() => candidates.filter(c => !excludedIdSet.has(c.id)), [candidates, excludedIdSet]);
+    const hasVerifiedVisible = useMemo(() => visibleCandidates.some(c => c.is_verified === true), [visibleCandidates]);
 
-    useEffect(() => {
+    React.useEffect(() => {
         document.title = 'Community Detection | Browsing Platform';
-        return () => { searchAbortRef.current?.abort(); };
     }, []);
 
-    // ── Kernel search ─────────────────────────────────────────────────────────
-
-    const runKernelSearch = useCallback((term: string) => {
-        if (!term.trim()) {
-            setSearchResults([]);
-            return;
-        }
-        if (searchAbortRef.current) searchAbortRef.current.abort();
-        const controller = new AbortController();
-        searchAbortRef.current = controller;
-        setIsSearching(true);
-        searchData(
-            {search_mode: 'accounts', search_term: term, page_number: 1, page_size: 20, advanced_filters: null},
-            {signal: controller.signal}
-        ).then(results => {
-            setSearchResults(results);
-            setIsSearching(false);
-        }).catch((e: any) => {
-            if (e.name !== 'AbortError') setIsSearching(false);
-        });
-    }, []);
-
-    useEffect(() => {
-        const t = setTimeout(() => runKernelSearch(kernelSearchTerm), 300);
-        return () => clearTimeout(t);
-    }, [kernelSearchTerm, runKernelSearch]);
+    // ── Kernel management ─────────────────────────────────────────────────────
 
     const addToKernel = (result: SearchResult) => {
         if (kernelIdSet.has(result.id)) return;
         setKernelAccounts(prev => [...prev, result]);
-        setKernelSearchTerm('');
-        setSearchResults([]);
     };
 
     const removeFromKernel = (id: number) => {
@@ -202,15 +191,14 @@ export default function CommunityDetectionPage() {
     };
 
     const addCandidateToKernel = (candidate: CandidateAccount) => {
-        const asResult: SearchResult = {
+        addToKernel({
             id: candidate.id,
             page: 'account',
             title: candidateTitle(candidate),
             details: candidate.bio ?? undefined,
             thumbnails: candidate.thumbnails,
             metadata: {media_count: candidate.media_count},
-        };
-        addToKernel(asResult);
+        });
         setCandidates(prev => prev.filter(c => c.id !== candidate.id));
     };
 
@@ -223,24 +211,8 @@ export default function CommunityDetectionPage() {
     };
 
     const autoRemoveVerified = () => {
-        const verified = visibleCandidates.filter(c => c.is_verified === true);
-        setExcludedAccounts(prev => [...prev, ...verified]);
+        setExcludedAccounts(prev => [...prev, ...visibleCandidates.filter(c => c.is_verified === true)]);
     };
-
-    // ── Close search dropdown on outside click ────────────────────────────────
-
-    useEffect(() => {
-        const handleClick = (e: MouseEvent) => {
-            if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
-                setSearchFocused(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClick);
-        return () => document.removeEventListener('mousedown', handleClick);
-    }, []);
-
-    const showDropdown = searchFocused && (isSearching || searchResults.length > 0);
-    const filteredResults = searchResults.filter(r => !kernelIdSet.has(r.id));
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -253,75 +225,26 @@ export default function CommunityDetectionPage() {
                     {/* ── Kernel section ───────────────────────────────────── */}
                     <Box>
                         <Typography variant="h6" gutterBottom>Kernel (Seed Set)</Typography>
-                        <Box ref={searchBoxRef} sx={{position: 'relative', maxWidth: 480}}>
-                            <OutlinedInput
-                                value={kernelSearchTerm}
-                                onChange={e => setKernelSearchTerm(e.target.value)}
-                                onFocus={() => setSearchFocused(true)}
-                                placeholder="Search accounts to add to kernel…"
-                                size="small"
-                                fullWidth
-                                startAdornment={
-                                    isSearching
-                                        ? <CircularProgress size={16} sx={{mr: 1}}/>
-                                        : <SearchIcon fontSize="small" sx={{mr: 0.5, color: 'text.disabled'}}/>
-                                }
-                            />
-                            {showDropdown && (
-                                <Paper
-                                    elevation={4}
-                                    sx={{
-                                        position: 'absolute',
-                                        top: '100%',
-                                        left: 0,
-                                        right: 0,
-                                        zIndex: 10,
-                                        maxHeight: 260,
-                                        overflowY: 'auto',
-                                        mt: 0.5,
-                                    }}
-                                >
-                                    {isSearching && filteredResults.length === 0 && (
-                                        <Box sx={{p: 1.5}}>
-                                            <CircularProgress size={16}/>
-                                        </Box>
-                                    )}
-                                    {!isSearching && filteredResults.length === 0 && (
-                                        <Box sx={{p: 1.5}}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                No results
-                                            </Typography>
-                                        </Box>
-                                    )}
-                                    <List dense disablePadding>
-                                        {filteredResults.map(result => (
-                                            <ListItemButton
-                                                key={result.id}
-                                                onClick={() => addToKernel(result)}
-                                            >
-                                                <ListItemText
-                                                    primary={result.title}
-                                                    secondary={result.details || undefined}
-                                                    primaryTypographyProps={{noWrap: true}}
-                                                    secondaryTypographyProps={{noWrap: true}}
-                                                />
-                                            </ListItemButton>
-                                        ))}
-                                    </List>
-                                </Paper>
-                            )}
-                        </Box>
+
+                        <SearchPanel
+                            query={KERNEL_SEARCH_QUERY}
+                            onSearch={() => {}}
+                            autoSearch={300}
+                            showModeSelector={false}
+                            showAdvancedFilters={false}
+                            showTaggingMode={false}
+                            onResultClick={(result) => {
+                                if (!kernelIdSet.has(result.id)) addToKernel(result);
+                            }}
+                        />
 
                         {kernelAccounts.length > 0 && (
-                            <Stack direction="row" flexWrap="wrap" gap={1} sx={{mt: 1.5}}>
+                            <Stack direction="row" flexWrap="wrap" gap={1} sx={{mt: 2}}>
                                 {kernelAccounts.map(acct => (
-                                    <Chip
+                                    <KernelAccountPill
                                         key={acct.id}
-                                        label={acct.title}
-                                        onDelete={() => removeFromKernel(acct.id)}
-                                        component="a"
-                                        href={`/account/${acct.id}`}
-                                        clickable
+                                        account={acct}
+                                        onRemove={() => removeFromKernel(acct.id)}
                                     />
                                 ))}
                             </Stack>
@@ -330,19 +253,8 @@ export default function CommunityDetectionPage() {
 
                     {/* ── Weights section ──────────────────────────────────── */}
                     <Box>
-                        <Button
-                            variant="text"
-                            size="small"
-                            onClick={() => setWeightsOpen(p => !p)}
-                            endIcon={
-                                <ExpandMoreIcon
-                                    sx={{
-                                        transform: weightsOpen ? 'rotate(180deg)' : 'none',
-                                        transition: 'transform 0.2s',
-                                    }}
-                                />
-                            }
-                        >
+                        <Button variant="text" size="small" onClick={() => setWeightsOpen(p => !p)}
+                                endIcon={<ExpandMoreIcon sx={{transform: weightsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s'}}/>}>
                             Tie Weights
                         </Button>
                         <Collapse in={weightsOpen} unmountOnExit>
@@ -355,9 +267,7 @@ export default function CommunityDetectionPage() {
                                         min={0}
                                         step={0.1}
                                         size="small"
-                                        onValueChange={v =>
-                                            setWeights(prev => ({...prev, [tie]: v ?? 0}))
-                                        }
+                                        onValueChange={v => setWeights(prev => ({...prev, [tie]: v ?? 0}))}
                                         sx={{width: 130}}
                                     />
                                 ))}
@@ -367,21 +277,12 @@ export default function CommunityDetectionPage() {
 
                     {/* ── Run button ───────────────────────────────────────── */}
                     <Box>
-                        <Tooltip
-                            title={kernelIds.length === 0 ? 'Add at least one account to the kernel first' : ''}
-                            disableHoverListener={kernelIds.length > 0}
-                        >
+                        <Tooltip title={kernelIds.length === 0 ? 'Add at least one account to the kernel first' : ''}
+                                 disableHoverListener={kernelIds.length > 0}>
                             <span>
-                                <Button
-                                    variant="contained"
-                                    disabled={kernelIds.length === 0 || isComputing}
-                                    onClick={runAnalysis}
-                                    startIcon={
-                                        isComputing
-                                            ? <CircularProgress size={16} color="inherit"/>
-                                            : <PlayArrowIcon/>
-                                    }
-                                >
+                                <Button variant="contained" disabled={kernelIds.length === 0 || isComputing}
+                                        onClick={runAnalysis}
+                                        startIcon={isComputing ? <CircularProgress size={16} color="inherit"/> : <PlayArrowIcon/>}>
                                     {isComputing ? 'Analyzing…' : (hasRun ? 'Re-run Detection' : 'Run Community Detection')}
                                 </Button>
                             </span>
@@ -391,35 +292,17 @@ export default function CommunityDetectionPage() {
                     {/* ── Candidates section ───────────────────────────────── */}
                     {hasRun && (
                         <Box>
-                            <Stack
-                                direction="row"
-                                justifyContent="space-between"
-                                alignItems="center"
-                                sx={{mb: 1.5}}
-                            >
-                                <Typography variant="h6">
-                                    Top Candidates ({visibleCandidates.length})
-                                </Typography>
-                                <Tooltip
-                                    title={
-                                        hasVerifiedVisible
-                                            ? 'Exclude all verified accounts from results'
-                                            : 'No verified accounts in current results'
-                                    }
-                                >
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{mb: 1.5}}>
+                                <Typography variant="h6">Top Candidates ({visibleCandidates.length})</Typography>
+                                <Tooltip title={hasVerifiedVisible ? 'Exclude all verified accounts from results' : 'No verified accounts in current results'}>
                                     <span>
-                                        <Button
-                                            variant="outlined"
-                                            size="small"
-                                            disabled={!hasVerifiedVisible}
-                                            onClick={autoRemoveVerified}
-                                        >
+                                        <Button variant="outlined" size="small" disabled={!hasVerifiedVisible}
+                                                onClick={autoRemoveVerified}>
                                             Remove Verified Accounts
                                         </Button>
                                     </span>
                                 </Tooltip>
                             </Stack>
-
                             {visibleCandidates.length === 0 ? (
                                 <Typography color="text.secondary">
                                     {candidates.length > 0
@@ -444,43 +327,19 @@ export default function CommunityDetectionPage() {
                     {/* ── Excluded accounts section ────────────────────────── */}
                     {excludedAccounts.length > 0 && (
                         <Box>
-                            <Button
-                                variant="text"
-                                size="small"
-                                onClick={() => setExcludedOpen(p => !p)}
-                                endIcon={
-                                    <ExpandMoreIcon
-                                        sx={{
-                                            transform: excludedOpen ? 'rotate(180deg)' : 'none',
-                                            transition: 'transform 0.2s',
-                                        }}
-                                    />
-                                }
-                            >
+                            <Button variant="text" size="small" onClick={() => setExcludedOpen(p => !p)}
+                                    endIcon={<ExpandMoreIcon sx={{transform: excludedOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s'}}/>}>
                                 Excluded Accounts ({excludedAccounts.length})
                             </Button>
                             <Collapse in={excludedOpen} unmountOnExit>
                                 <Stack spacing={0.5} sx={{mt: 1}}>
                                     {excludedAccounts.map(acct => (
-                                        <Stack
-                                            key={acct.id}
-                                            direction="row"
-                                            alignItems="center"
-                                            gap={1}
-                                        >
-                                            <Typography
-                                                component="a"
-                                                href={`/account/${acct.id}`}
-                                                sx={{flex: 1, textDecoration: 'none', color: 'text.primary'}}
-                                                noWrap
-                                            >
+                                        <Stack key={acct.id} direction="row" alignItems="center" gap={1}>
+                                            <Typography component="a" href={`/account/${acct.id}`}
+                                                        sx={{flex: 1, textDecoration: 'none', color: 'text.primary'}} noWrap>
                                                 {candidateTitle(acct)}
                                             </Typography>
-                                            <Button
-                                                size="small"
-                                                variant="text"
-                                                onClick={() => restoreCandidate(acct.id)}
-                                            >
+                                            <Button size="small" variant="text" onClick={() => restoreCandidate(acct.id)}>
                                                 Restore
                                             </Button>
                                         </Stack>

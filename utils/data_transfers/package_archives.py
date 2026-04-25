@@ -169,4 +169,4 @@ def clean_already_packaged_archives_zstd():
 
 if __name__ == "__main__":
     # clean_already_packaged_archives_zstd()
-    package_archives_zstd(single_archive=input("Create a single batch? y/n").strip()=="y")
+    package_archives_zstd(single_archive=input("Create a single batch? y/n ").strip()=="y")
