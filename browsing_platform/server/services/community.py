@@ -174,29 +174,43 @@ def compute_candidates(
 
             UNION ALL
 
-            -- tag: kernel member is the tagger (post/media author)
-            SELECT ta.tagged_account_id,
-                   COALESCE(p.account_id, m.account_id),
-                   %(tag_w)s
+            -- tag: kernel member tagged someone in a post
+            SELECT ta.tagged_account_id, p.account_id, %(tag_w)s
             FROM tagged_account ta
-            LEFT JOIN post  p ON ta.post_id  = p.id
-            LEFT JOIN media m ON ta.media_id = m.id
-            WHERE COALESCE(p.account_id, m.account_id) IN ({k_in})
+            JOIN post p ON ta.post_id = p.id
+            WHERE p.account_id IN ({k_in})
               AND ta.tagged_account_id IS NOT NULL
               AND ta.tagged_account_id NOT IN ({ex_in})
 
             UNION ALL
 
-            -- tag: kernel member is the tagged account
-            SELECT COALESCE(p.account_id, m.account_id),
-                   ta.tagged_account_id,
-                   %(tag_w)s
+            -- tag: kernel member tagged someone in media
+            SELECT ta.tagged_account_id, m.account_id, %(tag_w)s
             FROM tagged_account ta
-            LEFT JOIN post  p ON ta.post_id  = p.id
-            LEFT JOIN media m ON ta.media_id = m.id
+            JOIN media m ON ta.media_id = m.id
+            WHERE m.account_id IN ({k_in})
+              AND ta.tagged_account_id IS NOT NULL
+              AND ta.tagged_account_id NOT IN ({ex_in})
+
+            UNION ALL
+
+            -- tag: kernel member was tagged in a post
+            SELECT p.account_id, ta.tagged_account_id, %(tag_w)s
+            FROM tagged_account ta
+            JOIN post p ON ta.post_id = p.id
             WHERE ta.tagged_account_id IN ({k_in})
-              AND COALESCE(p.account_id, m.account_id) IS NOT NULL
-              AND COALESCE(p.account_id, m.account_id) NOT IN ({ex_in})
+              AND p.account_id IS NOT NULL
+              AND p.account_id NOT IN ({ex_in})
+
+            UNION ALL
+
+            -- tag: kernel member was tagged in media
+            SELECT m.account_id, ta.tagged_account_id, %(tag_w)s
+            FROM tagged_account ta
+            JOIN media m ON ta.media_id = m.id
+            WHERE ta.tagged_account_id IN ({k_in})
+              AND m.account_id IS NOT NULL
+              AND m.account_id NOT IN ({ex_in})
         ),
         pair_strength AS (
             SELECT candidate_id, kernel_id, MAX(weight) AS strength
