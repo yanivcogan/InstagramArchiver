@@ -5,8 +5,8 @@ import {ITagUsage, ITagWithType} from '../../types/tags';
 import {
     fetchTagsForSearchResults,
     ISearchQuery,
-    SearchResult,
     searchData,
+    SearchResult,
     T_Search_Mode,
 } from '../../services/DataFetcher';
 import {DefaultSearchResults, SEARCH_RESULT_RENDERERS} from '../SearchResults';

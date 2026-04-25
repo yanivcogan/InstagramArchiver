@@ -9,8 +9,8 @@ import {
     ISearchQuery,
     SEARCH_MODE_TO_ENTITY,
     SEARCH_MODES,
-    SearchResult,
     searchData,
+    SearchResult,
     T_Search_Mode,
 } from '../services/DataFetcher';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';

@@ -40,8 +40,8 @@ import {
     ISearchQuery,
     SEARCH_MODE_TO_ENTITY,
     SEARCH_MODES,
-    SearchResult,
     searchData,
+    SearchResult,
     T_Search_Mode,
 } from '../../services/DataFetcher';
 import {ITagWithType} from '../../types/tags';
@@ -88,6 +88,9 @@ interface BaseProps {
     tagging?: SearchPanelTagging;
     // Override result click (community page uses to add to kernel instead of navigating)
     onResultClick?: (result: SearchResult) => void;
+    // Checked entries shown via checkboxes independent of tagging mode (community page uses for kernel membership)
+    checkedIds?: Set<number>;
+    onToggleChecked?: (result: SearchResult) => void;
 }
 
 // When autoSearch is set, the panel fetches results internally on each keystroke (debounced).
@@ -104,6 +107,7 @@ export default function SearchPanel(props: SearchPanelProps) {
         showAdvancedFilters: showAdvancedFiltersFeature = true,
         showTaggingMode = false,
         searchHistory, tagging, onResultClick,
+        checkedIds, onToggleChecked,
     } = props;
 
     const isAutoSearch = props.autoSearch !== undefined;
@@ -190,6 +194,14 @@ export default function SearchPanel(props: SearchPanelProps) {
         }, props.autoSearch as number);
         return () => clearTimeout(t);
     }, [typedSearchTerm, isAutoSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Checked entries toggle (kernel membership in community page) ──────────
+
+    const handleToggleChecked = useCallback((id: number) => {
+        if (!onToggleChecked) return;
+        const result = results.find(r => r.id === id);
+        if (result) onToggleChecked(result);
+    }, [onToggleChecked, results]);
 
     // ── performSearch: build full query and hand off ──────────────────────────
 
@@ -430,8 +442,11 @@ export default function SearchPanel(props: SearchPanelProps) {
                         <ResultsComponent
                             results={results}
                             tagsMap={tagsMap}
-                            selectedIds={tagging?.isActive ? tagging.selectedIds : undefined}
-                            onToggleSelected={tagging?.isActive ? tagging.onToggleSelected : undefined}
+                            selectedIds={tagging?.isActive ? tagging.selectedIds : checkedIds}
+                            onToggleSelected={
+                                tagging?.isActive ? tagging.onToggleSelected
+                                : (checkedIds ? handleToggleChecked : undefined)
+                            }
                             onPrimaryClick={onResultClick}
                         />
                     )}
