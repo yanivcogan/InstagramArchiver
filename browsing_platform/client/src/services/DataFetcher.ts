@@ -376,11 +376,6 @@ export interface TagKernelResponse {
     dropdown: IQuickAccessTypeDropdown;
 }
 
-export const fetchCommunityTagDropdown = async (
-    tagId: number,
-): Promise<IQuickAccessTypeDropdown> =>
-    server.get(`community/tag-dropdown/${tagId}`);
-
 export const fetchTagKernelAccounts = async (
     tagId: number,
 ): Promise<TagKernelResponse> =>

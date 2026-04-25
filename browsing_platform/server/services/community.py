@@ -1,10 +1,12 @@
 import json
-from typing import Any, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 
 from browsing_platform.server.services.media import get_media_thumbnail_path
 from browsing_platform.server.services.search import SearchResultTransform, sign_thumbnail_path
+from browsing_platform.server.services.tag import ITagWithType
+from browsing_platform.server.services.tag_management import IQuickAccessTypeDropdown, ITagHierarchyEntry
 from utils import db
 
 TOP_N = 50
@@ -55,12 +57,12 @@ class TagKernelAccount(BaseModel):
     bio: Optional[str] = None
     thumbnails: list[str] = []
     media_count: int = 0
-    applied_tags: list[dict] = []
+    applied_tags: list[ITagWithType] = []
 
 
 class TagKernelResponse(BaseModel):
     accounts: list[TagKernelAccount]
-    dropdown: dict
+    dropdown: IQuickAccessTypeDropdown
 
 
 def _parse_is_verified(data) -> Optional[bool]:
@@ -329,8 +331,8 @@ _TAG_COLS = """
 """
 
 
-def get_community_tag_dropdown(tag_id: int) -> dict[str, Any]:
-    """Return an IQuickAccessTypeDropdown-shaped dict for the tag and all its descendants."""
+def get_community_tag_dropdown(tag_id: int) -> IQuickAccessTypeDropdown:
+    """Return an IQuickAccessTypeDropdown for the tag and all its descendants."""
     tag_rows = db.execute_query(  # nosec B608
         f"""WITH RECURSIVE tag_desc AS (
                 SELECT id FROM tag WHERE id = %(tag_id)s
@@ -346,7 +348,7 @@ def get_community_tag_dropdown(tag_id: int) -> dict[str, Any]:
         return_type="rows",
     )
     if not tag_rows:
-        return {"type_id": tag_id, "type_name": "", "tags": [], "hierarchy": []}
+        return IQuickAccessTypeDropdown(type_id=tag_id, type_name="", tags=[], hierarchy=[])
 
     tag_id_set = {r["id"] for r in tag_rows}
     root_name = next((r["name"] for r in tag_rows if r["id"] == tag_id), "")
@@ -363,31 +365,12 @@ def get_community_tag_dropdown(tag_id: int) -> dict[str, Any]:
     else:
         hierarchy_rows = []
 
-    tags = []
-    for r in tag_rows:
-        tags.append({
-            "id": r["id"],
-            "name": r["name"],
-            "description": r.get("description"),
-            "tag_type_id": r.get("tag_type_id"),
-            "tag_type_name": r.get("tag_type_name"),
-            "tag_type_description": r.get("tag_type_description"),
-            "tag_type_notes": r.get("tag_type_notes"),
-            "tag_type_entity_affinity": r.get("tag_type_entity_affinity"),
-            "assignment_notes": None,
-            "notes_recommended": True,
-            "create_date": None,
-            "update_date": None,
-        })
-
-    hierarchy = [{"super_tag_id": h["super_tag_id"], "sub_tag_id": h["sub_tag_id"]} for h in hierarchy_rows]
-
-    return {
-        "type_id": tag_id,
-        "type_name": root_name,
-        "tags": tags,
-        "hierarchy": hierarchy,
-    }
+    return IQuickAccessTypeDropdown(
+        type_id=tag_id,
+        type_name=root_name,
+        tags=[ITagWithType(**row) for row in tag_rows],
+        hierarchy=[ITagHierarchyEntry(super_tag_id=h["super_tag_id"], sub_tag_id=h["sub_tag_id"]) for h in hierarchy_rows],
+    )
 
 
 def get_tag_kernel_accounts(
@@ -395,44 +378,28 @@ def get_tag_kernel_accounts(
         transform: Optional[SearchResultTransform] = None,
 ) -> TagKernelResponse:
     """Return all accounts tagged with tag_id or any of its descendants, with applied tags."""
+    dropdown = get_community_tag_dropdown(tag_id)
+
+    if not dropdown.tags:
+        return TagKernelResponse(accounts=[], dropdown=dropdown)
+
+    tag_by_id: dict[int, ITagWithType] = {t.id: t for t in dropdown.tags}
+    d_args = {f"d_{i}": tid for i, tid in enumerate(tag_by_id)}
+    d_in = ", ".join(f"%(d_{i})s" for i in range(len(tag_by_id)))
+
     tag_account_rows = db.execute_query(  # nosec B608
-        f"""WITH RECURSIVE tag_desc AS (
-                SELECT id FROM tag WHERE id = %(tag_id)s
-                UNION ALL
-                SELECT th.sub_tag_id FROM tag_hierarchy th
-                JOIN tag_desc td ON th.super_tag_id = td.id
-            )
-            SELECT at.account_id, {_TAG_COLS}
-            FROM account_tag at
-            JOIN tag t ON at.tag_id = t.id
-            JOIN tag_desc td ON at.tag_id = td.id
-            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id""",
-        {"tag_id": tag_id},
+        f"SELECT account_id, tag_id FROM account_tag WHERE tag_id IN ({d_in})",
+        d_args,
         return_type="rows",
     )
-
     if not tag_account_rows:
-        return TagKernelResponse(accounts=[], dropdown=get_community_tag_dropdown(tag_id))
+        return TagKernelResponse(accounts=[], dropdown=dropdown)
 
-    applied_tags_map: dict[int, list[dict]] = {}
+    applied_tags_map: dict[int, list[ITagWithType]] = {}
     for r in tag_account_rows:
-        aid = r["account_id"]
-        if aid not in applied_tags_map:
-            applied_tags_map[aid] = []
-        applied_tags_map[aid].append({
-            "id": r["id"],
-            "name": r["name"],
-            "description": r.get("description"),
-            "tag_type_id": r.get("tag_type_id"),
-            "tag_type_name": r.get("tag_type_name"),
-            "tag_type_description": r.get("tag_type_description"),
-            "tag_type_notes": r.get("tag_type_notes"),
-            "tag_type_entity_affinity": r.get("tag_type_entity_affinity"),
-            "assignment_notes": None,
-            "notes_recommended": True,
-            "create_date": None,
-            "update_date": None,
-        })
+        tag = tag_by_id.get(r["tag_id"])
+        if tag:
+            applied_tags_map.setdefault(r["account_id"], []).append(tag)
 
     account_ids = list(applied_tags_map.keys())
     cand_args = {f"c_{i}": aid for i, aid in enumerate(account_ids)}
@@ -487,4 +454,4 @@ def get_tag_kernel_accounts(
             applied_tags=applied_tags_map[aid],
         ))
 
-    return TagKernelResponse(accounts=accounts, dropdown=get_community_tag_dropdown(tag_id))
+    return TagKernelResponse(accounts=accounts, dropdown=dropdown)

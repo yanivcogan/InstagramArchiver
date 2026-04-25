@@ -6,7 +6,6 @@ from browsing_platform.server.services.community import (
     CommunityCandidatesResponse,
     TagKernelResponse,
     compute_candidates,
-    get_community_tag_dropdown,
     get_tag_kernel_accounts,
 )
 from browsing_platform.server.services.permissions import auth_user_access
@@ -30,11 +29,6 @@ async def get_community_candidates(
         raise HTTPException(status_code=422, detail="kernel_ids must not exceed 100")
     transform = extract_search_results_config(request)
     return compute_candidates(req, transform)
-
-
-@router.get("/tag-dropdown/{tag_id}")
-async def get_tag_dropdown(tag_id: int) -> dict:
-    return get_community_tag_dropdown(tag_id)
 
 
 @router.get("/tag-kernel/{tag_id}")

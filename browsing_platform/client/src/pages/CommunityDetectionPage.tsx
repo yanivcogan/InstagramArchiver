@@ -49,6 +49,8 @@ import {
 } from '../services/DataFetcher';
 import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
 
+const EMPTY_ID_SET = new Set<number>();
+
 // ── Kernel entry type ─────────────────────────────────────────────────────────
 
 interface KernelEntry {
@@ -66,13 +68,10 @@ function candidateTitle(c: Pick<CandidateAccount, 'id' | 'url_suffix' | 'display
 }
 
 function tagKernelAccountToSearchResult(a: TagKernelAccount): SearchResult {
-    const title = a.display_name
-        ? `${a.url_suffix} (${a.display_name})`
-        : (a.url_suffix ?? `Account ${a.id}`);
     return {
         id: a.id,
         page: 'account',
-        title,
+        title: candidateTitle(a),
         details: a.bio ?? undefined,
         thumbnails: a.thumbnails,
         metadata: {media_count: a.media_count},
@@ -129,9 +128,10 @@ interface SingleTagSelectorProps {
     value: ITagWithType | null;
     label: string;
     onChange: (tag: ITagWithType | null) => void;
+    disabled?: boolean;
 }
 
-function SingleTagSelector({value, label, onChange}: SingleTagSelectorProps) {
+function SingleTagSelector({value, label, onChange, disabled}: SingleTagSelectorProps) {
     const [options, setOptions] = useState<ITagWithType[]>([]);
     const [loading, setLoading] = useState(false);
 
@@ -150,6 +150,7 @@ function SingleTagSelector({value, label, onChange}: SingleTagSelectorProps) {
             value={value}
             options={options}
             loading={loading}
+            disabled={disabled}
             getOptionLabel={(o) => o.name}
             isOptionEqualToValue={(a, b) => a.id === b.id}
             filterOptions={(x) => x}
@@ -415,6 +416,15 @@ export default function CommunityDetectionPage() {
         ) as Record<number, ITagWithType[]>;
     }, [candidateAllTags, communityTagIds]);
 
+    const candidateCommunityTagIdSets = useMemo(() =>
+        Object.fromEntries(
+            Object.entries(candidateCommunityTags).map(([id, tags]) =>
+                [id, new Set(tags.map(t => t.id!))]
+            )
+        ) as Record<number, Set<number>>,
+        [candidateCommunityTags],
+    );
+
     // ── Community tag selection ───────────────────────────────────────────────
 
     const handleCommunityTagChange = async (tag: ITagWithType | null) => {
@@ -505,13 +515,12 @@ export default function CommunityDetectionPage() {
         if (isAssigned) {
             // Remove tag from account
             await removeAccountTag(entry.account.id, tag.id!);
-            setKernelEntries(prev => prev.map(e => {
-                if (e.account.id !== entry.account.id) return e;
+            setKernelEntries(prev => prev.flatMap(e => {
+                if (e.account.id !== entry.account.id) return [e];
                 const newSources = e.tagSources.filter(t => t.id !== tag.id);
-                // If no more tag sources and not manually added, remove from kernel
-                if (newSources.length === 0 && !e.manuallyAdded) return null as unknown as KernelEntry;
-                return {...e, tagSources: newSources};
-            }).filter(Boolean));
+                if (newSources.length === 0 && !e.manuallyAdded) return [];
+                return [{...e, tagSources: newSources}];
+            }));
         } else {
             // Add tag to account
             await batchAnnotate('account', [entry.account.id], [{id: tag.id!}]);
@@ -546,21 +555,20 @@ export default function CommunityDetectionPage() {
     };
 
     const addCandidateToKernel = (candidate: CandidateAccount) => {
+        if (kernelIdSet.has(candidate.id)) return;
         const tagSources = communityTag ? (candidateCommunityTags[candidate.id] ?? []) : [];
-        addToKernel({
-            id: candidate.id,
-            page: 'account',
-            title: candidateTitle(candidate),
-            details: candidate.bio ?? undefined,
-            thumbnails: candidate.thumbnails,
-            metadata: {media_count: candidate.media_count},
-        });
-        // Actually replace the bare entry with tag awareness if in tag mode
-        if (communityTag && tagSources.length > 0) {
-            setKernelEntries(prev => prev.map(e =>
-                e.account.id === candidate.id ? {...e, tagSources} : e
-            ));
-        }
+        setKernelEntries(prev => [...prev, {
+            account: {
+                id: candidate.id,
+                page: 'account',
+                title: candidateTitle(candidate),
+                details: candidate.bio ?? undefined,
+                thumbnails: candidate.thumbnails,
+                metadata: {media_count: candidate.media_count},
+            },
+            manuallyAdded: true,
+            tagSources,
+        }]);
         setCandidates(prev => prev.filter(c => c.id !== candidate.id));
     };
 
@@ -718,6 +726,7 @@ export default function CommunityDetectionPage() {
                                     value={communityTag}
                                     label={communityTagLabel}
                                     onChange={handleCommunityTagChange}
+                                    disabled={tagTransitionLoading}
                                 />
                             </Box>
                             {tagTransitionLoading && <CircularProgress size={20}/>}
@@ -893,9 +902,7 @@ export default function CommunityDetectionPage() {
                                                 key={candidate.id}
                                                 candidate={candidate}
                                                 communityDropdown={communityDropdown}
-                                                assignedCommunityTagIds={
-                                                    new Set((candidateCommunityTags[candidate.id] ?? []).map(t => t.id!))
-                                                }
+                                                assignedCommunityTagIds={candidateCommunityTagIdSets[candidate.id] ?? EMPTY_ID_SET}
                                                 onAddToKernel={() => addCandidateToKernel(candidate)}
                                                 onExclude={() => excludeCandidate(candidate)}
                                                 onTagToggle={(tag) => handleCandidateTagToggle(candidate, tag)}
