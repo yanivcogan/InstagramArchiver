@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
 from browsing_platform.server.services.account import get_account_by_id, annotate_account
 from browsing_platform.server.services.annotation import Annotation, TagWithNotes, add_tags_batch, \
-    validate_tags_entity_affinity
+    remove_tag_from_entity, validate_tags_entity_affinity
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, get_enriched_post_by_id, \
     get_enriched_media_by_id
 from browsing_platform.server.services.media import get_media_by_id, annotate_media
@@ -69,6 +69,12 @@ async def annotate_entity(entity: EntityType, item_id:int, annotation: Annotatio
         annotate_media_part(item_id, annotation)
     else:
         raise HTTPException(status_code=400, detail="Invalid Entity Type")
+    return True
+
+
+@router.delete("/{entity:str}/{item_id:int}/tag/{tag_id:int}", dependencies=[Depends(auth_user_access)])
+async def remove_entity_tag(entity: EntityType, item_id: int, tag_id: int) -> bool:
+    remove_tag_from_entity(entity, item_id, tag_id)
     return True
 
 

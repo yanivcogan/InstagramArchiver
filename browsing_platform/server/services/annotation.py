@@ -47,3 +47,14 @@ def add_tags_batch(entity_type: str, entity_ids: list[int], tags: list[TagWithNo
                 {"eid": entity_id, "tid": tag.id, "notes": tag.notes},
                 return_type="none"
             )
+
+
+def remove_tag_from_entity(entity_type: str, entity_id: int, tag_id: int) -> None:
+    if entity_type not in ENTITY_TAG_TABLES:
+        raise ValueError(f"Unsupported entity type: {entity_type}")
+    table_name, id_col = ENTITY_TAG_TABLES[entity_type]
+    db.execute_query(  # nosec B608 - table_name and id_col come from a trusted whitelist
+        f"DELETE FROM {table_name} WHERE {id_col} = %(eid)s AND tag_id = %(tid)s",
+        {"eid": entity_id, "tid": tag_id},
+        return_type="none"
+    )

@@ -1,7 +1,9 @@
 import React, {useMemo, useState} from 'react';
 import {
+    Autocomplete,
     Box,
     Button,
+    Checkbox,
     Chip,
     CircularProgress,
     Collapse,
@@ -10,10 +12,12 @@ import {
     DialogContent,
     DialogTitle,
     Divider,
+    FormControlLabel,
     IconButton,
     Link,
     Paper,
     Stack,
+    TextField,
     Tooltip,
     Typography,
 } from '@mui/material';
@@ -21,24 +25,58 @@ import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import {SearchResultThumbnails} from '../UIComponents/SearchResults/SearchResultParts';
 import NumberField from '../UIComponents/MUINumberField/NumberField';
 import SearchPanel from '../UIComponents/Search/SearchPanel';
+import QuickAccessTypeDropdown from '../UIComponents/Tags/QuickAccessTypeDropdown';
 import {
+    batchAnnotate,
     CandidateAccount,
     CommunityCandidatesResponse,
     DEFAULT_TIE_WEIGHTS,
     fetchCommunityCandidates,
+    fetchTagKernelAccounts,
+    fetchTagsForSearchResults,
     ISearchQuery,
+    lookupTags,
+    removeAccountTag,
     SearchResult,
+    TagKernelAccount,
+    TagKernelResponse,
     TieWeights,
 } from '../services/DataFetcher';
+import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
+
+// ── Kernel entry type ─────────────────────────────────────────────────────────
+
+interface KernelEntry {
+    account: SearchResult;
+    manuallyAdded: boolean;
+    tagSources: ITagWithType[];
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function candidateTitle(c: Pick<CandidateAccount, 'id' | 'url_suffix' | 'display_name'>): string {
     return c.display_name
         ? `${c.url_suffix} (${c.display_name})`
         : (c.url_suffix ?? `Account ${c.id}`);
+}
+
+function tagKernelAccountToSearchResult(a: TagKernelAccount): SearchResult {
+    const title = a.display_name
+        ? `${a.url_suffix} (${a.display_name})`
+        : (a.url_suffix ?? `Account ${a.id}`);
+    return {
+        id: a.id,
+        page: 'account',
+        title,
+        details: a.bio ?? undefined,
+        thumbnails: a.thumbnails,
+        metadata: {media_count: a.media_count},
+    };
 }
 
 // ── Step badge ────────────────────────────────────────────────────────────────
@@ -85,14 +123,89 @@ function SectionHeader({step, title, active, action}: SectionHeaderProps) {
     );
 }
 
+// ── Single-tag selector ───────────────────────────────────────────────────────
+
+interface SingleTagSelectorProps {
+    value: ITagWithType | null;
+    label: string;
+    onChange: (tag: ITagWithType | null) => void;
+}
+
+function SingleTagSelector({value, label, onChange}: SingleTagSelectorProps) {
+    const [options, setOptions] = useState<ITagWithType[]>([]);
+    const [loading, setLoading] = useState(false);
+
+    const fetchOptions = async (q: string) => {
+        setLoading(true);
+        try {
+            const results = await lookupTags(q);
+            setOptions(results);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Autocomplete
+            value={value}
+            options={options}
+            loading={loading}
+            getOptionLabel={(o) => o.name}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            filterOptions={(x) => x}
+            noOptionsText={loading ? 'Loading…' : 'Start typing to search tags'}
+            onInputChange={(_, v, reason) => {
+                if (reason === 'input') fetchOptions(v);
+            }}
+            onChange={(_, v) => onChange(v)}
+            renderInput={(params) => (
+                <TextField
+                    {...params}
+                    label={label}
+                    variant="outlined"
+                    size="small"
+                    InputProps={{
+                        ...params.InputProps,
+                        startAdornment: <LocalOfferIcon sx={{mr: 1, color: value ? 'primary.main' : 'text.disabled', fontSize: '1rem'}}/>,
+                        endAdornment: (
+                            <>
+                                {loading && <CircularProgress size={16}/>}
+                                {params.InputProps.endAdornment}
+                            </>
+                        ),
+                    }}
+                />
+            )}
+            renderOption={(props, option) => (
+                <li {...props} key={option.id}>
+                    <Stack>
+                        <Typography variant="body2">{option.name}</Typography>
+                        {option.tag_type_name && (
+                            <Typography variant="caption" color="text.secondary">{option.tag_type_name}</Typography>
+                        )}
+                    </Stack>
+                </li>
+            )}
+            sx={{'& .MuiOutlinedInput-root': {pr: '14px !important'}}}
+        />
+    );
+}
+
 // ── Kernel account pill ───────────────────────────────────────────────────────
 
 interface KernelAccountPillProps {
-    account: SearchResult;
+    entry: KernelEntry;
+    communityDropdown: IQuickAccessTypeDropdown | null;
     onRemove: () => void;
+    onTagToggle: (tag: ITagWithType) => void;
 }
 
-function KernelAccountPill({account, onRemove}: KernelAccountPillProps) {
+function KernelAccountPill({entry, communityDropdown, onRemove, onTagToggle}: KernelAccountPillProps) {
+    const assignedTagIds = useMemo(
+        () => new Set(entry.tagSources.map(t => t.id!)),
+        [entry.tagSources],
+    );
+
     return (
         <Box sx={{
             display: 'inline-flex',
@@ -103,16 +216,37 @@ function KernelAccountPill({account, onRemove}: KernelAccountPillProps) {
             borderRadius: 4,
             px: 1, py: 0.25,
             bgcolor: 'background.paper',
+            flexWrap: 'wrap',
             '&:hover': {borderColor: 'primary.main'},
             transition: 'border-color 0.15s',
         }}>
-            <Link href={`/account/${account.id}`} underline="hover" color="primary.main"
+            <Link href={`/account/${entry.account.id}`} underline="hover" color="primary.main"
                   sx={{fontSize: '0.8125rem', lineHeight: 1.5, fontWeight: 500}}>
-                {account.title}
+                {entry.account.title}
             </Link>
+
+            {/* Tag membership indicator / control */}
+            {communityDropdown && (
+                <QuickAccessTypeDropdown
+                    dropdown={communityDropdown}
+                    assignedTagIds={assignedTagIds}
+                    onSelect={onTagToggle}
+                />
+            )}
+
+            {/* Manual indicator: shown when in tag mode but no tag sources */}
+            {communityDropdown && entry.tagSources.length === 0 && entry.manuallyAdded && (
+                <Chip
+                    label="Manual"
+                    size="small"
+                    variant="outlined"
+                    sx={{height: 18, fontSize: '0.6rem', '& .MuiChip-label': {px: 0.75}}}
+                />
+            )}
+
             <IconButton size="small" onClick={onRemove}
                         sx={{p: 0.25, ml: 0.25, color: 'primary.light', '&:hover': {color: 'error.main'}}}
-                        aria-label={`Remove ${account.title} from kernel`}>
+                        aria-label={`Remove ${entry.account.title} from kernel`}>
                 <CloseIcon sx={{fontSize: '0.8rem'}}/>
             </IconButton>
         </Box>
@@ -123,11 +257,14 @@ function KernelAccountPill({account, onRemove}: KernelAccountPillProps) {
 
 interface CandidateCardProps {
     candidate: CandidateAccount;
+    communityDropdown: IQuickAccessTypeDropdown | null;
+    assignedCommunityTagIds: Set<number>;
     onAddToKernel: () => void;
     onExclude: () => void;
+    onTagToggle: (tag: ITagWithType) => void;
 }
 
-function CandidateCard({candidate, onAddToKernel, onExclude}: CandidateCardProps) {
+function CandidateCard({candidate, communityDropdown, assignedCommunityTagIds, onAddToKernel, onExclude, onTagToggle}: CandidateCardProps) {
     const title = candidateTitle(candidate);
     const score = candidate.score % 1 === 0
         ? candidate.score.toString()
@@ -174,6 +311,17 @@ function CandidateCard({candidate, onAddToKernel, onExclude}: CandidateCardProps
                     </Typography>
                 )}
                 <SearchResultThumbnails thumbnails={candidate.thumbnails} totalCount={candidate.media_count}/>
+
+                {/* Community tag assignment (tag mode only) */}
+                {communityDropdown && (
+                    <Box sx={{mt: 0.75}}>
+                        <QuickAccessTypeDropdown
+                            dropdown={communityDropdown}
+                            assignedTagIds={assignedCommunityTagIds}
+                            onSelect={onTagToggle}
+                        />
+                    </Box>
+                )}
             </Box>
 
             {/* Actions */}
@@ -211,14 +359,28 @@ const KERNEL_SEARCH_QUERY: ISearchQuery = {
 
 export default function CommunityDetectionPage() {
     // Kernel
-    const [kernelAccounts, setKernelAccounts] = useState<SearchResult[]>([]);
+    const [kernelEntries, setKernelEntries] = useState<KernelEntry[]>([]);
     const [kernelModalOpen, setKernelModalOpen] = useState(false);
+
+    // Community tag / tag mode
+    const [communityTag, setCommunityTag] = useState<ITagWithType | null>(null);
+    const [communityDropdown, setCommunityDropdown] = useState<IQuickAccessTypeDropdown | null>(null);
+
+    // Tag transition modal (when user picks a community tag while kernel is non-empty)
+    const [tagTransitionPending, setTagTransitionPending] = useState<{
+        tag: ITagWithType;
+        tagKernelAccounts: TagKernelAccount[];
+        dropdown: IQuickAccessTypeDropdown;
+    } | null>(null);
+    const [tagTransitionApplyToExisting, setTagTransitionApplyToExisting] = useState(false);
+    const [tagTransitionLoading, setTagTransitionLoading] = useState(false);
 
     // Weights
     const [weights, setWeights] = useState<TieWeights>({...DEFAULT_TIE_WEIGHTS});
 
     // Candidates
     const [candidates, setCandidates] = useState<CandidateAccount[]>([]);
+    const [candidateAllTags, setCandidateAllTags] = useState<Record<number, ITagWithType[]>>({});
     const [isComputing, setIsComputing] = useState(false);
     const [hasRun, setHasRun] = useState(false);
 
@@ -226,27 +388,138 @@ export default function CommunityDetectionPage() {
     const [excludedAccounts, setExcludedAccounts] = useState<CandidateAccount[]>([]);
     const [excludedOpen, setExcludedOpen] = useState(false);
 
-    // Derived
-    const kernelIds = useMemo(() => kernelAccounts.map(a => a.id), [kernelAccounts]);
+    React.useEffect(() => {
+        document.title = 'Community Detection | Browsing Platform';
+    }, []);
+
+    // ── Derived ───────────────────────────────────────────────────────────────
+
+    const kernelIds = useMemo(() => kernelEntries.map(e => e.account.id), [kernelEntries]);
     const kernelIdSet = useMemo(() => new Set(kernelIds), [kernelIds]);
     const excludedIds = useMemo(() => excludedAccounts.map(a => a.id), [excludedAccounts]);
     const excludedIdSet = useMemo(() => new Set(excludedIds), [excludedIds]);
     const visibleCandidates = useMemo(() => candidates.filter(c => !excludedIdSet.has(c.id)), [candidates, excludedIdSet]);
     const hasVerifiedVisible = useMemo(() => visibleCandidates.some(c => c.is_verified === true), [visibleCandidates]);
 
-    React.useEffect(() => {
-        document.title = 'Community Detection | Browsing Platform';
-    }, []);
+    const communityTagIds = useMemo(
+        () => communityDropdown ? new Set(communityDropdown.tags.map(t => t.id!)) : new Set<number>(),
+        [communityDropdown],
+    );
+
+    const candidateCommunityTags = useMemo(() => {
+        if (!communityTagIds.size) return {} as Record<number, ITagWithType[]>;
+        return Object.fromEntries(
+            Object.entries(candidateAllTags).map(([id, tags]) =>
+                [id, tags.filter(t => communityTagIds.has(t.id!))]
+            )
+        ) as Record<number, ITagWithType[]>;
+    }, [candidateAllTags, communityTagIds]);
+
+    // ── Community tag selection ───────────────────────────────────────────────
+
+    const handleCommunityTagChange = async (tag: ITagWithType | null) => {
+        if (!tag) {
+            // Clear tag mode: keep kernel entries but clear tagSources indicators
+            setCommunityTag(null);
+            setCommunityDropdown(null);
+            return;
+        }
+
+        setTagTransitionLoading(true);
+        try {
+            const resp: TagKernelResponse = await fetchTagKernelAccounts(tag.id!);
+
+            if (kernelEntries.length === 0) {
+                // No existing kernel — set directly without warning
+                setCommunityTag(tag);
+                setCommunityDropdown(resp.dropdown);
+                const newEntries: KernelEntry[] = resp.accounts.map(a => ({
+                    account: tagKernelAccountToSearchResult(a),
+                    manuallyAdded: false,
+                    tagSources: a.applied_tags,
+                }));
+                setKernelEntries(newEntries);
+            } else {
+                // Kernel already populated — ask for confirmation
+                setTagTransitionPending({
+                    tag,
+                    tagKernelAccounts: resp.accounts,
+                    dropdown: resp.dropdown,
+                });
+                setTagTransitionApplyToExisting(false);
+            }
+        } finally {
+            setTagTransitionLoading(false);
+        }
+    };
+
+    const confirmTagTransition = async () => {
+        if (!tagTransitionPending) return;
+        const {tag, tagKernelAccounts, dropdown} = tagTransitionPending;
+
+        // Optionally attach the tag to all accounts currently in the kernel
+        if (tagTransitionApplyToExisting && kernelIds.length > 0) {
+            await batchAnnotate('account', kernelIds, [{id: tag.id!}]);
+            // Update tagSources for existing kernel entries
+            setKernelEntries(prev => prev.map(e => ({
+                ...e,
+                tagSources: e.tagSources.some(t => t.id === tag.id)
+                    ? e.tagSources
+                    : [...e.tagSources, tag],
+            })));
+        }
+
+        // Add tag-based accounts not already in kernel
+        const newEntries: KernelEntry[] = tagKernelAccounts
+            .filter(a => !kernelIdSet.has(a.id))
+            .map(a => ({
+                account: tagKernelAccountToSearchResult(a),
+                manuallyAdded: false,
+                tagSources: a.applied_tags,
+            }));
+        setKernelEntries(prev => [...prev, ...newEntries]);
+
+        setCommunityTag(tag);
+        setCommunityDropdown(dropdown);
+        setTagTransitionPending(null);
+    };
 
     // ── Kernel management ─────────────────────────────────────────────────────
 
     const addToKernel = (result: SearchResult) => {
         if (kernelIdSet.has(result.id)) return;
-        setKernelAccounts(prev => [...prev, result]);
+        setKernelEntries(prev => [...prev, {
+            account: result,
+            manuallyAdded: true,
+            tagSources: [],
+        }]);
     };
 
     const removeFromKernel = (id: number) => {
-        setKernelAccounts(prev => prev.filter(a => a.id !== id));
+        setKernelEntries(prev => prev.filter(e => e.account.id !== id));
+    };
+
+    // Toggle a community tag on a kernel entry
+    const handleKernelTagToggle = async (entry: KernelEntry, tag: ITagWithType) => {
+        const isAssigned = entry.tagSources.some(t => t.id === tag.id);
+        if (isAssigned) {
+            // Remove tag from account
+            await removeAccountTag(entry.account.id, tag.id!);
+            setKernelEntries(prev => prev.map(e => {
+                if (e.account.id !== entry.account.id) return e;
+                const newSources = e.tagSources.filter(t => t.id !== tag.id);
+                // If no more tag sources and not manually added, remove from kernel
+                if (newSources.length === 0 && !e.manuallyAdded) return null as unknown as KernelEntry;
+                return {...e, tagSources: newSources};
+            }).filter(Boolean));
+        } else {
+            // Add tag to account
+            await batchAnnotate('account', [entry.account.id], [{id: tag.id!}]);
+            setKernelEntries(prev => prev.map(e => {
+                if (e.account.id !== entry.account.id) return e;
+                return {...e, tagSources: [...e.tagSources, tag]};
+            }));
+        }
     };
 
     // ── Candidates ────────────────────────────────────────────────────────────
@@ -259,12 +532,21 @@ export default function CommunityDetectionPage() {
             );
             setCandidates(resp.candidates);
             setHasRun(true);
+
+            // In tag mode, bulk-fetch community tags for all returned candidates
+            if (communityTag && resp.candidates.length > 0) {
+                const allTags = await fetchTagsForSearchResults('accounts', resp.candidates.map(c => c.id));
+                setCandidateAllTags(allTags);
+            } else {
+                setCandidateAllTags({});
+            }
         } finally {
             setIsComputing(false);
         }
     };
 
     const addCandidateToKernel = (candidate: CandidateAccount) => {
+        const tagSources = communityTag ? (candidateCommunityTags[candidate.id] ?? []) : [];
         addToKernel({
             id: candidate.id,
             page: 'account',
@@ -273,7 +555,51 @@ export default function CommunityDetectionPage() {
             thumbnails: candidate.thumbnails,
             metadata: {media_count: candidate.media_count},
         });
+        // Actually replace the bare entry with tag awareness if in tag mode
+        if (communityTag && tagSources.length > 0) {
+            setKernelEntries(prev => prev.map(e =>
+                e.account.id === candidate.id ? {...e, tagSources} : e
+            ));
+        }
         setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+    };
+
+    // Toggle a community tag on a candidate account
+    const handleCandidateTagToggle = async (candidate: CandidateAccount, tag: ITagWithType) => {
+        const currentTags = candidateAllTags[candidate.id] ?? [];
+        const isAssigned = currentTags.some(t => t.id === tag.id);
+
+        if (isAssigned) {
+            await removeAccountTag(candidate.id, tag.id!);
+            setCandidateAllTags(prev => ({
+                ...prev,
+                [candidate.id]: (prev[candidate.id] ?? []).filter(t => t.id !== tag.id),
+            }));
+        } else {
+            await batchAnnotate('account', [candidate.id], [{id: tag.id!}]);
+            const newTagEntry = communityDropdown?.tags.find(t => t.id === tag.id) ?? tag;
+            setCandidateAllTags(prev => ({
+                ...prev,
+                [candidate.id]: [...(prev[candidate.id] ?? []), newTagEntry],
+            }));
+            // Move candidate to kernel as a tag-based member
+            const tagSources = [newTagEntry, ...(candidateCommunityTags[candidate.id] ?? []).filter(t => t.id !== tag.id)];
+            if (!kernelIdSet.has(candidate.id)) {
+                setKernelEntries(prev => [...prev, {
+                    account: {
+                        id: candidate.id,
+                        page: 'account',
+                        title: candidateTitle(candidate),
+                        details: candidate.bio ?? undefined,
+                        thumbnails: candidate.thumbnails,
+                        metadata: {media_count: candidate.media_count},
+                    },
+                    manuallyAdded: false,
+                    tagSources,
+                }]);
+                setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+            }
+        }
     };
 
     const excludeCandidate = (candidate: CandidateAccount) => {
@@ -287,6 +613,14 @@ export default function CommunityDetectionPage() {
     const autoRemoveVerified = () => {
         setExcludedAccounts(prev => [...prev, ...visibleCandidates.filter(c => c.is_verified === true)]);
     };
+
+    // ── Community tag selector label ──────────────────────────────────────────
+
+    const communityTagLabel = communityTag
+        ? `Community Tag: ${communityTag.name}`
+        : kernelEntries.length === 0
+            ? 'Base community on a tag (optional)'
+            : 'Attach a tag to this community';
 
     // ── Render ────────────────────────────────────────────────────────────────
 
@@ -322,25 +656,104 @@ export default function CommunityDetectionPage() {
                     </DialogContent>
                     <DialogActions>
                         <Typography variant="body2" color="text.secondary" sx={{flex: 1, pl: 1}}>
-                            {kernelAccounts.length} account{kernelAccounts.length !== 1 ? 's' : ''} in kernel
+                            {kernelEntries.length} account{kernelEntries.length !== 1 ? 's' : ''} in kernel
                         </Typography>
                         <Button variant="contained" onClick={() => setKernelModalOpen(false)}>Done</Button>
                     </DialogActions>
                 </Dialog>
 
+                {/* ── Tag transition confirmation modal ─────────────────────── */}
+                <Dialog
+                    open={tagTransitionPending !== null}
+                    onClose={() => setTagTransitionPending(null)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle>Switch to Tag Mode?</DialogTitle>
+                    <DialogContent dividers>
+                        <Stack gap={1.5}>
+                            <Typography variant="body2">
+                                You selected <strong>{tagTransitionPending?.tag.name}</strong> as the community tag.
+                                The following changes will take effect:
+                            </Typography>
+                            <Box component="ul" sx={{pl: 2.5, m: 0}}>
+                                <li>
+                                    <Typography variant="body2">
+                                        <strong>{tagTransitionPending?.tagKernelAccounts.filter(a => !kernelIdSet.has(a.id)).length ?? 0}</strong> account(s)
+                                        tagged with <em>{tagTransitionPending?.tag.name}</em> (or its subtags) will be
+                                        added to the kernel.
+                                    </Typography>
+                                </li>
+                            </Box>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={tagTransitionApplyToExisting}
+                                        onChange={e => setTagTransitionApplyToExisting(e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Typography variant="body2">
+                                        Also attach the <strong>{tagTransitionPending?.tag.name}</strong> tag
+                                        to the {kernelEntries.length} account(s) already in the kernel
+                                    </Typography>
+                                }
+                            />
+                        </Stack>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setTagTransitionPending(null)}>Cancel</Button>
+                        <Button variant="contained" onClick={confirmTagTransition}>Confirm</Button>
+                    </DialogActions>
+                </Dialog>
+
                 <Stack gap={0}>
+
+                    {/* ── Community tag selector ───────────────────────────── */}
+                    <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
+                        <Stack direction="row" alignItems="center" gap={1.5}>
+                            <Box sx={{flex: 1}}>
+                                <SingleTagSelector
+                                    value={communityTag}
+                                    label={communityTagLabel}
+                                    onChange={handleCommunityTagChange}
+                                />
+                            </Box>
+                            {tagTransitionLoading && <CircularProgress size={20}/>}
+                            {communityTag && (
+                                <Tooltip title="Clear community tag (switch to ad-hoc mode)">
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleCommunityTagChange(null)}
+                                        sx={{flexShrink: 0}}
+                                    >
+                                        <CloseIcon fontSize="small"/>
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+                        </Stack>
+                        {communityTag && (
+                            <Typography variant="caption" color="text.secondary" sx={{mt: 0.75, display: 'block'}}>
+                                Tag mode active — kernel seeded from accounts tagged with <strong>{communityTag.name}</strong> (and its subtags).
+                                Tag assignments are saved to the database.
+                            </Typography>
+                        )}
+                    </Paper>
+
+                    <Box sx={{width: 2, height: 16, bgcolor: 'divider', mx: 'auto'}}/>
 
                     {/* ── Step 1: Kernel ───────────────────────────────────── */}
                     <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
                         <SectionHeader
                             step={1}
                             title="Kernel — Seed Accounts"
-                            active={kernelAccounts.length > 0}
+                            active={kernelEntries.length > 0}
                             action={
-                                <Tooltip title="Search and add accounts">
+                                <Tooltip title="Search and add accounts manually">
                                     <Button
                                         size="small"
-                                        variant={kernelAccounts.length === 0 ? 'contained' : 'outlined'}
+                                        variant={kernelEntries.length === 0 ? 'contained' : 'outlined'}
                                         startIcon={<AddIcon/>}
                                         onClick={() => setKernelModalOpen(true)}
                                         sx={{flexShrink: 0}}
@@ -351,13 +764,15 @@ export default function CommunityDetectionPage() {
                             }
                         />
 
-                        {kernelAccounts.length > 0 ? (
+                        {kernelEntries.length > 0 ? (
                             <Stack direction="row" flexWrap="wrap" gap={1}>
-                                {kernelAccounts.map(acct => (
+                                {kernelEntries.map(entry => (
                                     <KernelAccountPill
-                                        key={acct.id}
-                                        account={acct}
-                                        onRemove={() => removeFromKernel(acct.id)}
+                                        key={entry.account.id}
+                                        entry={entry}
+                                        communityDropdown={communityDropdown}
+                                        onRemove={() => removeFromKernel(entry.account.id)}
+                                        onTagToggle={(tag) => handleKernelTagToggle(entry, tag)}
                                     />
                                 ))}
                             </Stack>
@@ -380,7 +795,7 @@ export default function CommunityDetectionPage() {
                             >
                                 <AddIcon sx={{fontSize: '1.1rem', flexShrink: 0}}/>
                                 <Typography variant="body2">
-                                    Add seed accounts to begin community detection
+                                    Add seed accounts manually, or select a community tag above to seed from a tag
                                 </Typography>
                             </Box>
                         )}
@@ -477,8 +892,13 @@ export default function CommunityDetectionPage() {
                                             <CandidateCard
                                                 key={candidate.id}
                                                 candidate={candidate}
+                                                communityDropdown={communityDropdown}
+                                                assignedCommunityTagIds={
+                                                    new Set((candidateCommunityTags[candidate.id] ?? []).map(t => t.id!))
+                                                }
                                                 onAddToKernel={() => addCandidateToKernel(candidate)}
                                                 onExclude={() => excludeCandidate(candidate)}
+                                                onTagToggle={(tag) => handleCandidateTagToggle(candidate, tag)}
                                             />
                                         ))}
                                     </Stack>

@@ -12,7 +12,7 @@ import {
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
-import {ITagStat, ITagWithType} from "../types/tags";
+import {IQuickAccessTypeDropdown, ITagStat, ITagWithType} from "../types/tags";
 import {getShareTokenFromHref} from "./linkSharing";
 
 interface FlattenedEntitiesTransform {
@@ -360,3 +360,34 @@ export const fetchCommunityCandidates = async (
         weights,
     });
 };
+
+export interface TagKernelAccount {
+    id: number;
+    url_suffix: string | null;
+    display_name: string | null;
+    bio: string | null;
+    thumbnails: string[];
+    media_count: number;
+    applied_tags: ITagWithType[];
+}
+
+export interface TagKernelResponse {
+    accounts: TagKernelAccount[];
+    dropdown: IQuickAccessTypeDropdown;
+}
+
+export const fetchCommunityTagDropdown = async (
+    tagId: number,
+): Promise<IQuickAccessTypeDropdown> =>
+    server.get(`community/tag-dropdown/${tagId}`);
+
+export const fetchTagKernelAccounts = async (
+    tagId: number,
+): Promise<TagKernelResponse> =>
+    server.get(`community/tag-kernel/${tagId}`);
+
+export const removeAccountTag = async (
+    accountId: number,
+    tagId: number,
+): Promise<void> =>
+    server.post(`annotate/account/${accountId}/tag/${tagId}`, {}, HTTP_METHODS.delete);

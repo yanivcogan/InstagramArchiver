@@ -1,5 +1,5 @@
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -46,6 +46,21 @@ class CandidateAccount(BaseModel):
 
 class CommunityCandidatesResponse(BaseModel):
     candidates: list[CandidateAccount]
+
+
+class TagKernelAccount(BaseModel):
+    id: int
+    url_suffix: Optional[str] = None
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    thumbnails: list[str] = []
+    media_count: int = 0
+    applied_tags: list[dict] = []
+
+
+class TagKernelResponse(BaseModel):
+    accounts: list[TagKernelAccount]
+    dropdown: dict
 
 
 def _parse_is_verified(data) -> Optional[bool]:
@@ -301,3 +316,175 @@ def compute_candidates(
         ))
 
     return CommunityCandidatesResponse(candidates=candidates)
+
+
+# ── Tag-based kernel helpers ──────────────────────────────────────────────────
+
+_TAG_COLS = """
+    t.id, t.name, t.description, t.tag_type_id,
+    tt.name AS tag_type_name,
+    tt.description AS tag_type_description,
+    tt.notes AS tag_type_notes,
+    tt.entity_affinity AS tag_type_entity_affinity
+"""
+
+
+def get_community_tag_dropdown(tag_id: int) -> dict[str, Any]:
+    """Return an IQuickAccessTypeDropdown-shaped dict for the tag and all its descendants."""
+    tag_rows = db.execute_query(  # nosec B608
+        f"""WITH RECURSIVE tag_desc AS (
+                SELECT id FROM tag WHERE id = %(tag_id)s
+                UNION ALL
+                SELECT th.sub_tag_id FROM tag_hierarchy th
+                JOIN tag_desc td ON th.super_tag_id = td.id
+            )
+            SELECT {_TAG_COLS}
+            FROM tag_desc td
+            JOIN tag t ON t.id = td.id
+            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id""",
+        {"tag_id": tag_id},
+        return_type="rows",
+    )
+    if not tag_rows:
+        return {"type_id": tag_id, "type_name": "", "tags": [], "hierarchy": []}
+
+    tag_id_set = {r["id"] for r in tag_rows}
+    root_name = next((r["name"] for r in tag_rows if r["id"] == tag_id), "")
+
+    if len(tag_id_set) > 1:
+        h_ids = list(tag_id_set)
+        h_args = {f"h_{i}": tid for i, tid in enumerate(h_ids)}
+        h_in = ", ".join(f"%(h_{i})s" for i in range(len(h_ids)))
+        hierarchy_rows = db.execute_query(  # nosec B608
+            f"SELECT super_tag_id, sub_tag_id FROM tag_hierarchy WHERE super_tag_id IN ({h_in}) AND sub_tag_id IN ({h_in})",
+            h_args,
+            return_type="rows",
+        )
+    else:
+        hierarchy_rows = []
+
+    tags = []
+    for r in tag_rows:
+        tags.append({
+            "id": r["id"],
+            "name": r["name"],
+            "description": r.get("description"),
+            "tag_type_id": r.get("tag_type_id"),
+            "tag_type_name": r.get("tag_type_name"),
+            "tag_type_description": r.get("tag_type_description"),
+            "tag_type_notes": r.get("tag_type_notes"),
+            "tag_type_entity_affinity": r.get("tag_type_entity_affinity"),
+            "assignment_notes": None,
+            "notes_recommended": True,
+            "create_date": None,
+            "update_date": None,
+        })
+
+    hierarchy = [{"super_tag_id": h["super_tag_id"], "sub_tag_id": h["sub_tag_id"]} for h in hierarchy_rows]
+
+    return {
+        "type_id": tag_id,
+        "type_name": root_name,
+        "tags": tags,
+        "hierarchy": hierarchy,
+    }
+
+
+def get_tag_kernel_accounts(
+        tag_id: int,
+        transform: Optional[SearchResultTransform] = None,
+) -> TagKernelResponse:
+    """Return all accounts tagged with tag_id or any of its descendants, with applied tags."""
+    tag_account_rows = db.execute_query(  # nosec B608
+        f"""WITH RECURSIVE tag_desc AS (
+                SELECT id FROM tag WHERE id = %(tag_id)s
+                UNION ALL
+                SELECT th.sub_tag_id FROM tag_hierarchy th
+                JOIN tag_desc td ON th.super_tag_id = td.id
+            )
+            SELECT at.account_id, {_TAG_COLS}
+            FROM account_tag at
+            JOIN tag t ON at.tag_id = t.id
+            JOIN tag_desc td ON at.tag_id = td.id
+            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id""",
+        {"tag_id": tag_id},
+        return_type="rows",
+    )
+
+    if not tag_account_rows:
+        return TagKernelResponse(accounts=[], dropdown=get_community_tag_dropdown(tag_id))
+
+    applied_tags_map: dict[int, list[dict]] = {}
+    for r in tag_account_rows:
+        aid = r["account_id"]
+        if aid not in applied_tags_map:
+            applied_tags_map[aid] = []
+        applied_tags_map[aid].append({
+            "id": r["id"],
+            "name": r["name"],
+            "description": r.get("description"),
+            "tag_type_id": r.get("tag_type_id"),
+            "tag_type_name": r.get("tag_type_name"),
+            "tag_type_description": r.get("tag_type_description"),
+            "tag_type_notes": r.get("tag_type_notes"),
+            "tag_type_entity_affinity": r.get("tag_type_entity_affinity"),
+            "assignment_notes": None,
+            "notes_recommended": True,
+            "create_date": None,
+            "update_date": None,
+        })
+
+    account_ids = list(applied_tags_map.keys())
+    cand_args = {f"c_{i}": aid for i, aid in enumerate(account_ids)}
+    cand_in = ", ".join(f"%(c_{i})s" for i in range(len(account_ids)))
+
+    account_rows = db.execute_query(  # nosec B608
+        f"SELECT id, url_suffix, display_name, bio FROM account WHERE id IN ({cand_in})",
+        cand_args,
+        return_type="rows",
+    )
+    account_map = {r["id"]: r for r in account_rows}
+
+    thumb_rows = db.execute_query(  # nosec B608
+        f"""SELECT account_id, thumbnail_path, local_url, media_count
+            FROM (
+                SELECT account_id, thumbnail_path, local_url,
+                       COUNT(*) OVER (PARTITION BY account_id) AS media_count,
+                       ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY publication_date DESC) AS rn
+                FROM media
+                WHERE account_id IN ({cand_in})
+                  AND local_url IS NOT NULL
+            ) ranked
+            WHERE rn <= 8""",
+        cand_args,
+        return_type="rows",
+    )
+
+    thumb_map: dict[int, list[str]] = {}
+    media_count_map: dict[int, int] = {}
+    should_sign = transform is not None and transform.access_token is not None
+    for t in thumb_rows:
+        aid = t["account_id"]
+        media_count_map[aid] = t["media_count"]
+        path = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if path:
+            if should_sign:
+                path = sign_thumbnail_path(path, transform)
+            thumb_map.setdefault(aid, []).append(path)
+
+    accounts = []
+    for aid in account_ids:
+        acct = account_map.get(aid)
+        if not acct:
+            continue
+        accounts.append(TagKernelAccount(
+            id=aid,
+            url_suffix=acct.get("url_suffix"),
+            display_name=acct.get("display_name"),
+            bio=acct.get("bio"),
+            thumbnails=thumb_map.get(aid, []),
+            media_count=media_count_map.get(aid, 0),
+            applied_tags=applied_tags_map[aid],
+        ))
+
+    return TagKernelResponse(accounts=accounts, dropdown=get_community_tag_dropdown(tag_id))
