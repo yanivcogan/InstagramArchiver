@@ -15,7 +15,7 @@ create table account
     create_date    timestamp default CURRENT_TIMESTAMP                                         not null,
     update_date    timestamp default CURRENT_TIMESTAMP                                         not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform varchar(100)                                                                null,
-    url_suffix     varchar(200)                                                                not null,
+    url_suffix     varchar(200)                                                                null,
     identifiers    json                                                                        null,
     display_name   varchar(100)                                                                null,
     bio            varchar(200)                                                                null,
@@ -106,7 +106,7 @@ create table account_archive
     canonical_id       int                                                                         null,
     archive_session_id int                                                                         null,
     id_on_platform     varchar(100)                                                                null,
-    url_suffix         varchar(200)                                                                not null,
+    url_suffix         varchar(200)                                                                null,
     display_name       varchar(100)                                                                null,
     bio                varchar(200)                                                                null,
     data               json                                                                        null,
@@ -322,7 +322,7 @@ create table media
     create_date      timestamp                                            default CURRENT_TIMESTAMP not null,
     update_date      timestamp                                            default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
     id_on_platform   varchar(100)                                                                   null,
-    url_suffix       varchar(250)                                                                   not null,
+    url_suffix       varchar(250)                                                                   null,
     post_id          int                                                                            null,
     local_url        varchar(500)                                                                   null,
     media_type       enum ('video', 'audio', 'image')                                               not null,
@@ -382,7 +382,7 @@ create table media_archive
     canonical_id        int                                                                         null,
     archive_session_id  int                                                                         null,
     id_on_platform      varchar(100)                                                                null,
-    url_suffix          varchar(250)                                                                not null,
+    url_suffix          varchar(250)                                                                null,
     post_url_suffix     varchar(250)                                                                null,
     post_id_on_platform varchar(100)                                                                null,
     local_url           varchar(500)                                                                null,
@@ -571,13 +571,13 @@ create table tag_type
 (
     id              int auto_increment
         primary key,
-    create_date     timestamp default CURRENT_TIMESTAMP not null,
-    update_date     timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    name            varchar(200)                        not null,
-    description     text                                null,
-    notes           text                                null,
-    entity_affinity json                                null comment 'e.g. ["account","post"] — which entity types this type is most used for. NULL = unrestricted.',
-    quick_access    tinyint(1) default 0               not null
+    create_date     timestamp  default CURRENT_TIMESTAMP not null,
+    update_date     timestamp  default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    name            varchar(200)                         not null,
+    description     text                                 null,
+    notes           text                                 null,
+    entity_affinity json                                 null comment 'e.g. ["account","post"] — which entity types this type is most used for. NULL = unrestricted.',
+    quick_access    tinyint(1) default 0                 not null
 )
     engine = InnoDB;
 
@@ -782,20 +782,25 @@ create index tagged_account_archive_tagged_id_on_platform_index
 
 create table user
 (
-    id               int auto_increment
+    id                  int auto_increment
         primary key,
-    create_date      datetime  default CURRENT_TIMESTAMP not null,
-    update_date      timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
-    email            varchar(200) charset utf8mb3        not null,
-    locked           tinyint   default 0                 not null,
-    password_hash    varchar(255) charset utf8mb3        null,
-    password_alg     varchar(20) charset utf8mb3         null,
-    password_set_at  datetime                            null,
-    last_pwd_failure datetime                            null,
-    force_pwd_reset  tinyint   default 0                 not null,
-    last_login       datetime                            null,
-    login_attempts   int       default 0                 not null,
-    admin            tinyint   default 0                 not null,
+    create_date         datetime    default CURRENT_TIMESTAMP not null,
+    update_date         timestamp   default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP invisible,
+    email               varchar(200) charset utf8mb3          not null,
+    locked              tinyint     default 0                 not null,
+    password_hash       varchar(255) charset utf8mb3          null,
+    password_alg        varchar(20) charset utf8mb3           null,
+    password_set_at     datetime                              null,
+    last_pwd_failure    datetime                              null,
+    force_pwd_reset     tinyint     default 0                 not null,
+    last_login          datetime                              null,
+    login_attempts      int         default 0                 not null,
+    admin               tinyint     default 0                 not null,
+    totp_configured     tinyint(1)  default 0                 not null,
+    totp_secret         varchar(64)                           null,
+    totp_method         varchar(20) default 'totp'            null,
+    totp_pending_secret varchar(64)                           null,
+    totp_last_used_at   datetime                              null,
     constraint email
         unique (email)
 )
@@ -814,6 +819,8 @@ create table entity_share_link
     link_suffix               varchar(100)                                                         not null,
     include_screen_recordings tinyint   default 1                                                  not null,
     include_har               tinyint   default 1                                                  not null,
+    password_hash             varchar(255)                                                         null,
+    password_alg              varchar(20)                                                          null,
     constraint entity_share_link_pk
         unique (link_suffix),
     constraint entity_share_link_user_id_fk
@@ -823,6 +830,23 @@ create table entity_share_link
 
 create index entity_share_link_entity_entity_id_index
     on entity_share_link (entity, entity_id);
+
+create table pre_auth_token
+(
+    id          int auto_increment
+        primary key,
+    user_id     int                                   not null,
+    token       varchar(64)                           not null,
+    create_date datetime    default CURRENT_TIMESTAMP not null,
+    expires_at  datetime                              not null,
+    purpose     varchar(32) default 'unknown'         not null,
+    constraint uq_pre_auth_token
+        unique (token),
+    constraint fk_pre_auth_user
+        foreign key (user_id) references user (id)
+            on delete cascade
+)
+    engine = InnoDB;
 
 create table token
 (
