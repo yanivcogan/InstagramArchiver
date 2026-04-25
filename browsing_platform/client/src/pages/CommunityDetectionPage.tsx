@@ -1,5 +1,6 @@
-import React, {useMemo, useState} from 'react';
+import React, {useMemo, useRef, useState} from 'react';
 import {
+    Alert,
     Autocomplete,
     Box,
     Button,
@@ -16,6 +17,7 @@ import {
     IconButton,
     Link,
     Paper,
+    Snackbar,
     Stack,
     TextField,
     Tooltip,
@@ -26,6 +28,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import {SearchResultThumbnails} from '../UIComponents/SearchResults/SearchResultParts';
 import NumberField from '../UIComponents/MUINumberField/NumberField';
@@ -48,8 +52,30 @@ import {
     TieWeights,
 } from '../services/DataFetcher';
 import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
+import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
+const stripThumbnails = <T extends {thumbnails?: string[]}>(obj: T): T => ({...obj, thumbnails: []});
+
+// ── Serialisable state (export / import) ──────────────────────────────────────
+
+interface CommunityStateExport {
+    version: 1;
+    community_tag: ITagWithType | null;
+    community_dropdown: IQuickAccessTypeDropdown | null;
+    kernel: Array<{account: SearchResult; manuallyAdded: boolean; tagSources: ITagWithType[]}>;
+    weights: TieWeights;
+    excluded: CandidateAccount[];
+}
+
+function isCommunityStateExport(v: unknown): v is CommunityStateExport {
+    if (!v || typeof v !== 'object') return false;
+    const s = v as Record<string, unknown>;
+    return s.version === 1
+        && Array.isArray(s.kernel)
+        && s.weights !== null && typeof s.weights === 'object'
+        && Array.isArray(s.excluded);
+}
 
 // ── Kernel entry type ─────────────────────────────────────────────────────────
 
@@ -389,6 +415,10 @@ export default function CommunityDetectionPage() {
     const [excludedAccounts, setExcludedAccounts] = useState<CandidateAccount[]>([]);
     const [excludedOpen, setExcludedOpen] = useState(false);
 
+    // Export / import
+    const [importError, setImportError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     React.useEffect(() => {
         document.title = 'Community Detection | Browsing Platform';
     }, []);
@@ -622,6 +652,59 @@ export default function CommunityDetectionPage() {
         setExcludedAccounts(prev => [...prev, ...visibleCandidates.filter(c => c.is_verified === true)]);
     };
 
+    // ── Export / import ───────────────────────────────────────────────────────
+
+    const exportState = () => {
+        const state: CommunityStateExport = {
+            version: 1,
+            community_tag: communityTag,
+            community_dropdown: communityDropdown,
+            kernel: kernelEntries.map(({account, manuallyAdded, tagSources}) => ({
+                account: stripThumbnails(account),
+                manuallyAdded,
+                tagSources,
+            })),
+            weights,
+            excluded: excludedAccounts.map(stripThumbnails),
+        };
+        downloadTextFile(
+            JSON.stringify(state, null, 2),
+            `community-${new Date().toISOString().slice(0, 10)}.json`,
+            'application/json',
+        );
+    };
+
+    const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = '';
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const parsed = JSON.parse(ev.target?.result as string);
+                if (!isCommunityStateExport(parsed)) {
+                    setImportError('Invalid state file — missing required fields or wrong version.');
+                    return;
+                }
+                setCommunityTag(parsed.community_tag);
+                setCommunityDropdown(parsed.community_dropdown);
+                setKernelEntries(parsed.kernel.map(e => ({
+                    account: stripThumbnails(e.account),
+                    manuallyAdded: e.manuallyAdded,
+                    tagSources: e.tagSources,
+                })));
+                setWeights({...DEFAULT_TIE_WEIGHTS, ...parsed.weights});
+                setExcludedAccounts(parsed.excluded.map(stripThumbnails));
+                setCandidates([]);
+                setCandidateAllTags({});
+                setHasRun(false);
+            } catch {
+                setImportError('Could not parse file — make sure it is a valid JSON export.');
+            }
+        };
+        reader.readAsText(file);
+    };
+
     // ── Community tag selector label ──────────────────────────────────────────
 
     const communityTagLabel = communityTag
@@ -636,6 +719,51 @@ export default function CommunityDetectionPage() {
         <div className="page-wrap">
             <TopNavBar>Community Detection</TopNavBar>
             <div className="page-content content-wrap">
+
+                {/* ── Hidden file input for import ─────────────────────────── */}
+                <input
+                    type="file"
+                    accept=".json"
+                    style={{display: 'none'}}
+                    ref={fileInputRef}
+                    onChange={handleImportFile}
+                />
+
+                {/* ── Export / import bar ───────────────────────────────────── */}
+                <Stack direction="row" justifyContent="flex-end" gap={1} sx={{mb: 1.5}}>
+                    <Tooltip title="Load a previously exported state file">
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<FileUploadOutlinedIcon/>}
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            Import state
+                        </Button>
+                    </Tooltip>
+                    <Tooltip title="Save current kernel, weights and exclusions to a JSON file">
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<FileDownloadOutlinedIcon/>}
+                            onClick={exportState}
+                        >
+                            Export state
+                        </Button>
+                    </Tooltip>
+                </Stack>
+
+                {/* ── Import error snackbar ─────────────────────────────────── */}
+                <Snackbar
+                    open={importError !== null}
+                    autoHideDuration={5000}
+                    onClose={() => setImportError(null)}
+                    anchorOrigin={{vertical: 'bottom', horizontal: 'center'}}
+                >
+                    <Alert severity="error" onClose={() => setImportError(null)} variant="filled">
+                        {importError}
+                    </Alert>
+                </Snackbar>
 
                 {/* ── Kernel modal ─────────────────────────────────────────── */}
                 <Dialog open={kernelModalOpen} onClose={() => setKernelModalOpen(false)}

@@ -25,6 +25,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import {toast} from 'material-react-toastify';
 import {ITagImportExecuteResponse, ITagImportRowInput, ITagImportRowParsed,} from '../../types/tags';
 import {executeTagImport, previewTagImport} from '../../services/TagManagementService';
+import {downloadTextFile} from '../../services/utils';
 
 const STEPS = ['Upload File', 'Preview & Edit', 'Results'];
 
@@ -35,13 +36,7 @@ const TEMPLATE_CSV =
     'Parent Tag 2,My Type,,false,\n';
 
 function downloadTemplate() {
-    const blob = new Blob([TEMPLATE_CSV], {type: 'text/csv'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'tag_import_template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(TEMPLATE_CSV, 'tag_import_template.csv', 'text/csv');
 }
 
 /* ── Step 0: Upload ──────────────────────────────────────────────────────────── */

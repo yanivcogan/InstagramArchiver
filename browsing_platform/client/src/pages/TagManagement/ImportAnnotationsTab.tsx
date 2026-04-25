@@ -39,6 +39,7 @@ import {
     ITagWithType,
 } from '../../types/tags';
 import {executeAnnotationImport, previewAnnotationImport} from '../../services/TagManagementService';
+import {downloadTextFile} from '../../services/utils';
 import TagSelector from '../../UIComponents/Tags/TagSelector';
 
 const STEPS = ['Upload File', 'Preview & Edit', 'Results'];
@@ -51,13 +52,7 @@ const TEMPLATE_CSV =
     'post,456,Example Tag,,\n';
 
 function downloadTemplate() {
-    const blob = new Blob([TEMPLATE_CSV], {type: 'text/csv'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'annotation_import_template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(TEMPLATE_CSV, 'annotation_import_template.csv', 'text/csv');
 }
 
 function rowsToCSV(rows: IAnnotationImportRowInput[]): File {
