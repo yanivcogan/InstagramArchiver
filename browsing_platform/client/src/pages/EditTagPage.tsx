@@ -1,5 +1,5 @@
-import React, {useEffect, useState} from 'react';
-import {Link, useNavigate, useParams} from 'react-router';
+import React, {useEffect, useMemo, useState} from 'react';
+import {useNavigate, useParams} from 'react-router';
 import {
     Autocomplete,
     Box,
@@ -21,6 +21,7 @@ import {
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
+import TagUsageTabs from '../UIComponents/TagUsageTabs/TagUsageTabs';
 import {ITagHierarchyEntry, ITagType, ITagUsage, ITagWithType} from '../types/tags';
 import {
     addHierarchy,
@@ -35,38 +36,6 @@ import {
 } from '../services/TagManagementService';
 import {lookupTags} from '../services/DataFetcher';
 import {toast} from 'material-react-toastify';
-
-/* ── Usage summary ────────────────────────────────────────────────────────── */
-
-function UsageSummary({usage, tagId}: {usage: ITagUsage | null; tagId: number}) {
-    if (!usage) return <CircularProgress size={10}/>;
-    const total = usage.accounts + usage.posts + usage.media + usage.media_parts;
-    if (total === 0) return <Typography variant="caption" color="text.secondary">Unused</Typography>;
-    const parts: React.ReactNode[] = [];
-    if (usage.accounts) parts.push(
-        <Link key="accounts" to={`/search?sm=accounts&t=${tagId}`} style={{fontSize: 'inherit'}}>
-            {usage.accounts} {usage.accounts === 1 ? 'account' : 'accounts'}
-        </Link>
-    );
-    if (usage.posts) parts.push(
-        <Link key="posts" to={`/search?sm=posts&t=${tagId}`} style={{fontSize: 'inherit'}}>
-            {usage.posts} {usage.posts === 1 ? 'post' : 'posts'}
-        </Link>
-    );
-    if (usage.media) parts.push(
-        <Link key="media" to={`/search?sm=media&t=${tagId}`} style={{fontSize: 'inherit'}}>
-            {usage.media} media
-        </Link>
-    );
-    if (usage.media_parts) parts.push(
-        <span key="parts">{usage.media_parts} {usage.media_parts === 1 ? 'part' : 'parts'}</span>
-    );
-    return (
-        <Typography variant="caption" color="text.secondary">
-            {parts.reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
-        </Typography>
-    );
-}
 
 /* ── Hierarchy section ────────────────────────────────────────────────────── */
 
@@ -184,6 +153,7 @@ export default function EditTagPage() {
         name: '', description: '', tag_type_id: null, quick_access: false, omit_from_tag_type_dropdown: false, notes_recommended: true,
     });
     const [usage, setUsage] = useState<ITagUsage | null>(null);
+    const [refreshKey, setRefreshKey] = useState(0);
     const [hierarchyParents, setHierarchyParents] = useState<ITagHierarchyEntry[]>([]);
     const [hierarchyChildren, setHierarchyChildren] = useState<ITagHierarchyEntry[]>([]);
     const [addParentTag, setAddParentTag] = useState<ITagWithType | null>(null);
@@ -191,6 +161,11 @@ export default function EditTagPage() {
     const [addChildTag, setAddChildTag] = useState<ITagWithType | null>(null);
     const [addChildOptions, setAddChildOptions] = useState<ITagWithType[]>([]);
     const [editingNote, setEditingNote] = useState<{super_id: number; sub_id: number; notes: string} | null>(null);
+
+    const entityAffinity = useMemo<string[] | null>(() => {
+        if (!form.tag_type_id) return null;
+        return tagTypes.find(tt => tt.id === form.tag_type_id)?.entity_affinity ?? null;
+    }, [form.tag_type_id, tagTypes]);
 
     useEffect(() => {
         if (!tagId) return;
@@ -228,9 +203,15 @@ export default function EditTagPage() {
 
     const loadHierarchy = async () => {
         try {
-            const [parents, children] = await Promise.all([fetchTagParents(tagId), fetchTagChildren(tagId)]);
+            const [parents, children, tagUsage] = await Promise.all([
+                fetchTagParents(tagId),
+                fetchTagChildren(tagId),
+                fetchTagUsage(tagId),
+            ]);
             setHierarchyParents(parents);
             setHierarchyChildren(children);
+            setUsage(tagUsage);
+            setRefreshKey(k => k + 1);
         } catch (e: any) {
             toast.error(e?.message || 'Failed to refresh hierarchy');
         }
@@ -315,95 +296,102 @@ export default function EditTagPage() {
         <div className="page-wrap">
             <TopNavBar>Edit Tag: {form.name}</TopNavBar>
             <div className="page-content content-wrap">
-                <Stack gap={2} sx={{maxWidth: 600}}>
-                    <TextField
-                        label="Name"
-                        value={form.name}
-                        onChange={e => setForm(f => ({...f, name: e.target.value}))}
-                        error={form.name.includes(',')}
-                        helperText={form.name.includes(',') ? 'Tag name cannot contain commas' : undefined}
-                        required
-                    />
-                    <TextField
-                        label="Description"
-                        value={form.description}
-                        onChange={e => setForm(f => ({...f, description: e.target.value}))}
-                    />
-                    <FormControl size="small">
-                        <InputLabel>Tag Type</InputLabel>
-                        <Select
-                            value={form.tag_type_id ?? ''}
-                            label="Tag Type"
-                            onChange={e => setForm(f => ({...f, tag_type_id: e.target.value ? Number(e.target.value) : null}))}
-                        >
-                            <MenuItem value=""><em>None</em></MenuItem>
-                            {tagTypes.map(tt => <MenuItem key={tt.id} value={tt.id}>{tt.name}</MenuItem>)}
-                        </Select>
-                    </FormControl>
-                    <FormControlLabel
-                        control={<Checkbox checked={form.quick_access} onChange={e => setForm(f => ({...f, quick_access: e.target.checked}))}/>}
-                        label="Quick access (show as shortcut button in annotator)"
-                    />
-                    <FormControlLabel
-                        control={<Checkbox checked={form.notes_recommended} onChange={e => setForm(f => ({...f, notes_recommended: e.target.checked}))}/>}
-                        label="Prompt for notes on quick-assign"
-                    />
-                    <FormControlLabel
-                        control={<Checkbox checked={form.omit_from_tag_type_dropdown} onChange={e => setForm(f => ({...f, omit_from_tag_type_dropdown: e.target.checked}))}/>}
-                        label="Exclude from type dropdown (when type has quick access)"
-                    />
+                <Stack gap={2}>
+                    <Stack gap={2} sx={{maxWidth: 600}}>
+                        <TextField
+                            label="Name"
+                            value={form.name}
+                            onChange={e => setForm(f => ({...f, name: e.target.value}))}
+                            error={form.name.includes(',')}
+                            helperText={form.name.includes(',') ? 'Tag name cannot contain commas' : undefined}
+                            required
+                        />
+                        <TextField
+                            label="Description"
+                            value={form.description}
+                            onChange={e => setForm(f => ({...f, description: e.target.value}))}
+                        />
+                        <FormControl size="small">
+                            <InputLabel>Tag Type</InputLabel>
+                            <Select
+                                value={form.tag_type_id ?? ''}
+                                label="Tag Type"
+                                onChange={e => setForm(f => ({...f, tag_type_id: e.target.value ? Number(e.target.value) : null}))}
+                            >
+                                <MenuItem value=""><em>None</em></MenuItem>
+                                {tagTypes.map(tt => <MenuItem key={tt.id} value={tt.id}>{tt.name}</MenuItem>)}
+                            </Select>
+                        </FormControl>
+                        <FormControlLabel
+                            control={<Checkbox checked={form.quick_access} onChange={e => setForm(f => ({...f, quick_access: e.target.checked}))}/>}
+                            label="Quick access (show as shortcut button in annotator)"
+                        />
+                        <FormControlLabel
+                            control={<Checkbox checked={form.notes_recommended} onChange={e => setForm(f => ({...f, notes_recommended: e.target.checked}))}/>}
+                            label="Prompt for notes on quick-assign"
+                        />
+                        <FormControlLabel
+                            control={<Checkbox checked={form.omit_from_tag_type_dropdown} onChange={e => setForm(f => ({...f, omit_from_tag_type_dropdown: e.target.checked}))}/>}
+                            label="Exclude from type dropdown (when type has quick access)"
+                        />
+
+                        <Divider/>
+                        <Typography variant="subtitle2">Hierarchy</Typography>
+                        <HierarchyTagSection
+                            label="Parents (supertags)"
+                            entries={hierarchyParents}
+                            getEntryId={e => e.super_tag_id}
+                            getEntryTagName={e => e.super_tag_name}
+                            editingNote={editingNote}
+                            setEditingNote={setEditingNote}
+                            onRemove={handleRemoveParent}
+                            onNoteUpdate={notes => updateHierarchyNotes(editingNote!.super_id, editingNote!.sub_id, notes)}
+                            setEntries={setHierarchyParents}
+                            addTag={addParentTag}
+                            setAddTag={setAddParentTag}
+                            addOptions={addParentOptions}
+                            setAddOptions={setAddParentOptions}
+                            onAdd={handleAddParent}
+                            addLabel="Add parent"
+                        />
+                        <HierarchyTagSection
+                            label="Children (subtags)"
+                            entries={hierarchyChildren}
+                            getEntryId={e => e.sub_tag_id}
+                            getEntryTagName={e => e.sub_tag_name}
+                            editingNote={editingNote}
+                            setEditingNote={setEditingNote}
+                            onRemove={handleRemoveChild}
+                            onNoteUpdate={notes => updateHierarchyNotes(editingNote!.super_id, editingNote!.sub_id, notes)}
+                            setEntries={setHierarchyChildren}
+                            addTag={addChildTag}
+                            setAddTag={setAddChildTag}
+                            addOptions={addChildOptions}
+                            setAddOptions={setAddChildOptions}
+                            onAdd={handleAddChild}
+                            addLabel="Add child"
+                        />
+
+                        <Box sx={{display: 'flex', gap: 1, pt: 1}}>
+                            <Button variant="outlined" onClick={() => navigate('/tags?tab=tags')}>Cancel</Button>
+                            <Button
+                                variant="contained"
+                                onClick={handleSave}
+                                disabled={form.name.includes(',') || !form.name.trim()}
+                            >
+                                Save
+                            </Button>
+                        </Box>
+                    </Stack>
 
                     <Divider/>
-                    <Typography variant="subtitle2">Hierarchy</Typography>
-                    <HierarchyTagSection
-                        label="Parents (supertags)"
-                        entries={hierarchyParents}
-                        getEntryId={e => e.super_tag_id}
-                        getEntryTagName={e => e.super_tag_name}
-                        editingNote={editingNote}
-                        setEditingNote={setEditingNote}
-                        onRemove={handleRemoveParent}
-                        onNoteUpdate={notes => updateHierarchyNotes(editingNote!.super_id, editingNote!.sub_id, notes)}
-                        setEntries={setHierarchyParents}
-                        addTag={addParentTag}
-                        setAddTag={setAddParentTag}
-                        addOptions={addParentOptions}
-                        setAddOptions={setAddParentOptions}
-                        onAdd={handleAddParent}
-                        addLabel="Add parent"
-                    />
-                    <HierarchyTagSection
-                        label="Children (subtags)"
-                        entries={hierarchyChildren}
-                        getEntryId={e => e.sub_tag_id}
-                        getEntryTagName={e => e.sub_tag_name}
-                        editingNote={editingNote}
-                        setEditingNote={setEditingNote}
-                        onRemove={handleRemoveChild}
-                        onNoteUpdate={notes => updateHierarchyNotes(editingNote!.super_id, editingNote!.sub_id, notes)}
-                        setEntries={setHierarchyChildren}
-                        addTag={addChildTag}
-                        setAddTag={setAddChildTag}
-                        addOptions={addChildOptions}
-                        setAddOptions={setAddChildOptions}
-                        onAdd={handleAddChild}
-                        addLabel="Add child"
-                    />
 
-                    <Divider/>
-                    <Typography variant="subtitle2">Usage</Typography>
-                    <UsageSummary usage={usage} tagId={tagId}/>
-
-                    <Box sx={{display: 'flex', gap: 1, pt: 1}}>
-                        <Button variant="outlined" onClick={() => navigate('/tags?tab=tags')}>Cancel</Button>
-                        <Button
-                            variant="contained"
-                            onClick={handleSave}
-                            disabled={form.name.includes(',') || !form.name.trim()}
-                        >
-                            Save
-                        </Button>
-                    </Box>
+                    <TagUsageTabs
+                        tagId={tagId}
+                        usage={usage}
+                        entityAffinity={entityAffinity}
+                        refreshKey={refreshKey}
+                    />
                 </Stack>
             </div>
         </div>

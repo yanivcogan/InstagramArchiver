@@ -297,19 +297,40 @@ def delete_tag(tag_id: int) -> tuple[bool, str]:
 
 
 def get_tag_usage_counts(tag_id: int) -> ITagUsage:
-    def count(table: str, col: str) -> int:
-        row = db.execute_query(
-            f"SELECT COUNT(*) AS cnt FROM {table} WHERE {col} = %(id)s",
-            {"id": tag_id},
-            return_type="single_row"
+    # Counts entities tagged with tag_id or any of its descendants (hierarchy-aware),
+    # matching the recursive expansion used by the search page's tag filter.
+    # A single query computes all four counts in one CTE pass.
+    row = db.execute_query(
+        """
+        WITH RECURSIVE tag_desc AS (
+            SELECT id FROM tag WHERE id = %(id)s
+            UNION ALL
+            SELECT th.sub_tag_id FROM tag_hierarchy th JOIN tag_desc td ON th.super_tag_id = td.id
+        ),
+        all_tagged AS (
+            SELECT 'account'    AS entity_type, account_id    AS entity_id FROM account_tag    WHERE tag_id IN (SELECT id FROM tag_desc)
+            UNION ALL
+            SELECT 'post',                       post_id                    FROM post_tag        WHERE tag_id IN (SELECT id FROM tag_desc)
+            UNION ALL
+            SELECT 'media',                      media_id                   FROM media_tag       WHERE tag_id IN (SELECT id FROM tag_desc)
+            UNION ALL
+            SELECT 'media_part',                 media_part_id              FROM media_part_tag  WHERE tag_id IN (SELECT id FROM tag_desc)
         )
-        return row["cnt"] if row else 0
-
+        SELECT
+            COUNT(DISTINCT CASE WHEN entity_type = 'account'    THEN entity_id END) AS accounts,
+            COUNT(DISTINCT CASE WHEN entity_type = 'post'       THEN entity_id END) AS posts,
+            COUNT(DISTINCT CASE WHEN entity_type = 'media'      THEN entity_id END) AS media,
+            COUNT(DISTINCT CASE WHEN entity_type = 'media_part' THEN entity_id END) AS media_parts
+        FROM all_tagged
+        """,
+        {"id": tag_id},
+        return_type="single_row"
+    )
     return ITagUsage(
-        accounts=count("account_tag", "tag_id"),
-        posts=count("post_tag", "tag_id"),
-        media=count("media_tag", "tag_id"),
-        media_parts=count("media_part_tag", "tag_id"),
+        accounts=row["accounts"] if row else 0,
+        posts=row["posts"] if row else 0,
+        media=row["media"] if row else 0,
+        media_parts=row["media_parts"] if row else 0,
     )
 
 
