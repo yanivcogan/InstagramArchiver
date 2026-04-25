@@ -464,26 +464,26 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
     return results
 
 
+def sign_thumbnail_path(path: str, transform: SearchResultTransform) -> str:
+    if LOCAL_ARCHIVES_DIR_ALIAS in path:
+        local_path = path.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+    elif LOCAL_THUMBNAILS_DIR_ALIAS in path:
+        local_path = path.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
+    else:
+        local_path = path
+    parsed = urlparse(local_path)
+    qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    qs['ft'] = generate_file_token(
+        transform.access_token,
+        local_path.split(f"{transform.local_files_root}")[-1]
+    )
+    return str(urlunparse(parsed._replace(query=urlencode(qs, doseq=True))))
+
+
 def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTransform) -> SearchResult:
     if not res.thumbnails:
         return res
-    for i in range(len(res.thumbnails)):
-        thumb: str = res.thumbnails[i]
-        if LOCAL_ARCHIVES_DIR_ALIAS in thumb:
-            local_path = thumb.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
-        elif LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
-            local_path = thumb.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
-        else:
-            local_path = thumb
-        parsed = urlparse(local_path)
-        qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        qs['ft'] = generate_file_token(
-            transform.access_token,
-            local_path.split(f"{transform.local_files_root}")[-1]
-        )
-        new_query = urlencode(qs, doseq=True)
-        local_signed_url = str(urlunparse(parsed._replace(query=new_query)))
-        res.thumbnails[i] = local_signed_url
+    res.thumbnails = [sign_thumbnail_path(t, transform) for t in res.thumbnails]
     return res
 
 

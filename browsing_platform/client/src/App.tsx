@@ -27,6 +27,7 @@ import TagManagementPage from "./pages/TagManagementPage";
 import EditTagPage from "./pages/EditTagPage";
 import SecuritySettings from "./pages/SecuritySettings";
 import AdminUsersPage from "./pages/AdminUsersPage";
+import CommunityDetectionPage from "./pages/CommunityDetectionPage";
 import SharePasswordGate from "./UIComponents/LinkSharing/SharePasswordGate";
 
 export default function App() {
@@ -78,6 +79,7 @@ export default function App() {
                     <Route path="/media/:id" element={<SharePasswordGate><MediaPage/></SharePasswordGate>}/>
                     <Route path="/archive/:id" element={<SharePasswordGate><SessionPage/></SharePasswordGate>}/>
                     <Route path="/search" element={<SearchPage/>}/>
+                    <Route path="/community" element={<CommunityDetectionPage/>}/>
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>
                     <Route path="/tags" element={<TagManagementPage/>}/>

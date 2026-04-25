@@ -21,6 +21,7 @@ import UploadIcon from "@mui/icons-material/Upload";
 import StorageIcon from "@mui/icons-material/Storage";
 import LogoutIcon from '@mui/icons-material/Logout';
 import LocalOfferIcon from '@mui/icons-material/LocalOffer';
+import HubIcon from '@mui/icons-material/Hub';
 import SecurityIcon from '@mui/icons-material/Security';
 import PeopleIcon from '@mui/icons-material/People';
 
@@ -89,6 +90,10 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                     <ListItemButton onClick={() => goToPage("tags")} href={"/tags"}>
                         <ListItemIcon><LocalOfferIcon/></ListItemIcon>
                         <ListItemText primary="Tags"/>
+                    </ListItemButton>
+                    <ListItemButton onClick={() => goToPage("community")} href={"/community"}>
+                        <ListItemIcon><HubIcon/></ListItemIcon>
+                        <ListItemText primary="Community Detection"/>
                     </ListItemButton>
                     {isAdmin && (<ListItemButton onClick={() => goToPage("upload")} href={"/upload"}>
                         <ListItemIcon><UploadIcon/></ListItemIcon>

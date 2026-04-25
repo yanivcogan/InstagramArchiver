@@ -21,12 +21,14 @@ export default function NumberField({
   id: idProp,
   label,
   error,
+  helperText,
   size = 'medium',
   ...other
 }: BaseNumberField.Root.Props & {
   label?: React.ReactNode;
   size?: 'small' | 'medium';
   error?: boolean;
+  helperText?: React.ReactNode;
 }) {
   let id = React.useId();
   if (idProp) {
@@ -106,7 +108,7 @@ export default function NumberField({
         )}
       />
       <FormHelperText sx={{ ml: 0, '&:empty': { mt: 0 } }}>
-        Enter value between 10 and 40
+        {helperText}
       </FormHelperText>
     </BaseNumberField.Root>
   );

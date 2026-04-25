@@ -316,3 +316,47 @@ export const searchData = async (
 export const fetchRelatedTagStats = async (accountId: number): Promise<ITagStat[]> => {
     return await server.get(`account/${accountId}/related_tag_stats/`);
 }
+
+export interface TieWeights {
+    follow: number;
+    suggested: number;
+    like: number;
+    comment: number;
+    tag: number;
+}
+
+export const DEFAULT_TIE_WEIGHTS: TieWeights = {
+    follow: 1,
+    suggested: 0,
+    like: 1,
+    comment: 1,
+    tag: 1,
+};
+
+export interface CandidateAccount {
+    id: number;
+    url_suffix: string | null;
+    display_name: string | null;
+    bio: string | null;
+    is_verified: boolean | null;
+    score: number;
+    kernel_connections: number;
+    thumbnails: string[];
+    media_count: number;
+}
+
+export interface CommunityCandidatesResponse {
+    candidates: CandidateAccount[];
+}
+
+export const fetchCommunityCandidates = async (
+    kernelIds: number[],
+    excludedIds: number[],
+    weights: TieWeights,
+): Promise<CommunityCandidatesResponse> => {
+    return await server.post('community/candidates/', {
+        kernel_ids: kernelIds,
+        excluded_ids: excludedIds,
+        weights,
+    });
+};
