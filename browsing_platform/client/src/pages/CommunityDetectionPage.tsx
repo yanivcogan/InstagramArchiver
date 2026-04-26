@@ -18,13 +18,15 @@ import {
     Paper,
     Snackbar,
     Stack,
+    TextField,
     Tooltip,
     Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import AutoModeIcon from '@mui/icons-material/AutoMode';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
@@ -379,6 +381,14 @@ export default function CommunityDetectionPage() {
     // Confirmation for removing an untagged kernel account after a tag is unassigned
     const [pendingKernelRemoval, setPendingKernelRemoval] = useState<KernelEntry | null>(null);
 
+    // Evidence prompt before committing a single-account community tag assignment
+    const [pendingTagAssignment, setPendingTagAssignment] = useState<{
+        accountTitle: string;
+        tagName: string;
+        onConfirm: (evidence: string) => Promise<void>;
+    } | null>(null);
+    const [evidenceText, setEvidenceText] = useState('');
+
     // Weights
     const [weights, setWeights] = useState<TieWeights>({...DEFAULT_TIE_WEIGHTS});
 
@@ -529,12 +539,19 @@ export default function CommunityDetectionPage() {
                 setPendingKernelRemoval(entry);
             }
         } else {
-            // Add tag to account
-            await batchAnnotate('account', [entry.account.id], [{id: tag.id!}]);
-            setKernelEntries(prev => prev.map(e => {
-                if (e.account.id !== entry.account.id) return e;
-                return {...e, tagSources: [...e.tagSources, tag]};
-            }));
+            setPendingTagAssignment({
+                accountTitle: entry.account.title,
+                tagName: tag.name,
+                onConfirm: async (evidence) => {
+                    const notes = evidence.trim() ? `Evidence in support of assignment: ${evidence.trim()}` : null;
+                    await batchAnnotate('account', [entry.account.id], [{id: tag.id!, notes}]);
+                    setKernelEntries(prev => prev.map(e => {
+                        if (e.account.id !== entry.account.id) return e;
+                        return {...e, tagSources: [...e.tagSources, tag]};
+                    }));
+                },
+            });
+            setEvidenceText('');
         }
     };
 
@@ -591,29 +608,36 @@ export default function CommunityDetectionPage() {
                 [candidate.id]: (prev[candidate.id] ?? []).filter(t => t.id !== tag.id),
             }));
         } else {
-            await batchAnnotate('account', [candidate.id], [{id: tag.id!}]);
             const newTagEntry = communityDropdown?.tags.find(t => t.id === tag.id) ?? tag;
-            setCandidateAllTags(prev => ({
-                ...prev,
-                [candidate.id]: [...(prev[candidate.id] ?? []), newTagEntry],
-            }));
-            // Move candidate to kernel as a tag-based member
-            const tagSources = [newTagEntry, ...(candidateCommunityTags[candidate.id] ?? []).filter(t => t.id !== tag.id)];
-            if (!kernelIdSet.has(candidate.id)) {
-                setKernelEntries(prev => [...prev, {
-                    account: {
-                        id: candidate.id,
-                        page: 'account',
-                        title: candidateTitle(candidate),
-                        details: candidate.bio ?? undefined,
-                        thumbnails: candidate.thumbnails,
-                        metadata: {media_count: candidate.media_count},
-                    },
-                    manuallyAdded: false,
-                    tagSources,
-                }]);
-                setCandidates(prev => prev.filter(c => c.id !== candidate.id));
-            }
+            setPendingTagAssignment({
+                accountTitle: candidateTitle(candidate),
+                tagName: tag.name,
+                onConfirm: async (evidence) => {
+                    const notes = evidence.trim() ? `Evidence in support of assignment: ${evidence.trim()}` : null;
+                    await batchAnnotate('account', [candidate.id], [{id: tag.id!, notes}]);
+                    setCandidateAllTags(prev => ({
+                        ...prev,
+                        [candidate.id]: [...(prev[candidate.id] ?? []), newTagEntry],
+                    }));
+                    const tagSources = [newTagEntry, ...(candidateCommunityTags[candidate.id] ?? []).filter(t => t.id !== tag.id)];
+                    if (!kernelIdSet.has(candidate.id)) {
+                        setKernelEntries(prev => [...prev, {
+                            account: {
+                                id: candidate.id,
+                                page: 'account',
+                                title: candidateTitle(candidate),
+                                details: candidate.bio ?? undefined,
+                                thumbnails: candidate.thumbnails,
+                                metadata: {media_count: candidate.media_count},
+                            },
+                            manuallyAdded: false,
+                            tagSources,
+                        }]);
+                        setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+                    }
+                },
+            });
+            setEvidenceText('');
         }
     };
 
@@ -773,6 +797,48 @@ export default function CommunityDetectionPage() {
                             {kernelEntries.length} account{kernelEntries.length !== 1 ? 's' : ''} in kernel
                         </Typography>
                         <Button variant="contained" onClick={() => setKernelModalOpen(false)}>Done</Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* ── Evidence prompt for single-account tag assignment ─────── */}
+                <Dialog
+                    open={pendingTagAssignment !== null}
+                    onClose={() => setPendingTagAssignment(null)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle>Assign Tag</DialogTitle>
+                    <DialogContent dividers>
+                        <Stack gap={1.5}>
+                            <Typography variant="body2">
+                                Assigning <strong>{pendingTagAssignment?.tagName}</strong> to{' '}
+                                <strong>{pendingTagAssignment?.accountTitle}</strong>.
+                            </Typography>
+                            <TextField
+                                label="Evidence (explanation / link to evidence)"
+                                multiline
+                                minRows={2}
+                                fullWidth
+                                autoFocus
+                                value={evidenceText}
+                                onChange={e => setEvidenceText(e.target.value)}
+                                placeholder="Optional — paste a URL, describe a connection, or leave blank"
+                            />
+                        </Stack>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setPendingTagAssignment(null)}>Cancel</Button>
+                        <Button
+                            variant="contained"
+                            onClick={async () => {
+                                if (!pendingTagAssignment) return;
+                                await pendingTagAssignment.onConfirm(evidenceText);
+                                setPendingTagAssignment(null);
+                                setEvidenceText('');
+                            }}
+                        >
+                            Assign
+                        </Button>
                     </DialogActions>
                 </Dialog>
 
@@ -999,8 +1065,11 @@ export default function CommunityDetectionPage() {
                                     size="large"
                                     disabled={kernelIds.length === 0 || isComputing}
                                     onClick={runAnalysis}
-                                    startIcon={isComputing ? <CircularProgress size={18} color="inherit"/> :
-                                        <PlayArrowIcon/>}
+                                    startIcon={
+                                        isComputing ?
+                                            <CircularProgress size={18} color="inherit"/> :
+                                            hasRun ? <AutoModeIcon/> : <AutoAwesomeIcon/>
+                                    }
                                     sx={{minWidth: 220}}
                                 >
                                     {isComputing ? 'Analyzing…' : (hasRun ? 'Re-run Detection' : 'Run Community Detection')}
@@ -1089,7 +1158,7 @@ export default function CommunityDetectionPage() {
                                                     sx={{
                                                         flex: 1,
                                                         textDecoration: 'none',
-                                                        color: 'text.disabled',
+                                                        color: 'text.secondary',
                                                         fontSize: '0.8125rem'
                                                     }}
                                                     noWrap
