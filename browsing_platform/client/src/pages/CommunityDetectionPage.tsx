@@ -52,6 +52,7 @@ import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
 import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
+const COMMUNITY_TAG_PLACEHOLDER = 'Assign Community Tag';
 const stripThumbnails = <T extends { thumbnails?: string[] }>(obj: T): T => ({...obj, thumbnails: []});
 
 // ── Serialisable state (export / import) ──────────────────────────────────────
@@ -185,6 +186,7 @@ function KernelAccountPill({entry, communityDropdown, onRemove, onTagToggle}: Ke
                     dropdown={communityDropdown}
                     assignedTagIds={assignedTagIds}
                     onSelect={onTagToggle}
+                    placeholder={COMMUNITY_TAG_PLACEHOLDER}
                 />
             )}
 
@@ -310,6 +312,7 @@ function CandidateCard({
                             dropdown={communityDropdown}
                             assignedTagIds={assignedCommunityTagIds}
                             onSelect={onTagToggle}
+                            placeholder={COMMUNITY_TAG_PLACEHOLDER}
                         />
                         <Divider flexItem sx={{my: 0.25}}>
                             <Typography variant="caption" color="text.disabled" sx={{fontSize: '0.65rem'}}>
@@ -372,6 +375,9 @@ export default function CommunityDetectionPage() {
     } | null>(null);
     const [tagTransitionApplyToExisting, setTagTransitionApplyToExisting] = useState(false);
     const [tagTransitionLoading, setTagTransitionLoading] = useState(false);
+
+    // Confirmation for removing an untagged kernel account after a tag is unassigned
+    const [pendingKernelRemoval, setPendingKernelRemoval] = useState<KernelEntry | null>(null);
 
     // Weights
     const [weights, setWeights] = useState<TieWeights>({...DEFAULT_TIE_WEIGHTS});
@@ -439,7 +445,6 @@ export default function CommunityDetectionPage() {
         setTagTransitionLoading(true);
         try {
             const resp: TagKernelResponse = await fetchTagKernelAccounts(tag.id!);
-
             if (kernelEntries.length === 0) {
                 // No existing kernel — set directly without warning
                 setCommunityTag(tag);
@@ -516,12 +521,13 @@ export default function CommunityDetectionPage() {
         if (isAssigned) {
             // Remove tag from account
             await removeAccountTag(entry.account.id, tag.id!);
-            setKernelEntries(prev => prev.flatMap(e => {
-                if (e.account.id !== entry.account.id) return [e];
-                const newSources = e.tagSources.filter(t => t.id !== tag.id);
-                if (newSources.length === 0 && !e.manuallyAdded) return [];
-                return [{...e, tagSources: newSources}];
-            }));
+            const newSources = entry.tagSources.filter(t => t.id !== tag.id);
+            setKernelEntries(prev => prev.map(e =>
+                e.account.id === entry.account.id ? {...e, tagSources: newSources} : e
+            ));
+            if (newSources.length === 0 && !entry.manuallyAdded) {
+                setPendingKernelRemoval(entry);
+            }
         } else {
             // Add tag to account
             await batchAnnotate('account', [entry.account.id], [{id: tag.id!}]);
@@ -767,6 +773,37 @@ export default function CommunityDetectionPage() {
                             {kernelEntries.length} account{kernelEntries.length !== 1 ? 's' : ''} in kernel
                         </Typography>
                         <Button variant="contained" onClick={() => setKernelModalOpen(false)}>Done</Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* ── Untagged kernel account removal modal ─────────────────── */}
+                <Dialog
+                    open={pendingKernelRemoval !== null}
+                    onClose={() => setPendingKernelRemoval(null)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle>Keep Account in Kernel?</DialogTitle>
+                    <DialogContent dividers>
+                        <Typography variant="body2">
+                            After removing this tag, <strong>{pendingKernelRemoval?.account.title}</strong> will
+                            have no community tag justifying its inclusion in the kernel. Should it be removed
+                            from the kernel, or kept for analysis?
+                        </Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setPendingKernelRemoval(null)}>Keep in kernel</Button>
+                        <Button
+                            variant="contained"
+                            color="error"
+                            onClick={() => {
+                                if (!pendingKernelRemoval) return;
+                                removeFromKernel(pendingKernelRemoval.account.id);
+                                setPendingKernelRemoval(null);
+                            }}
+                        >
+                            Remove from kernel
+                        </Button>
                     </DialogActions>
                 </Dialog>
 

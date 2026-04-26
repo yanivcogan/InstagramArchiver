@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {Button, Menu, MenuItem, MenuList, Paper, Popper} from "@mui/material";
+import {Box, Button, Chip, Menu, MenuItem, MenuList, Paper, Popper} from "@mui/material";
 import CheckIcon from '@mui/icons-material/Check';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
@@ -100,9 +100,10 @@ interface IProps {
     dropdown: IQuickAccessTypeDropdown;
     assignedTagIds: Set<number>;
     onSelect: (tag: ITagWithType) => void;
+    placeholder?: string;
 }
 
-export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSelect}: IProps) {
+export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSelect, placeholder}: IProps) {
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const [minWidth, setMinWidth] = useState(0);
     const measureRef = useRef<HTMLSpanElement>(null);
@@ -111,7 +112,7 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
         if (measureRef.current) {
             setMinWidth(measureRef.current.offsetWidth + 42);
         }
-    }, [dropdown.type_name]);
+    }, [dropdown.type_name, placeholder]);
 
     const {childMap, tagById, roots} = useMemo(() => {
         const childMap = new Map<number, number[]>();
@@ -125,6 +126,11 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
         const roots = dropdown.tags.filter(t => !childSet.has(t.id));
         return {childMap, tagById, roots};
     }, [dropdown.hierarchy, dropdown.tags]);
+
+    const selectedTags = useMemo(
+        () => dropdown.tags.filter(t => assignedTagIds.has(t.id)),
+        [dropdown.tags, assignedTagIds],
+    );
 
     const closeRoot = () => setAnchorEl(null);
 
@@ -141,7 +147,7 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
                     textTransform: 'uppercase',
                 }}
             >
-                {dropdown.type_name}
+                {placeholder ?? dropdown.type_name}
             </span>
             <Button
                 variant="outlined"
@@ -162,7 +168,16 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
                     '& .MuiButton-endIcon': {marginLeft: 'auto'},
                 }}
             >
-                {dropdown.type_name}
+                {selectedTags.length > 0
+                    ? (
+                        <Box sx={{display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center'}}>
+                            {selectedTags.map(tag => (
+                                <Chip key={tag.id} label={tag.name} size="small" variant="outlined" color="primary"/>
+                            ))}
+                        </Box>
+                    )
+                    : (placeholder ?? dropdown.type_name)
+                }
             </Button>
             <Menu
                 anchorEl={anchorEl}

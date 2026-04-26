@@ -171,7 +171,7 @@ def list_tags(tag_type_id: Optional[int] = None, q: Optional[str] = None, page: 
 
 class IQuickAccessTypeDropdown(BaseModel):
     type_id: int
-    type_name: str
+    type_name: Optional[str]
     tags: list[ITagWithType]
     hierarchy: list[ITagHierarchyEntry] = []
 

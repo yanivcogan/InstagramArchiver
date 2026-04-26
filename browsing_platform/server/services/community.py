@@ -351,7 +351,6 @@ def get_community_tag_dropdown(tag_id: int) -> IQuickAccessTypeDropdown:
         return IQuickAccessTypeDropdown(type_id=tag_id, type_name="", tags=[], hierarchy=[])
 
     tag_id_set = {r["id"] for r in tag_rows}
-    root_name = next((r["name"] for r in tag_rows if r["id"] == tag_id), "")
 
     if len(tag_id_set) > 1:
         h_ids = list(tag_id_set)
@@ -367,7 +366,7 @@ def get_community_tag_dropdown(tag_id: int) -> IQuickAccessTypeDropdown:
 
     return IQuickAccessTypeDropdown(
         type_id=tag_id,
-        type_name=root_name,
+        type_name=None,
         tags=[ITagWithType(**row) for row in tag_rows],
         hierarchy=[ITagHierarchyEntry(super_tag_id=h["super_tag_id"], sub_tag_id=h["sub_tag_id"]) for h in hierarchy_rows],
     )
