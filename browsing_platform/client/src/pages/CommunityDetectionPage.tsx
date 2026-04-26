@@ -1,7 +1,6 @@
 import React, {useMemo, useRef, useState} from 'react';
 import {
     Alert,
-    Autocomplete,
     Box,
     Button,
     Checkbox,
@@ -19,7 +18,6 @@ import {
     Paper,
     Snackbar,
     Stack,
-    TextField,
     Tooltip,
     Typography,
 } from '@mui/material';
@@ -27,7 +25,6 @@ import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
@@ -35,6 +32,7 @@ import {SearchResultThumbnails} from '../UIComponents/SearchResults/SearchResult
 import NumberField from '../UIComponents/MUINumberField/NumberField';
 import SearchPanel from '../UIComponents/Search/SearchPanel';
 import QuickAccessTypeDropdown from '../UIComponents/Tags/QuickAccessTypeDropdown';
+import TagSelector from '../UIComponents/Tags/TagSelector';
 import {
     batchAnnotate,
     CandidateAccount,
@@ -44,7 +42,6 @@ import {
     fetchTagKernelAccounts,
     fetchTagsForSearchResults,
     ISearchQuery,
-    lookupTags,
     removeAccountTag,
     SearchResult,
     TagKernelAccount,
@@ -145,76 +142,6 @@ function SectionHeader({step, title, active, action}: SectionHeaderProps) {
             </Typography>
             {action}
         </Stack>
-    );
-}
-
-// ── Single-tag selector ───────────────────────────────────────────────────────
-
-interface SingleTagSelectorProps {
-    value: ITagWithType | null;
-    label: string;
-    onChange: (tag: ITagWithType | null) => void;
-    disabled?: boolean;
-}
-
-function SingleTagSelector({value, label, onChange, disabled}: SingleTagSelectorProps) {
-    const [options, setOptions] = useState<ITagWithType[]>([]);
-    const [loading, setLoading] = useState(false);
-
-    const fetchOptions = async (q: string) => {
-        setLoading(true);
-        try {
-            const results = await lookupTags(q);
-            setOptions(results);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Autocomplete
-            value={value}
-            options={options}
-            loading={loading}
-            disabled={disabled}
-            getOptionLabel={(o) => o.name}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
-            filterOptions={(x) => x}
-            noOptionsText={loading ? 'Loading…' : 'Start typing to search tags'}
-            onInputChange={(_, v, reason) => {
-                if (reason === 'input') fetchOptions(v);
-            }}
-            onChange={(_, v) => onChange(v)}
-            renderInput={(params) => (
-                <TextField
-                    {...params}
-                    label={label}
-                    variant="outlined"
-                    size="small"
-                    InputProps={{
-                        ...params.InputProps,
-                        startAdornment: <LocalOfferIcon sx={{mr: 1, color: value ? 'primary.main' : 'text.disabled', fontSize: '1rem'}}/>,
-                        endAdornment: (
-                            <>
-                                {loading && <CircularProgress size={16}/>}
-                                {params.InputProps.endAdornment}
-                            </>
-                        ),
-                    }}
-                />
-            )}
-            renderOption={(props, option) => (
-                <li {...props} key={option.id}>
-                    <Stack>
-                        <Typography variant="body2">{option.name}</Typography>
-                        {option.tag_type_name && (
-                            <Typography variant="caption" color="text.secondary">{option.tag_type_name}</Typography>
-                        )}
-                    </Stack>
-                </li>
-            )}
-            sx={{'& .MuiOutlinedInput-root': {pr: '14px !important'}}}
-        />
     );
 }
 
@@ -850,11 +777,13 @@ export default function CommunityDetectionPage() {
                     <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
                         <Stack direction="row" alignItems="center" gap={1.5}>
                             <Box sx={{flex: 1}}>
-                                <SingleTagSelector
-                                    value={communityTag}
+                                <TagSelector
+                                    selectedTags={communityTag ? [communityTag] : []}
                                     label={communityTagLabel}
-                                    onChange={handleCommunityTagChange}
-                                    disabled={tagTransitionLoading}
+                                    onChange={(tags) => handleCommunityTagChange(tags[0] ?? null)}
+                                    readOnly={tagTransitionLoading}
+                                    single
+                                    entity="account"
                                 />
                             </Box>
                             {tagTransitionLoading && <CircularProgress size={20}/>}
