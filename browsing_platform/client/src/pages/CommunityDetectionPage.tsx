@@ -29,6 +29,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AutoModeIcon from '@mui/icons-material/AutoMode';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
+import UndoIcon from '@mui/icons-material/Undo';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import {SearchResultThumbnails} from '../UIComponents/SearchResults/SearchResultParts';
 import NumberField from '../UIComponents/MUINumberField/NumberField';
@@ -1149,34 +1150,19 @@ export default function CommunityDetectionPage() {
                                     Excluded ({excludedAccounts.length})
                                 </Button>
                                 <Collapse in={excludedOpen} unmountOnExit>
-                                    <Stack spacing={0.25} sx={{mt: 0.5, pl: 0.5}}>
+                                    <Box sx={{display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5, pl: 0.5}}>
                                         {excludedAccounts.map(acct => (
-                                            <Stack key={acct.id} direction="row" alignItems="center" gap={1}
-                                                   sx={{py: 0.25}}>
-                                                <Typography
-                                                    component="a" href={`/account/${acct.id}`}
-                                                    sx={{
-                                                        flex: 1,
-                                                        textDecoration: 'none',
-                                                        color: 'text.secondary',
-                                                        fontSize: '0.8125rem'
-                                                    }}
-                                                    noWrap
-                                                >
-                                                    {candidateTitle(acct)}
-                                                </Typography>
-                                                <Button size="small" variant="text"
-                                                        onClick={() => restoreCandidate(acct.id)}
-                                                        sx={{
-                                                            flexShrink: 0,
-                                                            fontSize: '0.75rem',
-                                                            color: 'text.secondary'
-                                                        }}>
-                                                    Restore
-                                                </Button>
-                                            </Stack>
+                                            <Chip
+                                                key={acct.id}
+                                                component="a"
+                                                label={candidateTitle(acct)}
+                                                onDelete={() => restoreCandidate(acct.id)}
+                                                deleteIcon={<Tooltip title="Restore"><UndoIcon/></Tooltip>}
+                                                clickable
+                                                sx={{fontSize: '0.75rem'}}
+                                            />
                                         ))}
-                                    </Stack>
+                                    </Box>
                                 </Collapse>
                             </Box>
                         </>
