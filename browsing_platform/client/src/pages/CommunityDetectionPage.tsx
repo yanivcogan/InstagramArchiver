@@ -52,7 +52,7 @@ import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
 import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
-const stripThumbnails = <T extends {thumbnails?: string[]}>(obj: T): T => ({...obj, thumbnails: []});
+const stripThumbnails = <T extends { thumbnails?: string[] }>(obj: T): T => ({...obj, thumbnails: []});
 
 // ── Serialisable state (export / import) ──────────────────────────────────────
 
@@ -60,7 +60,7 @@ interface CommunityStateExport {
     version: 1;
     community_tag: ITagWithType | null;
     community_dropdown: IQuickAccessTypeDropdown | null;
-    kernel: Array<{account: SearchResult; manuallyAdded: boolean; tagSources: ITagWithType[]}>;
+    kernel: Array<{ account: SearchResult; manuallyAdded: boolean; tagSources: ITagWithType[] }>;
     weights: TieWeights;
     excluded: CandidateAccount[];
 }
@@ -103,7 +103,7 @@ function tagKernelAccountToSearchResult(a: TagKernelAccount): SearchResult {
 
 // ── Step badge ────────────────────────────────────────────────────────────────
 
-function StepBadge({n, active}: {n: number; active?: boolean}) {
+function StepBadge({n, active}: { n: number; active?: boolean }) {
     return (
         <Box sx={{
             width: 24, height: 24, borderRadius: '50%',
@@ -218,7 +218,14 @@ interface CandidateCardProps {
     onTagToggle: (tag: ITagWithType) => void;
 }
 
-function CandidateCard({candidate, communityDropdown, assignedCommunityTagIds, onAddToKernel, onExclude, onTagToggle}: CandidateCardProps) {
+function CandidateCard({
+                           candidate,
+                           communityDropdown,
+                           assignedCommunityTagIds,
+                           onAddToKernel,
+                           onExclude,
+                           onTagToggle
+                       }: CandidateCardProps) {
     const title = candidateTitle(candidate);
     const score = candidate.score % 1 === 0
         ? candidate.score.toString()
@@ -230,27 +237,31 @@ function CandidateCard({candidate, communityDropdown, assignedCommunityTagIds, o
                 flexShrink: 0, width: 56, textAlign: 'center',
                 pt: 0.5, borderRight: '1px solid', borderColor: 'divider', pr: 2,
             }}>
-                <Typography variant="h5" sx={{fontWeight: 700, lineHeight: 1, color: 'primary.main', fontSize: '1.5rem'}}>
+                <Typography variant="h5"
+                            sx={{fontWeight: 700, lineHeight: 1, color: 'primary.main', fontSize: '1.5rem'}}>
                     {score}
                 </Typography>
-                <Typography variant="caption" sx={{color: 'text.disabled', display: 'block', mt: 0.25, letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: '0.6rem'}}>
+                <Typography variant="caption" sx={{
+                    color: 'text.disabled',
+                    display: 'block',
+                    mt: 0.25,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    fontSize: '0.6rem'
+                }}>
                     score
                 </Typography>
-                <Box sx={{mt: 1}}>
-                    <Typography variant="body2" sx={{fontWeight: 600, lineHeight: 1, color: 'text.secondary'}}>
-                        {candidate.kernel_connections}
-                    </Typography>
-                    <Typography variant="caption" sx={{color: 'text.disabled', fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em'}}>
-                        conn.
-                    </Typography>
-                </Box>
             </Box>
 
             {/* Content */}
             <Box sx={{flex: 1, minWidth: 0}}>
                 <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
                     <a href={`/account/${candidate.id}`} style={{textDecoration: 'none', color: 'inherit'}}>
-                        <Typography variant="subtitle1" sx={{fontWeight: 600, wordBreak: 'break-word', '&:hover': {textDecoration: 'underline'}}}>
+                        <Typography variant="subtitle1" sx={{
+                            fontWeight: 600,
+                            wordBreak: 'break-word',
+                            '&:hover': {textDecoration: 'underline'}
+                        }}>
                             {title}
                         </Typography>
                     </a>
@@ -265,30 +276,63 @@ function CandidateCard({candidate, communityDropdown, assignedCommunityTagIds, o
                     </Typography>
                 )}
                 <SearchResultThumbnails thumbnails={candidate.thumbnails} totalCount={candidate.media_count}/>
+            </Box>
 
-                {/* Community tag assignment (tag mode only) */}
+            {/* Decision panel */}
+            <Box
+                sx={{
+                    flexShrink: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    gap: 0.5,
+                    borderLeft: '1px solid',
+                    borderColor: 'divider',
+                    pl: 1.5,
+                    minWidth: 148,
+                }}
+            >
                 {communityDropdown && (
-                    <Box sx={{mt: 0.75}}>
+                    <>
+                        <Typography
+                            variant="caption"
+                            sx={{
+                                color: 'text.disabled',
+                                fontSize: '0.6rem',
+                                letterSpacing: '0.08em',
+                                textTransform: 'uppercase',
+                                lineHeight: 1,
+                            }}
+                        >
+                            Tag &amp; add to kernel
+                        </Typography>
                         <QuickAccessTypeDropdown
                             dropdown={communityDropdown}
                             assignedTagIds={assignedCommunityTagIds}
                             onSelect={onTagToggle}
                         />
-                    </Box>
+                        <Divider flexItem sx={{my: 0.25}}>
+                            <Typography variant="caption" color="text.disabled" sx={{fontSize: '0.65rem'}}>
+                                or
+                            </Typography>
+                        </Divider>
+                    </>
                 )}
+                <Button
+                    size="small" variant="outlined" color={"success"}
+                    onClick={onAddToKernel}
+                    sx={{whiteSpace: 'nowrap', fontSize: '0.75rem'}}
+                >
+                    {communityDropdown ? 'Add to kernel without attaching tag' : 'Add to kernel'}
+                </Button>
+                <Button
+                    size="small" variant="outlined" color="error"
+                    onClick={onExclude}
+                    sx={{fontSize: '0.75rem'}}
+                >
+                    Remove from Candidates List
+                </Button>
             </Box>
-
-            {/* Actions */}
-            <Stack direction="column" gap={0.5} sx={{flexShrink: 0}}>
-                <Button size="small" variant="outlined" onClick={onAddToKernel}
-                        sx={{whiteSpace: 'nowrap', fontSize: '0.75rem'}}>
-                    Add to Kernel
-                </Button>
-                <Button size="small" variant="text" color="warning" onClick={onExclude}
-                        sx={{fontSize: '0.75rem'}}>
-                    Exclude
-                </Button>
-            </Stack>
         </Stack>
     );
 }
@@ -374,11 +418,11 @@ export default function CommunityDetectionPage() {
     }, [candidateAllTags, communityTagIds]);
 
     const candidateCommunityTagIdSets = useMemo(() =>
-        Object.fromEntries(
-            Object.entries(candidateCommunityTags).map(([id, tags]) =>
-                [id, new Set(tags.map(t => t.id!))]
-            )
-        ) as Record<number, Set<number>>,
+            Object.fromEntries(
+                Object.entries(candidateCommunityTags).map(([id, tags]) =>
+                    [id, new Set(tags.map(t => t.id!))]
+                )
+            ) as Record<number, Set<number>>,
         [candidateCommunityTags],
     );
 
@@ -513,7 +557,7 @@ export default function CommunityDetectionPage() {
 
     const addCandidateToKernel = (candidate: CandidateAccount) => {
         if (kernelIdSet.has(candidate.id)) return;
-        const tagSources = communityTag ? (candidateCommunityTags[candidate.id] ?? []) : [];
+        const tagSources: ITagWithType[] = [];
         setKernelEntries(prev => [...prev, {
             account: {
                 id: candidate.id,
@@ -705,7 +749,8 @@ export default function CommunityDetectionPage() {
                     <DialogContent dividers sx={{p: 2}}>
                         <SearchPanel
                             query={KERNEL_SEARCH_QUERY}
-                            onSearch={() => {}}
+                            onSearch={() => {
+                            }}
                             autoSearch={300}
                             showModeSelector={false}
                             showAdvancedFilters={false}
@@ -801,7 +846,8 @@ export default function CommunityDetectionPage() {
                         </Stack>
                         {communityTag && (
                             <Typography variant="caption" color="text.secondary" sx={{mt: 0.75, display: 'block'}}>
-                                Tag mode active — kernel seeded from accounts tagged with <strong>{communityTag.name}</strong> (and its subtags).
+                                Tag mode active — kernel seeded from accounts tagged
+                                with <strong>{communityTag.name}</strong> (and its subtags).
                                 Tag assignments are saved to the database.
                             </Typography>
                         )}
@@ -855,7 +901,11 @@ export default function CommunityDetectionPage() {
                                     gap: 1.5,
                                     cursor: 'pointer',
                                     color: 'text.secondary',
-                                    '&:hover': {borderColor: 'primary.main', color: 'primary.main', bgcolor: 'action.hover'},
+                                    '&:hover': {
+                                        borderColor: 'primary.main',
+                                        color: 'primary.main',
+                                        bgcolor: 'action.hover'
+                                    },
                                     transition: 'all 0.15s',
                                 }}
                             >
@@ -877,7 +927,8 @@ export default function CommunityDetectionPage() {
                         />
                         <Stack direction="column" gap={1}>
                             <Typography variant="body2" color="text.secondary" sx={{mt: -0.5}}>
-                                Adjust how different interaction types influence the strength of relation between accounts:
+                                Adjust how different interaction types influence the strength of relation between
+                                accounts:
                             </Typography>
                             <Stack direction="row" flexWrap="wrap" gap={2} sx={{mt: 0.5}}>
                                 {(Object.keys(TIE_LABELS) as (keyof TieWeights)[]).map(tie => (
@@ -911,7 +962,8 @@ export default function CommunityDetectionPage() {
                                     size="large"
                                     disabled={kernelIds.length === 0 || isComputing}
                                     onClick={runAnalysis}
-                                    startIcon={isComputing ? <CircularProgress size={18} color="inherit"/> : <PlayArrowIcon/>}
+                                    startIcon={isComputing ? <CircularProgress size={18} color="inherit"/> :
+                                        <PlayArrowIcon/>}
                                     sx={{minWidth: 220}}
                                 >
                                     {isComputing ? 'Analyzing…' : (hasRun ? 'Re-run Detection' : 'Run Community Detection')}
@@ -927,16 +979,19 @@ export default function CommunityDetectionPage() {
                                 <Box sx={{width: '2px', height: 16, bgcolor: 'divider'}}/>
                             </Box>
                             <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
-                                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{mb: 1.5}}>
+                                <Stack direction="row" justifyContent="space-between" alignItems="center"
+                                       sx={{mb: 1.5}}>
                                     <Typography variant="subtitle1" sx={{fontWeight: 600}}>
                                         Top Candidates
                                         {visibleCandidates.length > 0 && (
-                                            <Typography component="span" variant="body2" color="text.secondary" sx={{ml: 1}}>
+                                            <Typography component="span" variant="body2" color="text.secondary"
+                                                        sx={{ml: 1}}>
                                                 {visibleCandidates.length} result{visibleCandidates.length !== 1 ? 's' : ''}
                                             </Typography>
                                         )}
                                     </Typography>
-                                    <Tooltip title={hasVerifiedVisible ? 'Exclude all verified accounts from results' : 'No verified accounts in current results'}>
+                                    <Tooltip
+                                        title={hasVerifiedVisible ? 'Remove all verified accounts from candidates list to screen out celebs and brands' : 'No verified accounts in current results'}>
                                         <span>
                                             <Button variant="outlined" size="small" disabled={!hasVerifiedVisible}
                                                     onClick={autoRemoveVerified} sx={{flexShrink: 0}}>
@@ -979,7 +1034,10 @@ export default function CommunityDetectionPage() {
                                 <Button
                                     variant="text" size="small"
                                     onClick={() => setExcludedOpen(p => !p)}
-                                    endIcon={<ExpandMoreIcon sx={{transform: excludedOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s'}}/>}
+                                    endIcon={<ExpandMoreIcon sx={{
+                                        transform: excludedOpen ? 'rotate(180deg)' : 'none',
+                                        transition: 'transform 0.2s'
+                                    }}/>}
                                     sx={{color: 'text.secondary'}}
                                 >
                                     Excluded ({excludedAccounts.length})
@@ -991,13 +1049,23 @@ export default function CommunityDetectionPage() {
                                                    sx={{py: 0.25}}>
                                                 <Typography
                                                     component="a" href={`/account/${acct.id}`}
-                                                    sx={{flex: 1, textDecoration: 'none', color: 'text.disabled', fontSize: '0.8125rem'}}
+                                                    sx={{
+                                                        flex: 1,
+                                                        textDecoration: 'none',
+                                                        color: 'text.disabled',
+                                                        fontSize: '0.8125rem'
+                                                    }}
                                                     noWrap
                                                 >
                                                     {candidateTitle(acct)}
                                                 </Typography>
-                                                <Button size="small" variant="text" onClick={() => restoreCandidate(acct.id)}
-                                                        sx={{flexShrink: 0, fontSize: '0.75rem', color: 'text.secondary'}}>
+                                                <Button size="small" variant="text"
+                                                        onClick={() => restoreCandidate(acct.id)}
+                                                        sx={{
+                                                            flexShrink: 0,
+                                                            fontSize: '0.75rem',
+                                                            color: 'text.secondary'
+                                                        }}>
                                                     Restore
                                                 </Button>
                                             </Stack>
