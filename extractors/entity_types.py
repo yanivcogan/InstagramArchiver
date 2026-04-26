@@ -285,6 +285,10 @@ class Comment(EntityBase):
     account_id: Optional[int] = None
     text: Optional[str] = None
     publication_date: Optional[datetime] = None
+    post_publication_date: Optional[datetime] = None
+    post_author_account_id: Optional[int] = None
+    post_author_url_suffix: Optional[str] = None
+    post_author_display_name: Optional[str] = None
     data: Optional[Any] = None
 
     @computed_field
@@ -336,6 +340,10 @@ class Like(EntityBase):
     account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     account_id: Optional[int] = None
+    post_publication_date: Optional[datetime] = None
+    post_author_account_id: Optional[int] = None
+    post_author_url_suffix: Optional[str] = None
+    post_author_display_name: Optional[str] = None
     data: Optional[Any] = None
 
     @computed_field
@@ -454,6 +462,10 @@ class TaggedAccount(EntityBase):
     context_media_id_on_platform: Optional[str] = Field(None, max_length=250)
     tag_x_position: Optional[float] = None
     tag_y_position: Optional[float] = None
+    post_publication_date: Optional[datetime] = None
+    post_author_account_id: Optional[int] = None
+    post_author_url_suffix: Optional[str] = None
+    post_author_display_name: Optional[str] = None
     data: Optional[Any] = None
 
     @computed_field

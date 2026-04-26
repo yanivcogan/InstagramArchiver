@@ -68,6 +68,10 @@ export interface IComment extends IEntityBase {
     text?: string;
     publication_date?: string;
     parent_comment_id_on_platform?: string;
+    post_publication_date?: string;
+    post_author_account_id?: number;
+    post_author_url_suffix?: string;
+    post_author_display_name?: string;
     data?: any;
 }
 
@@ -80,6 +84,10 @@ export interface IPostLike extends IEntityBase {
     account_id_on_platform?: string;
     account_url?: string;
     account_display_name?: string;
+    post_publication_date?: string;
+    post_author_account_id?: number;
+    post_author_url_suffix?: string;
+    post_author_display_name?: string;
     data?: any;
 }
 
@@ -103,12 +111,17 @@ export interface ITaggedAccount extends IEntityBase {
     tagged_account_id_on_platform?: string;
     tagged_account_url?: string;
     tagged_account_display_name?: string;
+    post_id?: number;
     context_post_url?: string;
     context_media_url?: string;
     context_post_id_on_platform?: string;
     context_media_id_on_platform?: string;
     tag_x_position?: number;
     tag_y_position?: number;
+    post_publication_date?: string;
+    post_author_account_id?: number;
+    post_author_url_suffix?: string;
+    post_author_display_name?: string;
     data?: any;
 }
 

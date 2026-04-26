@@ -35,9 +35,9 @@ import {
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
 import AccountRelation from "./AccountRelation";
-import Comment from "./Comment";
-import PostLike from "./PostLike";
-import TaggedAccountChip from "./TaggedAccountChip";
+import AccountComment from "./AccountComment";
+import AccountLike from "./AccountLike";
+import AccountTaggedInPost from "./AccountTaggedInPost";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 import {AddReaction, DataObject, People} from "@mui/icons-material";
@@ -127,10 +127,9 @@ function AccountRelationsPanel({loadingRelations, relations, highlightRelationId
     );
 }
 
-function AccountInteractionsPanel({loadingInteractions, interactions, accountTagsMap}: {
+function AccountInteractionsPanel({loadingInteractions, interactions}: {
     loadingInteractions: boolean;
     interactions: IAccountInteractions | null;
-    accountTagsMap: Record<number, ITagWithType[]>;
 }) {
     return (
         <>
@@ -142,7 +141,7 @@ function AccountInteractionsPanel({loadingInteractions, interactions, accountTag
                             <Typography variant="caption" color="text.secondary">
                                 Comments ({interactions.comments.length})
                             </Typography>
-                            {interactions.comments.map((c, i) => <Comment key={i} comment={c} accountTagsMap={accountTagsMap}/>)}
+                            {interactions.comments.map((c, i) => <AccountComment key={i} comment={c}/>)}
                         </Stack>
                     )}
                     {interactions.likes.length > 0 && (
@@ -150,7 +149,7 @@ function AccountInteractionsPanel({loadingInteractions, interactions, accountTag
                             <Typography variant="caption" color="text.secondary">
                                 Likes ({interactions.likes.length})
                             </Typography>
-                            {interactions.likes.map((l, i) => <PostLike key={i} like={l} accountTagsMap={accountTagsMap}/>)}
+                            {interactions.likes.map((l, i) => <AccountLike key={i} like={l}/>)}
                         </Stack>
                     )}
                     {interactions.tagged_in.length > 0 && (
@@ -158,13 +157,9 @@ function AccountInteractionsPanel({loadingInteractions, interactions, accountTag
                             <Typography variant="caption" color="text.secondary">
                                 Tagged in ({interactions.tagged_in.length})
                             </Typography>
-                            <Stack direction="row" gap={0.5} flexWrap="wrap">
+                            <Stack gap={0.5}>
                                 {interactions.tagged_in.map((ta, i) => (
-                                    <TaggedAccountChip
-                                        key={i}
-                                        taggedAccount={ta}
-                                        accountTags={ta.tagged_account_id != null ? accountTagsMap[ta.tagged_account_id] : undefined}
-                                    />
+                                    <AccountTaggedInPost key={i} taggedAccount={ta}/>
                                 ))}
                             </Stack>
                         </Stack>
@@ -463,7 +458,6 @@ export default function Account({
                             <AccountInteractionsPanel
                                 loadingInteractions={loadingInteractions}
                                 interactions={interactions}
-                                accountTagsMap={accountTagsMap}
                             />
                         )}
                         {activeTab === 'raw' && (

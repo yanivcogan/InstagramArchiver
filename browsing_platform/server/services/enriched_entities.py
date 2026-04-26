@@ -237,10 +237,15 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
         """SELECT c.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
                   a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform,
+                  p.publication_date AS post_publication_date,
+                  pa.id AS post_author_account_id,
+                  pa.url_suffix AS post_author_url_suffix,
+                  pa.display_name AS post_author_display_name
            FROM comment c
            LEFT JOIN account a ON c.account_id = a.id
            LEFT JOIN post p ON c.post_id = p.id
+           LEFT JOIN account pa ON p.account_id = pa.id
            WHERE c.account_id = %(id)s
            ORDER BY c.publication_date""",
         {"id": account_id},
@@ -250,10 +255,15 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
         """SELECT pl.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
                   a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform,
+                  p.publication_date AS post_publication_date,
+                  pa.id AS post_author_account_id,
+                  pa.url_suffix AS post_author_url_suffix,
+                  pa.display_name AS post_author_display_name
            FROM post_like pl
            LEFT JOIN account a ON pl.account_id = a.id
            LEFT JOIN post p ON pl.post_id = p.id
+           LEFT JOIN account pa ON p.account_id = pa.id
            WHERE pl.account_id = %(id)s""",
         {"id": account_id},
         return_type="rows"
@@ -263,10 +273,15 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
                   a.id_on_platform AS tagged_account_id_on_platform,
                   a.display_name AS tagged_account_display_name,
                   p.url_suffix AS context_post_url_suffix, p.id_on_platform AS context_post_id_on_platform,
+                  p.publication_date AS post_publication_date,
+                  pa.id AS post_author_account_id,
+                  pa.url_suffix AS post_author_url_suffix,
+                  pa.display_name AS post_author_display_name,
                   m.url_suffix AS context_media_url_suffix, m.id_on_platform AS context_media_id_on_platform
            FROM tagged_account ta
            LEFT JOIN account a ON ta.tagged_account_id = a.id
            LEFT JOIN post p ON ta.post_id = p.id
+           LEFT JOIN account pa ON p.account_id = pa.id
            LEFT JOIN media m ON ta.media_id = m.id
            WHERE ta.tagged_account_id = %(id)s""",
         {"id": account_id},
