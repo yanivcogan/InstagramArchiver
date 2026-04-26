@@ -1,4 +1,5 @@
 import {
+    E_ENTITY_TYPES,
     IAccountAuxiliaryCounts,
     IAccountInteractions,
     IAccountRelationsResponse,
@@ -146,13 +147,13 @@ export const fetchArchivingSessionsMedia = async (mediaId: number, config: Entit
     return await server.get(`archiving_session/media/${mediaId}/?${transformConfigToQueryParams(config)}`);
 }
 
-export const lookupTags = async (tagQuery: string, entity?: string): Promise<ITagWithType[]> => {
+export const lookupTags = async (tagQuery: string, entity?: E_ENTITY_TYPES): Promise<ITagWithType[]> => {
     const params = new URLSearchParams({q: tagQuery});
     if (entity) params.append('entity', entity);
     return await server.get(`tags/?${params}`);
 }
 
-export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, string>> = {
+export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, E_ENTITY_TYPES>> = {
     accounts: 'account',
     posts: 'post',
     media: 'media',
@@ -169,7 +170,7 @@ export const fetchTagsForSearchResults = async (
 };
 
 export const batchAnnotate = async (
-    entityType: string,
+    entityType: E_ENTITY_TYPES,
     entityIds: number[],
     tags: Array<{id: number; notes?: string | null}>
 ): Promise<void> => {

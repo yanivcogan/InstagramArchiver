@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {Link} from 'react-router';
 import {Badge, Box, CircularProgress, Stack, Tab, Tabs, Typography} from '@mui/material';
 import {ITagUsage, ITagWithType} from '../../types/tags';
+import {E_ENTITY_TYPES} from '../../types/entities';
 import {
     fetchTagsForSearchResults,
     ISearchQuery,
@@ -11,7 +12,7 @@ import {
 } from '../../services/DataFetcher';
 import {DefaultSearchResults, SEARCH_RESULT_RENDERERS} from '../SearchResults';
 
-type TabConfig = {entity: string; mode: T_Search_Mode; label: string; usageKey: keyof ITagUsage};
+type TabConfig = {entity: E_ENTITY_TYPES; mode: T_Search_Mode; label: string; usageKey: keyof ITagUsage};
 
 const TAB_CONFIG: TabConfig[] = [
     {entity: 'account', mode: 'accounts', label: 'Accounts', usageKey: 'accounts'},
@@ -48,7 +49,7 @@ function TabContent({state, mode, tagId}: {state: TabState | undefined; mode: T_
 export default function TagUsageTabs({tagId, usage, entityAffinity, refreshKey}: {
     tagId: number;
     usage: ITagUsage | null;
-    entityAffinity: string[] | null;
+    entityAffinity: E_ENTITY_TYPES[] | null;
     refreshKey: number;
 }) {
     const visibleTabs = useMemo(

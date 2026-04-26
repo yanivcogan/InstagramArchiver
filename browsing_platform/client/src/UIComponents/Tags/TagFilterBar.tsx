@@ -3,6 +3,7 @@ import {Box, Chip, Stack, ToggleButton, ToggleButtonGroup, Typography} from "@mu
 import {IQuickAccessData, ITagWithType} from "../../types/tags";
 import {lookupTags} from "../../services/DataFetcher";
 import {fetchQuickAccessData} from "../../services/TagManagementService";
+import {E_ENTITY_TYPES} from "../../types/entities";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
 import QuickAccessBar from "./QuickAccessBar";
@@ -12,7 +13,7 @@ interface IProps {
     tagFilterMode: "any" | "all";
     selectedTagObjects: ITagWithType[];
     onChange: (tagIds: number[], mode: "any" | "all", tagObjects: ITagWithType[]) => void;
-    entity?: string;
+    entity?: E_ENTITY_TYPES;
 }
 
 export default function TagFilterBar({tagIds, tagFilterMode, selectedTagObjects, onChange, entity}: IProps) {

@@ -18,8 +18,8 @@ import server from "../../services/server";
 import InputAdornment from "@mui/material/InputAdornment";
 import {NoMaxWidthTooltip} from "../StyledComponents/CustomTooltips";
 import {SHARE_URL_PARAM} from "../../services/linkSharing";
+import {E_ENTITY_TYPES} from "../../types/entities";
 
-type E_ENTITY_TYPES = "archiving_session" | "account" | "post" | "media" | "media_part"
 
 interface IProps {
     entityType: E_ENTITY_TYPES,

@@ -23,6 +23,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import TagUsageTabs from '../UIComponents/TagUsageTabs/TagUsageTabs';
 import {ITagHierarchyEntry, ITagType, ITagUsage, ITagWithType} from '../types/tags';
+import {E_ENTITY_TYPES} from '../types/entities';
 import {
     addHierarchy,
     fetchTag,
@@ -162,9 +163,9 @@ export default function EditTagPage() {
     const [addChildOptions, setAddChildOptions] = useState<ITagWithType[]>([]);
     const [editingNote, setEditingNote] = useState<{super_id: number; sub_id: number; notes: string} | null>(null);
 
-    const entityAffinity = useMemo<string[] | null>(() => {
+    const entityAffinity = useMemo<E_ENTITY_TYPES[] | null>(() => {
         if (!form.tag_type_id) return null;
-        return tagTypes.find(tt => tt.id === form.tag_type_id)?.entity_affinity ?? null;
+        return (tagTypes.find(tt => tt.id === form.tag_type_id)?.entity_affinity ?? null) as E_ENTITY_TYPES[] | null;
     }, [form.tag_type_id, tagTypes]);
 
     useEffect(() => {

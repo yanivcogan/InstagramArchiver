@@ -1,4 +1,5 @@
 import server, {HTTP_METHODS} from "./server";
+import {E_ENTITY_TYPES} from "../types/entities";
 import {
     IAnnotationImportExecuteResponse,
     IAnnotationImportRowInput,
@@ -15,7 +16,7 @@ import {
 
 const BASE = "tag-management";
 
-export const fetchQuickAccessData = async (entity?: string): Promise<IQuickAccessData> =>
+export const fetchQuickAccessData = async (entity?: E_ENTITY_TYPES): Promise<IQuickAccessData> =>
     server.get(`${BASE}/quick-access/${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`);
 
 /* Tag Types */

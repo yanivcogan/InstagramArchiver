@@ -1,5 +1,8 @@
 import {ITagWithType} from "./tags";
 
+
+export type E_ENTITY_TYPES = "archiving_session" | "account" | "post" | "media" | "media_part"
+
 interface IEntityBase {
     id?: number;
     created_at?: string; // ISO date string

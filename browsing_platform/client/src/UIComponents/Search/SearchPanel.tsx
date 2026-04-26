@@ -46,6 +46,7 @@ import {
     T_Search_Mode,
 } from '../../services/DataFetcher';
 import {ITagWithType} from '../../types/tags';
+import {E_ENTITY_TYPES} from '../../types/entities';
 import TagFilterBar from '../Tags/TagFilterBar';
 import TagSelector from '../Tags/TagSelector';
 import {SEARCH_SHORTCUTS} from '../SearchShortcuts';
@@ -71,7 +72,7 @@ export interface SearchPanelTagging {
     onBulkTagsChange: (tags: ITagWithType[]) => void;
     onApply: () => void;
     onClearSelection: () => void;
-    entity: string;
+    entity: E_ENTITY_TYPES;
 }
 
 interface BaseProps {
