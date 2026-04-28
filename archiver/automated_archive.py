@@ -116,6 +116,25 @@ def read_targets_from_terminal() -> list[tuple[Profile, str]]:
 
 def get_session_config() -> Optional[SessionConfig]:
     default_signature = os.getenv("DEFAULT_SIGNATURE", "")
+
+    print("\nPress Enter to use default settings, or type 'config' to customize: ", end="", flush=True)
+    if input().strip().lower() != "config":
+        return SessionConfig(
+            scrape_followers=True,
+            scrape_following=True,
+            storage_config=StorageConfig(
+                signature=default_signature,
+                notes="",
+                v_download_media_not_in_structures=False,
+                v_download_unfetched_media=False,
+                v_download_full_versions_of_fetched_media=False,
+                v_download_highest_quality_assets_from_structures=False,
+                p_download_media_not_in_structures=False,
+                p_download_unfetched_media=False,
+                p_download_highest_quality_assets_from_structures=False,
+            ),
+        )
+
     raw = show_dialog_form(
         DialogForm(
             title="Automated Follower Scraper — Configuration",
