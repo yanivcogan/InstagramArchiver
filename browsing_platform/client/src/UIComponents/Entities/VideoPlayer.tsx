@@ -21,6 +21,7 @@ interface IProps {
     onLoaded?: () => void;
     onNaturalAspectRatio?: (ratio: number) => void;
     thumbnailLoaded: boolean;
+    initialAspectRatio?: number;
 }
 
 function formatTime(seconds: number): string {
@@ -30,7 +31,7 @@ function formatTime(seconds: number): string {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function VideoPlayer({src, zoom, translateX, translateY, onCanPlay, onLoaded, onNaturalAspectRatio, thumbnailLoaded}: IProps) {
+export default function VideoPlayer({src, zoom, translateX, translateY, onCanPlay, onLoaded, onNaturalAspectRatio, thumbnailLoaded, initialAspectRatio}: IProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [playing, setPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
@@ -40,7 +41,7 @@ export default function VideoPlayer({src, zoom, translateX, translateY, onCanPla
     const [volumeHovered, setVolumeHovered] = useState(false);
     const lastNonZeroVolume = useRef(1);
     const [focused, setFocused] = useState(false);
-    const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
+    const [videoAspectRatio, setVideoAspectRatio] = useState(initialAspectRatio ?? 16 / 9);
     const [controlsVisible, setControlsVisible] = useState(true);
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

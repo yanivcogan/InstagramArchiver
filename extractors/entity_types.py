@@ -235,6 +235,7 @@ class Media(EntityBase):
     data: Optional[Any] = None
     annotation: Optional[str] = None
     thumbnail_path: Optional[str] = None
+    aspect_ratio: Optional[float] = None
     thumbnail_status: Literal['pending', 'generated', 'not_needed', 'error'] = "pending"
 
     @computed_field

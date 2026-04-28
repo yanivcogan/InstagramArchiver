@@ -214,10 +214,11 @@ async def process_one_media(
             )
             return False
 
+        aspect_ratio = img.width / img.height if img.height > 0 else None
         relative_path = f"{LOCAL_THUMBNAILS_DIR_ALIAS}/{thumbnail_filename}"
         db.execute_query(
-            "UPDATE media SET thumbnail_path = %(p)s, thumbnail_status = 'generated' WHERE id = %(id)s",
-            {"p": relative_path, "id": media.id}, "none"
+            "UPDATE media SET thumbnail_path = %(p)s, thumbnail_status = 'generated', aspect_ratio = %(ar)s WHERE id = %(id)s",
+            {"p": relative_path, "ar": aspect_ratio, "id": media.id}, "none"
         )
         if emit:
             emit(f"Part D — generated thumbnail for media {media.id}")

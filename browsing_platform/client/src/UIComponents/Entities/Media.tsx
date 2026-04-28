@@ -51,15 +51,16 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
     const thumbnailUrl = anchor_local_static_files(media.thumbnail_path) || undefined;
     const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
     const [mediaLoaded, setMediaLoaded] = useState(false);
-    const [naturalAspectRatio, setNaturalAspectRatio] = useState<number | undefined>(undefined);
-    const naturalAspectRatioRef = useRef<number | undefined>(undefined);
+    const [naturalAspectRatio, setNaturalAspectRatio] = useState<number | undefined>(mediaProp.aspect_ratio ?? undefined);
+    const naturalAspectRatioRef = useRef<number | undefined>(mediaProp.aspect_ratio ?? undefined);
 
     useEffect(() => {
         setThumbnailLoaded(false);
         setMediaLoaded(false);
-        setNaturalAspectRatio(undefined);
-        naturalAspectRatioRef.current = undefined;
-    }, [localUrl]);
+        const initial = mediaProp.aspect_ratio ?? undefined;
+        setNaturalAspectRatio(initial);
+        naturalAspectRatioRef.current = initial;
+    }, [localUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Set once from whichever image (thumbnail or full-res) loads first; ref guard
     // prevents duplicate state updates when both load in quick succession.
@@ -184,7 +185,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
         },
         ...viewerConfig?.media?.style,
         ...(!thumbnailLoaded && {
-            aspectRatio: '1 / 1',
+            aspectRatio: naturalAspectRatio ?? '1 / 1',
             backgroundColor: 'action.hover',
             animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
         }),
@@ -264,6 +265,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                             onCanPlay={() => setMediaLoaded(true)}
                             onNaturalAspectRatio={setNaturalAspectRatio}
                             thumbnailLoaded={thumbnailLoaded}
+                            initialAspectRatio={naturalAspectRatio}
                         />
                     </ResizableMediaWrapper>
                 )
@@ -286,7 +288,7 @@ export default function Media({media: mediaProp, viewerConfig}: IProps) {
                             '0%': {opacity: 1}, '50%': {opacity: 0.4}, '100%': {opacity: 1},
                         },
                         ...(!(thumbnailLoaded || mediaLoaded) && {
-                            aspectRatio: '1 / 1',
+                            aspectRatio: naturalAspectRatio ?? '1 / 1',
                             backgroundColor: 'action.hover',
                             animation: 'mediaPlaceholderPulse 2s ease-in-out infinite',
                         }),
