@@ -377,7 +377,7 @@ def merge_har_attachments(har_path: Path) -> Path:
     return final_path
 
 
-def finish_recording(recording_thread: threading.Thread, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None, storage_config: Optional[StorageConfig] = None):
+def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None, storage_config: Optional[StorageConfig] = None):
     # Stop the recording loop. The thread now exits quickly (no FFmpeg inside it).
     if stop_event is not None:
         stop_event.set()

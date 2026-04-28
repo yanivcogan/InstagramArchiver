@@ -5,6 +5,7 @@ import sys
 import threading
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
@@ -26,7 +27,6 @@ from archiver.dialogs import (
     show_dialog_form,
 )
 from archiver.profile_registration import Profile
-from archiver.profile_selection import select_profile
 from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
@@ -35,28 +35,95 @@ from utils.misc import get_my_public_ip, get_system_info
 load_dotenv()
 
 
-class AutomatedSessionConfig(BaseModel):
-    usernames: list[str]
+class SessionConfig(BaseModel):
     scrape_followers: bool
     scrape_following: bool
     storage_config: StorageConfig
 
 
-def get_automated_session_config() -> Optional[AutomatedSessionConfig]:
+def _load_profiles_map() -> list[Profile]:
+    map_path = Path(ROOT_DIR) / "archiver" / "profiles" / "map.json"
+    if not map_path.exists():
+        return []
+    with open(map_path, "r") as f:
+        return [Profile(**p) for p in json.load(f)]
+
+
+def _resolve_profile(identifier: str, profiles: list[Profile]) -> Optional[Profile]:
+    identifier = identifier.strip()
+    if identifier.isdigit():
+        idx = int(identifier)
+        if 0 <= idx < len(profiles):
+            return profiles[idx]
+        return None
+    for p in profiles:
+        if p.name == identifier:
+            return p
+    return None
+
+
+def _username_from_url(url: str) -> str:
+    url = url.strip().split("?")[0].rstrip("/")
+    path = urlparse(url).path
+    return path.strip("/").split("/")[0]
+
+
+def read_targets_from_terminal() -> list[tuple[Profile, str]]:
+    """Read profile+URL pairs from the terminal as CSV lines and return (Profile, username) pairs."""
+    profiles = _load_profiles_map()
+    if not profiles:
+        print("No profiles found. Please register a profile first (run archiver/profile_registration.py).")
+        sys.exit(1)
+
+    print("\nAvailable profiles:")
+    for idx, p in enumerate(profiles):
+        print(f"  {idx}  {p.name}  (Instagram: @{p.insta_username})")
+
+    print("\nEnter targets as CSV lines: profile_identifier,account_url")
+    print("Profile identifier can be the profile name or its index number.")
+    print("Enter a blank line when done.\n")
+
+    targets: list[tuple[Profile, str]] = []
+    while True:
+        try:
+            line = input("> ").strip()
+        except EOFError:
+            break
+        if not line:
+            break
+        parts = line.split(",", 1)
+        if len(parts) != 2:
+            print(f"  Skipping malformed line (expected 'identifier,url'): {line}")
+            continue
+        profile_id, url = parts[0].strip(), parts[1].strip()
+        profile = _resolve_profile(profile_id, profiles)
+        if profile is None:
+            print(f"  Skipping unknown profile identifier: '{profile_id}'")
+            continue
+        username = _username_from_url(url)
+        if not username:
+            print(f"  Skipping — could not extract username from URL: '{url}'")
+            continue
+        targets.append((profile, username))
+        print(f"  Added: @{username} using profile '{profile.name}'")
+
+    if not targets:
+        print("No valid targets entered — nothing to do.")
+        sys.exit(0)
+
+    return targets
+
+
+def get_session_config() -> Optional[SessionConfig]:
     default_signature = os.getenv("DEFAULT_SIGNATURE", "")
     raw = show_dialog_form(
         DialogForm(
-            title="Automated Follower Scraper",
+            title="Automated Follower Scraper — Configuration",
             submit_button_text="Start",
             sections=[
                 FormSection(
-                    title="Targets",
+                    title="Scraping",
                     fields=[
-                        FormFieldText(
-                            title="Instagram usernames to scrape (comma or newline separated)",
-                            key="usernames_raw",
-                            default_value="",
-                        ),
                         FormFieldBool(
                             title="Scrape followers",
                             key="scrape_followers",
@@ -100,12 +167,12 @@ def get_automated_session_config() -> Optional[AutomatedSessionConfig]:
                         FormFieldBool(
                             title="Download Full Versions of Fetched Media",
                             key="v_download_full_versions_of_fetched_media",
-                            default_value=True,
+                            default_value=False,
                         ),
                         FormFieldBool(
                             title="Download Highest Quality Assets from Structures",
                             key="v_download_highest_quality_assets_from_structures",
-                            default_value=True,
+                            default_value=False,
                         ),
                     ],
                 ),
@@ -125,7 +192,7 @@ def get_automated_session_config() -> Optional[AutomatedSessionConfig]:
                         FormFieldBool(
                             title="Download Highest Quality Assets from Structures",
                             key="p_download_highest_quality_assets_from_structures",
-                            default_value=True,
+                            default_value=False,
                         ),
                     ],
                 ),
@@ -136,32 +203,20 @@ def get_automated_session_config() -> Optional[AutomatedSessionConfig]:
     if raw is None:
         return None
 
-    usernames_raw: str = raw.pop("usernames_raw", "")
-    # split on commas and newlines, strip whitespace, drop empties
-    parts = [u.strip() for part in usernames_raw.replace(",", "\n").splitlines() for u in [part.strip()] if u]
-    usernames = [u for u in parts if u]
-
-    if not usernames:
-        print("No usernames entered — nothing to do.")
-        return None
-
-    storage_config = StorageConfig(
-        signature=raw["signature"],
-        notes=raw["notes"],
-        v_download_media_not_in_structures=raw["v_download_media_not_in_structures"],
-        v_download_unfetched_media=raw["v_download_unfetched_media"],
-        v_download_full_versions_of_fetched_media=raw["v_download_full_versions_of_fetched_media"],
-        v_download_highest_quality_assets_from_structures=raw["v_download_highest_quality_assets_from_structures"],
-        p_download_media_not_in_structures=raw["p_download_media_not_in_structures"],
-        p_download_unfetched_media=raw["p_download_unfetched_media"],
-        p_download_highest_quality_assets_from_structures=raw["p_download_highest_quality_assets_from_structures"],
-    )
-
-    return AutomatedSessionConfig(
-        usernames=usernames,
+    return SessionConfig(
         scrape_followers=raw["scrape_followers"],
         scrape_following=raw["scrape_following"],
-        storage_config=storage_config,
+        storage_config=StorageConfig(
+            signature=raw["signature"],
+            notes=raw["notes"],
+            v_download_media_not_in_structures=raw["v_download_media_not_in_structures"],
+            v_download_unfetched_media=raw["v_download_unfetched_media"],
+            v_download_full_versions_of_fetched_media=raw["v_download_full_versions_of_fetched_media"],
+            v_download_highest_quality_assets_from_structures=raw["v_download_highest_quality_assets_from_structures"],
+            p_download_media_not_in_structures=raw["p_download_media_not_in_structures"],
+            p_download_unfetched_media=raw["p_download_unfetched_media"],
+            p_download_highest_quality_assets_from_structures=raw["p_download_highest_quality_assets_from_structures"],
+        ),
     )
 
 
@@ -170,7 +225,7 @@ def archive_followers_session(
     username: str,
     commit_id: Optional[str],
     branch: Optional[str],
-    config: AutomatedSessionConfig,
+    config: SessionConfig,
 ) -> None:
     profiles_dir = Path(ROOT_DIR) / "archiver" / "profiles"
     profile_path = profiles_dir / profile.name
@@ -271,10 +326,10 @@ def archive_followers_session(
 if __name__ == "__main__":
     commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
-    selected_profile = select_profile()
-    config = get_automated_session_config()
+    targets = read_targets_from_terminal()
+    config = get_session_config()
     if config is None:
         sys.exit(0)
-    for username in config.usernames:
-        archive_followers_session(selected_profile, username, commit_id, branch, config)
+    for profile, username in targets:
+        archive_followers_session(profile, username, commit_id, branch, config)
     sys.exit(0)

@@ -13,10 +13,21 @@ def scroll_relation_to_bottom(
     page.click(f"a[href$='/{relation}/']")
     time.sleep(3)
 
-    page.wait_for_selector("#scrollview", timeout=15000)
+    page.wait_for_selector("[role='dialog'][aria-modal='true']", timeout=15000)
     time.sleep(2)
 
-    scroll_container = page.locator("#scrollview")
+    handle = page.evaluate_handle("""() => {
+        const dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+        if (!dialog) return document.body;
+        for (const el of dialog.querySelectorAll('*')) {
+            const oy = window.getComputedStyle(el).overflowY;
+            if (oy === 'scroll') return el;
+        }
+        return dialog;
+    }""")
+    scroll_container = handle.as_element()
+    if scroll_container is None:
+        raise RuntimeError("Could not find scrollable container for followers list.")
 
     last_height = 0
     stagnant = 0
