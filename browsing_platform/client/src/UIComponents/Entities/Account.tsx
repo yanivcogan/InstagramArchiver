@@ -314,6 +314,17 @@ export default function Account({
                             toAdd.forEach(i => next.add(i));
                             return next;
                         });
+                        const maxNewIndex = Math.max(...newIndices);
+                        setTimeout(() => {
+                            setRenderedIndices(prev => {
+                                const preloadIndices = [maxNewIndex + 1, maxNewIndex + 2];
+                                const toAdd = preloadIndices.filter(i => !prev.has(i));
+                                if (toAdd.length === 0) return prev;
+                                const next = new Set(prev);
+                                toAdd.forEach(i => next.add(i));
+                                return next;
+                            });
+                        }, 0);
                     }
                 },
                 {root: null, rootMargin: '0px 0px 400px 0px', threshold: 0}
