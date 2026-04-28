@@ -377,16 +377,16 @@ def merge_har_attachments(har_path: Path) -> Path:
     return final_path
 
 
-def finish_recording(recording_thread: threading.Thread, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
+def finish_recording(recording_thread: threading.Thread, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None, storage_config: Optional[StorageConfig] = None):
     # Stop the recording loop. The thread now exits quickly (no FFmpeg inside it).
     if stop_event is not None:
         stop_event.set()
     if recording_thread is not None and recording_thread.is_alive():
         recording_thread.join()
 
-    # Show the dialog immediately — screen recording has stopped so the form
-    # won't be captured.
-    storage_config = get_storage_config()
+    # Show the dialog if no pre-supplied config (automated sessions pass config upfront).
+    if storage_config is None:
+        storage_config = get_storage_config()
 
     if storage_config is None:
         print("Archiving cancelled by user. Deleting archive directory.")
