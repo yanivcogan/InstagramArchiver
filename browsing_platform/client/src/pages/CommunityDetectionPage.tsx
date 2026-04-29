@@ -49,6 +49,7 @@ import {
     SearchResult,
     TagKernelAccount,
     TagKernelResponse,
+    Thumbnail,
     TieWeights,
 } from '../services/DataFetcher';
 import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
@@ -56,7 +57,7 @@ import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
 const COMMUNITY_TAG_PLACEHOLDER = 'Assign Community Tag';
-const stripThumbnails = <T extends { thumbnails?: string[] }>(obj: T): T => ({...obj, thumbnails: []});
+const stripThumbnails = <T extends { thumbnails?: Thumbnail[] }>(obj: T): T => ({...obj, thumbnails: []});
 
 // ── Serialisable state (export / import) ──────────────────────────────────────
 

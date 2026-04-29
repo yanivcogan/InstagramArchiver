@@ -107,7 +107,7 @@ export default function ResizableMediaWrapper({
     // Phase 2: explicit-width block div + SE drag handle.
     // position: relative is required so the absolute-positioned handle stays anchored here.
     return (
-        <div style={{display: 'block', position: 'relative', width, boxSizing: 'border-box'}}>
+        <div style={{display: 'block', position: 'relative', width, maxWidth: '100%', boxSizing: 'border-box'}}>
             <div style={{width: '100%', boxSizing: 'border-box'}}>
                 {children}
             </div>

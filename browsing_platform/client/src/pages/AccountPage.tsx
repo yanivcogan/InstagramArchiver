@@ -139,7 +139,7 @@ export default function AccountPage() {
         <PageShell
             hideMenu={hideHeader}
             title="Account Data"
-            subtitle={<PageSubtitleLoading data={data}><Typography>{primaryAccount?.display_name || primaryAccount?.url_suffix}</Typography></PageSubtitleLoading>}
+            subtitle={<PageSubtitleLoading data={data}><Typography noWrap>{primaryAccount?.display_name || primaryAccount?.url_suffix}</Typography></PageSubtitleLoading>}
             headerRight={
                 <Stack direction={"row"} alignItems={"center"} gap={0.5} sx={{marginLeft: 'auto'}}>
                     <Tooltip title={compactMode ? "Detailed view" : "Compact view"} arrow>

@@ -1,5 +1,5 @@
 import React from 'react';
-import {CircularProgress, Divider, Stack, Typography} from "@mui/material";
+import {Box, CircularProgress, Divider, Stack, Typography} from "@mui/material";
 import TopNavBar from "../UIComponents/TopNavBar/TopNavBar";
 
 interface PageShellProps {
@@ -14,12 +14,12 @@ export default function PageShell({hideMenu, title, subtitle, headerRight, child
     return (
         <div className={"page-wrap"}>
             <TopNavBar hideMenuButton={hideMenu}>
-                <Stack direction={"row"} alignItems={"center"} justifyContent={"space-between"} gap={1} sx={{width: '100%'}}>
-                    <Stack direction={"row"} alignItems={"center"} gap={1}>
-                        <Typography>{title}</Typography>
+                <Stack direction={"row"} alignItems={"center"} justifyContent={"space-between"} gap={1} sx={{width: '100%', minWidth: 0}}>
+                    <Stack direction={"row"} alignItems={"center"} gap={1} sx={{minWidth: 0, overflow: 'hidden'}}>
+                        <Typography sx={{'@media (max-width: 768px)': {display: 'none'}}}>{title}</Typography>
                         {subtitle}
                     </Stack>
-                    {headerRight}
+                    {headerRight && <Box sx={{flexShrink: 0}}>{headerRight}</Box>}
                 </Stack>
             </TopNavBar>
             <div className={"page-content content-wrap"}>

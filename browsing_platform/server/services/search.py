@@ -33,12 +33,17 @@ class SearchResultTransform(BaseModel):
     access_token: Optional[str] = None
 
 
+class Thumbnail(BaseModel):
+    src: str
+    aspect_ratio: Optional[float] = None
+
+
 class SearchResult(BaseModel):
     page: str
     id: int
     title: str
     details: Optional[str]
-    thumbnails: Optional[list[str]] = None
+    thumbnails: Optional[list[Thumbnail]] = None
     metadata: Optional[dict] = None
 
     @field_validator('thumbnails', mode='before')
@@ -105,9 +110,9 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     thumb_args = {f"sid_{i}": sid for i, sid in enumerate(session_ids)}
     thumb_in = ", ".join(f"%(sid_{i})s" for i in range(len(session_ids)))
     thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
-        f"""SELECT archive_session_id, thumbnail_path, local_url, media_count
+        f"""SELECT archive_session_id, thumbnail_path, local_url, media_count, aspect_ratio
             FROM (
-                SELECT ma.archive_session_id, m.thumbnail_path, m.local_url,
+                SELECT ma.archive_session_id, m.thumbnail_path, m.local_url, m.aspect_ratio,
                        COUNT(*) OVER (PARTITION BY ma.archive_session_id) AS media_count,
                        ROW_NUMBER() OVER (PARTITION BY ma.archive_session_id ORDER BY m.id) AS rn
                 FROM media_archive ma
@@ -118,14 +123,14 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
             WHERE rn <= 4""",
         thumb_args
     )
-    session_thumbnails: dict[int, list[str]] = {}
+    session_thumbnails: dict[int, list[Thumbnail]] = {}
     session_media_count: dict[int, int] = {}
     for t in thumb_rows:
         sid = t["archive_session_id"]
         session_media_count[sid] = t["media_count"]
-        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
-        if thumb:
-            session_thumbnails.setdefault(sid, []).append(thumb)
+        src = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if src:
+            session_thumbnails.setdefault(sid, []).append(Thumbnail(src=src, aspect_ratio=t.get("aspect_ratio")))
     results = [
         SearchResult(
             page="archive",
@@ -287,9 +292,9 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
     thumb_args = {f"aid_{i}": aid for i, aid in enumerate(account_ids)}
     thumb_in = ", ".join(f"%(aid_{i})s" for i in range(len(account_ids)))
     thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
-        f"""SELECT account_id, thumbnail_path, local_url, media_count
+        f"""SELECT account_id, thumbnail_path, local_url, media_count, aspect_ratio
             FROM (
-                SELECT account_id, thumbnail_path, local_url,
+                SELECT account_id, thumbnail_path, local_url, aspect_ratio,
                        COUNT(*) OVER (PARTITION BY account_id) AS media_count,
                        ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY publication_date DESC) AS rn
                 FROM media
@@ -299,21 +304,21 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
             WHERE rn <= 8""",
         thumb_args
     )
-    account_thumbnails: dict[int, list[str]] = {}
+    account_thumbnails: dict[int, list[Thumbnail]] = {}
     account_media_count: dict[int, int] = {}
     for t in thumb_rows:
         aid = t["account_id"]
         account_media_count[aid] = t["media_count"]
-        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
-        if thumb:
-            account_thumbnails.setdefault(aid, []).append(thumb)
+        src = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if src:
+            account_thumbnails.setdefault(aid, []).append(Thumbnail(src=src, aspect_ratio=t.get("aspect_ratio")))
     results = [SearchResult(
         page="account",
         id=row["id"],
-        title=(reconstruct_url(row["url_suffix"], row["platform"]) or row["url_suffix"] or "") + (f" ({row['display_name']})" if row["display_name"] else ""),
+        title=reconstruct_url(row["url_suffix"], row["platform"]) or row["url_suffix"] or "",
         details=row["bio"] or "",
         thumbnails=account_thumbnails.get(row["id"]),
-        metadata={"media_count": account_media_count.get(row["id"], 0)},
+        metadata={"media_count": account_media_count.get(row["id"], 0), "display_name": row["display_name"] or None, "url_suffix": row["url_suffix"] or None},
     ) for row in rows]
     results = apply_search_results_transform(results, search_results_transform)
     return results
@@ -371,14 +376,14 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
     media_args = {f"pid_{i}": pid for i, pid in enumerate(post_ids)}
     media_in = ", ".join(f"%(pid_{i})s" for i in range(len(post_ids)))
     media_rows = db.execute_query(  # nosec B608 - media_in contains only %(key)s placeholders
-        f"SELECT post_id, thumbnail_path, local_url FROM media WHERE post_id IN ({media_in})",
+        f"SELECT post_id, thumbnail_path, local_url, aspect_ratio FROM media WHERE post_id IN ({media_in})",
         media_args
     )
-    post_thumbnails: dict[int, list[str]] = {}
+    post_thumbnails: dict[int, list[Thumbnail]] = {}
     for m in media_rows:
-        thumb = get_media_thumbnail_path(m["thumbnail_path"], m["local_url"])
-        if thumb:
-            post_thumbnails.setdefault(m["post_id"], []).append(thumb)
+        src = get_media_thumbnail_path(m["thumbnail_path"], m["local_url"])
+        if src:
+            post_thumbnails.setdefault(m["post_id"], []).append(Thumbnail(src=src, aspect_ratio=m.get("aspect_ratio")))
     results = [
         SearchResult(
             page="post",
@@ -427,10 +432,10 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args.update(tag_filter_args)
     inner_where = ' AND '.join(where_clauses)
     rows = db.execute_query(  # nosec B608 - inner_where and tag_filter_join built from safe clauses only
-        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.media_type, m.publication_date,
+        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.aspect_ratio, m.media_type, m.publication_date,
                    a.display_name AS account_display_name, a.url_suffix AS account_url_suffix, a.platform AS account_platform
            FROM (
-               SELECT media.id, media.thumbnail_path, media.local_url, media.publication_date, media.account_id, media.media_type
+               SELECT media.id, media.thumbnail_path, media.local_url, media.aspect_ratio, media.publication_date, media.account_id, media.media_type
                FROM media
                {tag_filter_join}
                WHERE {inner_where}
@@ -447,10 +452,10 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
             id=row["id"],
             title=reconstruct_url(row["account_url_suffix"], row["account_platform"]) or "",
             details="",
-            thumbnails=[thumb for thumb in [
+            thumbnails=[Thumbnail(src=src, aspect_ratio=row.get("aspect_ratio")) for src in [
                 get_media_thumbnail_path(row["thumbnail_path"], row["local_url"]),
                 row["local_url"],
-            ] if thumb],
+            ] if src],
             metadata={
                 "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
                 "account_display_name": row["account_display_name"],
@@ -483,7 +488,7 @@ def sign_thumbnail_path(path: str, transform: SearchResultTransform) -> str:
 def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTransform) -> SearchResult:
     if not res.thumbnails:
         return res
-    res.thumbnails = [sign_thumbnail_path(t, transform) for t in res.thumbnails]
+    res.thumbnails = [Thumbnail(src=sign_thumbnail_path(t.src, transform), aspect_ratio=t.aspect_ratio) for t in res.thumbnails]
     return res
 
 

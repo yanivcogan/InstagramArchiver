@@ -82,7 +82,7 @@ export default function PostPage() {
         <PageShell
             hideMenu={hideHeader}
             title="Post Data"
-            subtitle={<PageSubtitleLoading data={data}><Typography>{primaryPost?.url}</Typography></PageSubtitleLoading>}
+            subtitle={<PageSubtitleLoading data={data}><Typography noWrap>{primaryPost?.url}</Typography></PageSubtitleLoading>}
             headerRight={isLoggedIn && dbId ? <LinkSharing entityType={"post"} entityId={dbId} stableSharePath={stableSharePath}/> : undefined}
         >
             {renderData()}

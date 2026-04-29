@@ -300,12 +300,18 @@ export interface ISearchQuery {
     tag_filter_mode?: "any" | "all";
 }
 
+export interface Thumbnail {
+    src: string;
+    aspect_ratio: number | null;
+}
+
+
 export interface SearchResult {
     page: string,
     id: number,
     title: string,
     details?: string;
-    thumbnails?: string[];
+    thumbnails?: Thumbnail[];
     metadata?: Record<string, any>;
 }
 
@@ -344,7 +350,7 @@ export interface CandidateAccount {
     is_verified: boolean | null;
     score: number;
     kernel_connections: number;
-    thumbnails: string[];
+    thumbnails: Thumbnail[];
     media_count: number;
 }
 
@@ -369,7 +375,7 @@ export interface TagKernelAccount {
     url_suffix: string | null;
     display_name: string | null;
     bio: string | null;
-    thumbnails: string[];
+    thumbnails: Thumbnail[];
     media_count: number;
     applied_tags: ITagWithType[];
 }

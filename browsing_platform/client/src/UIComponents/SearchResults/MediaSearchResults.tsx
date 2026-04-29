@@ -1,5 +1,5 @@
-import React, {useState} from 'react';
-import {Box, Checkbox, Chip, Fade, Stack, Typography} from '@mui/material';
+import React, {useState, useRef, useEffect} from 'react';
+import {Box, Checkbox, Chip, Fade, Stack, Typography, useMediaQuery} from '@mui/material';
 import dayjs from 'dayjs';
 import {SearchResult} from '../../services/DataFetcher';
 import {ITagWithType} from '../../types/tags';
@@ -65,7 +65,11 @@ interface CellProps {
 }
 
 function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellProps) {
+    const isMobile = useMediaQuery('(max-width: 768px)');
     const [hovered, setHovered] = useState(false);
+    const [everHovered, setEverHovered] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const thumbnail = result.thumbnails?.[0];
     const fullRes = result.thumbnails?.[1];
     const isVideo = result.metadata?.media_type === 'video';
@@ -78,10 +82,32 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellP
             ? result.metadata.account_url.replace(/\/$/, '').split('/').pop()
             : null);
 
-    const fullResSrc = fullRes ? anchor_local_static_files(fullRes) || undefined : undefined;
+    const fullResSrc = fullRes ? anchor_local_static_files(fullRes.src) || undefined : undefined;
+
+    useEffect(() => {
+        if (!videoRef.current) return;
+        if (hovered) {
+            videoRef.current.play().catch(() => {});
+        } else {
+            videoRef.current.pause();
+        }
+    }, [hovered]);
+
+    useEffect(() => {
+        if (!isMobile) return;
+        const el = containerRef.current;
+        if (!el) return;
+        const observer = new IntersectionObserver(
+            ([entry]) => { if (entry.isIntersecting) setEverHovered(true); },
+            {threshold: 0.1},
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [isMobile]);
 
     return (
         <Box
+            ref={containerRef}
             sx={{position: 'relative', cursor: onToggleSelected ? 'pointer' : undefined}}
             onClick={onToggleSelected ? (e) => { e.preventDefault(); onToggleSelected(result.id); } : undefined}
         >
@@ -115,21 +141,21 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected}: CellP
                         overflow: 'hidden',
                         cursor: 'pointer',
                     }}
-                    onMouseEnter={() => setHovered(true)}
+                    onMouseEnter={() => { setHovered(true); setEverHovered(true); }}
                     onMouseLeave={() => setHovered(false)}
                 >
                     {thumbnail && (
                         <img
-                            src={anchor_local_static_files(thumbnail) || undefined}
+                            src={anchor_local_static_files(thumbnail.src) || undefined}
                             alt=""
                             style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}
                         />
                     )}
-                    {hovered && fullResSrc && (
+                    {everHovered && fullResSrc && (
                         isVideo ? (
                             <video
+                                ref={videoRef}
                                 src={fullResSrc}
-                                autoPlay
                                 muted
                                 loop
                                 playsInline
@@ -170,9 +196,9 @@ export default function MediaSearchResults({results, tagsMap, selectedIds, onTog
                 gap: 1,
             }}
         >
-            {results.map((result, idx) => (
+            {results.map((result) => (
                 <MediaSearchResultCell
-                    key={idx}
+                    key={result.id}
                     result={result}
                     tags={tagsMap?.[result.id] ?? []}
                     selected={selectedIds?.has(result.id) ?? false}

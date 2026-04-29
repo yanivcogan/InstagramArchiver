@@ -280,9 +280,13 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
 
     return <Paper sx={{padding: '1em', boxSizing: 'border-box', width: '100%', backgroundColor: '#e8f0ff'}}>
         <Stack gap={0.5}>
-            <Stack gap={1} direction={"row"} alignItems={"center"}>
-                <Typography variant={"subtitle2"} sx={{userSelect: "all"}}
-                            color={"textSecondary"}>{post.url}</Typography>
+            <Stack gap={1} direction={"row"} alignItems={"center"} sx={{minWidth: 0}}>
+                <Typography
+                    variant={"subtitle2"}
+                    sx={{userSelect: "all", wordBreak: 'break-all'}}
+                    color={"textSecondary"}>
+                    {post.url}
+                </Typography>
             </Stack>
             <Tooltip
                 title={

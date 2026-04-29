@@ -1,6 +1,6 @@
 import React from 'react';
 import {Box, CardMedia, Checkbox, Chip, Divider, Stack, Typography} from '@mui/material';
-import {SearchResult} from '../../services/DataFetcher';
+import {SearchResult, Thumbnail} from '../../services/DataFetcher';
 import {anchor_local_static_files} from '../../services/server';
 import {ITagWithType} from '../../types/tags';
 
@@ -12,7 +12,8 @@ interface SearchResultListProps {
 export function SearchResultList({results, children}: SearchResultListProps) {
     if (results.length === 0) return <Box>No results found.</Box>;
     return (
-        <Stack spacing={2} divider={<Divider orientation="horizontal" flexItem/>}>
+        <Stack spacing={2} divider={<Divider orientation="horizontal" flexItem/>}
+               sx={{'@media (max-width: 768px)': {px: '1em'}}}>
             {results.map((result, idx) => children(result, idx))}
         </Stack>
     );
@@ -56,7 +57,7 @@ export function SelectableResultBox({id, page, result, selectedIds, onToggleSele
 }
 
 interface SearchResultThumbnailsProps {
-    thumbnails?: string[];
+    thumbnails?: Thumbnail[];
     totalCount?: number;
 }
 
@@ -69,9 +70,15 @@ export function SearchResultThumbnails({thumbnails, totalCount}: SearchResultThu
                 {thumbnails?.map((tn, i) => (
                     <img
                         key={i}
-                        src={anchor_local_static_files(tn) || undefined}
+                        src={anchor_local_static_files(tn.src) || undefined}
                         alt={`Thumbnail ${i + 1}`}
-                        style={{maxWidth: '100px', maxHeight: '100px'}}
+                        style={tn.aspect_ratio
+                            ? {
+                                width: tn.aspect_ratio >= 1 ? 100 : 100 * tn.aspect_ratio,
+                                height: tn.aspect_ratio >= 1 ? 100 / tn.aspect_ratio : 100,
+                                backgroundColor: '#e0e0e0',
+                              }
+                            : {maxWidth: '100px', maxHeight: '100px'}}
                     />
                 ))}
                 {total > shown && (

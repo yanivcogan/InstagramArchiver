@@ -84,7 +84,7 @@ export default function MediaPage() {
         <PageShell
             hideMenu={hideHeader}
             title="Media Data"
-            subtitle={<PageSubtitleLoading data={data}><Typography>{primaryMedia?.url}</Typography></PageSubtitleLoading>}
+            subtitle={<PageSubtitleLoading data={data}><Typography noWrap>{primaryMedia?.url}</Typography></PageSubtitleLoading>}
             headerRight={isLoggedIn && dbId ? <LinkSharing entityType={"media"} entityId={dbId} stableSharePath={stableSharePath}/> : undefined}
         >
             {renderData()}

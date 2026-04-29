@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from browsing_platform.server.services.media import get_media_thumbnail_path
-from browsing_platform.server.services.search import SearchResultTransform, sign_thumbnail_path
+from browsing_platform.server.services.search import SearchResultTransform, Thumbnail, sign_thumbnail_path
 from browsing_platform.server.services.tag import ITagWithType
 from browsing_platform.server.services.tag_management import IQuickAccessTypeDropdown, ITagHierarchyEntry
 from utils import db
@@ -42,7 +42,7 @@ class CandidateAccount(BaseModel):
     is_verified: Optional[bool] = None
     score: float
     kernel_connections: int
-    thumbnails: list[str] = []
+    thumbnails: list[Thumbnail] = []
     media_count: int = 0
 
 
@@ -55,7 +55,7 @@ class TagKernelAccount(BaseModel):
     url_suffix: Optional[str] = None
     display_name: Optional[str] = None
     bio: Optional[str] = None
-    thumbnails: list[str] = []
+    thumbnails: list[Thumbnail] = []
     media_count: int = 0
     applied_tags: list[ITagWithType] = []
 
@@ -274,9 +274,9 @@ def compute_candidates(
     account_map = {r["id"]: r for r in account_rows}
 
     thumb_rows = db.execute_query(  # nosec B608
-        f"""SELECT account_id, thumbnail_path, local_url, media_count
+        f"""SELECT account_id, thumbnail_path, local_url, aspect_ratio, media_count
             FROM (
-                SELECT account_id, thumbnail_path, local_url,
+                SELECT account_id, thumbnail_path, local_url, aspect_ratio,
                        COUNT(*) OVER (PARTITION BY account_id) AS media_count,
                        ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY publication_date DESC) AS rn
                 FROM media
@@ -288,17 +288,17 @@ def compute_candidates(
         return_type="rows",
     )
 
-    thumb_map: dict[int, list[str]] = {}
+    thumb_map: dict[int, list[Thumbnail]] = {}
     media_count_map: dict[int, int] = {}
     should_sign = transform is not None and transform.access_token is not None
     for t in thumb_rows:
         aid = t["account_id"]
         media_count_map[aid] = t["media_count"]
-        path = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
-        if path:
+        src = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if src:
             if should_sign:
-                path = sign_thumbnail_path(path, transform)
-            thumb_map.setdefault(aid, []).append(path)
+                src = sign_thumbnail_path(src, transform)
+            thumb_map.setdefault(aid, []).append(Thumbnail(src=src, aspect_ratio=t.get("aspect_ratio")))
 
     candidates = []
     for cid in top_ids:
@@ -412,9 +412,9 @@ def get_tag_kernel_accounts(
     account_map = {r["id"]: r for r in account_rows}
 
     thumb_rows = db.execute_query(  # nosec B608
-        f"""SELECT account_id, thumbnail_path, local_url, media_count
+        f"""SELECT account_id, thumbnail_path, local_url, aspect_ratio, media_count
             FROM (
-                SELECT account_id, thumbnail_path, local_url,
+                SELECT account_id, thumbnail_path, local_url, aspect_ratio,
                        COUNT(*) OVER (PARTITION BY account_id) AS media_count,
                        ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY publication_date DESC) AS rn
                 FROM media
@@ -426,17 +426,17 @@ def get_tag_kernel_accounts(
         return_type="rows",
     )
 
-    thumb_map: dict[int, list[str]] = {}
+    thumb_map: dict[int, list[Thumbnail]] = {}
     media_count_map: dict[int, int] = {}
     should_sign = transform is not None and transform.access_token is not None
     for t in thumb_rows:
         aid = t["account_id"]
         media_count_map[aid] = t["media_count"]
-        path = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
-        if path:
+        src = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if src:
             if should_sign:
-                path = sign_thumbnail_path(path, transform)
-            thumb_map.setdefault(aid, []).append(path)
+                src = sign_thumbnail_path(src, transform)
+            thumb_map.setdefault(aid, []).append(Thumbnail(src=src, aspect_ratio=t.get("aspect_ratio")))
 
     accounts = []
     for aid in account_ids:
