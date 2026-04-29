@@ -516,8 +516,13 @@ export default function CommunityDetectionPage() {
 
     const addToKernel = (result: SearchResult) => {
         if (kernelIdSet.has(result.id)) return;
+        const urlSuffix = result.metadata?.url_suffix as string | null | undefined;
+        const displayName = result.metadata?.display_name as string | null | undefined;
+        const title = displayName
+            ? `${urlSuffix} (${displayName})`
+            : (urlSuffix ?? result.title);
         setKernelEntries(prev => [...prev, {
-            account: result,
+            account: {...result, title},
             manuallyAdded: true,
             tagSources: [],
         }]);
