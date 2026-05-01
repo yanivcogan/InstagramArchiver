@@ -117,7 +117,7 @@ mysqldump -u golf -pSEESECRETSBUILDWEBSERVER evidenceplatform > evidenceplatform
 #### 2. Backup Files and Archives
 ```bash
 # On production server
-# Excludes SQL dumps from the archive backup and raw images
+# Excludes SQL dumps from the archive backup
 
 # only takes 5 mins or so
 tar \
@@ -196,3 +196,25 @@ The `FILE_TOKEN_SECRET` is used to encrypt file access tokens:
 - Changing this secret will invalidate all existing file tokens
 - Rotate this secret periodically as part of security best practices
 
+
+## Prod DB
+
+sudo mysql
+use evidenceplatform
+select * from users
+
+## DEV
+
+```bash
+cd ~
+mysqldump -u charlie -ppassword evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
+
+uv run infra/migrate.py
+```
+
+~/evidenceplatform/archives folder contains raw archives
+ about 641GB 
+  but now yaniv is uploading straight to the server
+
+t:/ftk contains a backup from gdrive? 445GB
+u:/archives2 - 208GB.. not sure why.
