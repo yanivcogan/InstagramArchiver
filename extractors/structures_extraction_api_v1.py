@@ -8,7 +8,7 @@ from extractors.models_har import HarRequest
 
 class ApiV1Context(BaseModel):
     url: Optional[str] = None
-    media_id: Optional[int] = None
+    media_id: Optional[str] = None
 
 class ApiV1Response(BaseModel):
     context: Optional[ApiV1Context] = None
@@ -20,8 +20,8 @@ class ApiV1Response(BaseModel):
 
 def extract_data_from_api_v1_entry(api_data: dict, req: HarRequest) -> Optional[ApiV1Response]:
     res = ApiV1Response()
-    res.context = ApiV1Context(url=req.url, media_id=int(req.url.split('media/')[1].split('/')[0]) if 'media/' in req.url else None)
-    if "/friendships/" in req.url:
+    res.context = ApiV1Context(url=req.url, media_id=req.url.split('media/')[1].split('/')[0] if 'media/' in req.url else None)
+    if "/friendships/" in req.url and "users" in api_data:
         res.friendships = FriendshipsApiV1(**api_data)
     elif "/likers/" in req.url:
         res.likers = LikersApiV1(**api_data)

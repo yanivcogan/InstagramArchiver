@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Literal, Optional, Any
 from urllib.parse import urlparse, urlencode, urlunparse, parse_qsl
 
@@ -11,6 +12,7 @@ from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 logger = logging.getLogger(__name__)
 
 from browsing_platform.server.services.media import get_media_thumbnail_path
+from extractors.entity_types import reconstruct_url, parse_search_url
 from utils import db
 
 T_Search_Mode = Literal["media", "posts", "accounts", "archive_sessions", "all"]
@@ -31,12 +33,17 @@ class SearchResultTransform(BaseModel):
     access_token: Optional[str] = None
 
 
+class Thumbnail(BaseModel):
+    src: str
+    aspect_ratio: Optional[float] = None
+
+
 class SearchResult(BaseModel):
     page: str
     id: int
     title: str
     details: Optional[str]
-    thumbnails: Optional[list[str]] = None
+    thumbnails: Optional[list[Thumbnail]] = None
     metadata: Optional[dict] = None
 
     @field_validator('thumbnails', mode='before')
@@ -75,14 +82,21 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     }
     where_clauses = []
     if query.search_term:
-        query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`archived_url`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
+        parsed_url = parse_search_url(query.search_term)
+        if parsed_url:
+            # Full platform URL → exact suffix + platform match
+            query_args["p_suffix"]   = parsed_url.suffix
+            query_args["p_platform"] = parsed_url.platform
+            where_clauses.append("archived_url_suffix = %(p_suffix)s AND platform = %(p_platform)s")
+        else:
+            query_args["search_term_match_against"] = default_fulltext_query(query.search_term)
+            where_clauses.append("MATCH(`archived_url_suffix`, `archived_url_parts`, `notes`) AGAINST (%(search_term_match_against)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "archive_session")
         where_clauses.append(general_filter)
         query_args.update(general_args)
     rows = db.execute_query(
-        f"""SELECT id, archived_url, notes, archiving_timestamp
+        f"""SELECT id, archived_url_suffix, platform, notes, archiving_timestamp
            FROM archive_session
               {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
            ORDER BY archiving_timestamp DESC
@@ -96,9 +110,9 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     thumb_args = {f"sid_{i}": sid for i, sid in enumerate(session_ids)}
     thumb_in = ", ".join(f"%(sid_{i})s" for i in range(len(session_ids)))
     thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
-        f"""SELECT archive_session_id, thumbnail_path, local_url, media_count
+        f"""SELECT archive_session_id, thumbnail_path, local_url, media_count, aspect_ratio
             FROM (
-                SELECT ma.archive_session_id, m.thumbnail_path, m.local_url,
+                SELECT ma.archive_session_id, m.thumbnail_path, m.local_url, m.aspect_ratio,
                        COUNT(*) OVER (PARTITION BY ma.archive_session_id) AS media_count,
                        ROW_NUMBER() OVER (PARTITION BY ma.archive_session_id ORDER BY m.id) AS rn
                 FROM media_archive ma
@@ -109,19 +123,19 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
             WHERE rn <= 4""",
         thumb_args
     )
-    session_thumbnails: dict[int, list[str]] = {}
+    session_thumbnails: dict[int, list[Thumbnail]] = {}
     session_media_count: dict[int, int] = {}
     for t in thumb_rows:
         sid = t["archive_session_id"]
         session_media_count[sid] = t["media_count"]
-        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
-        if thumb:
-            session_thumbnails.setdefault(sid, []).append(thumb)
+        src = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if src:
+            session_thumbnails.setdefault(sid, []).append(Thumbnail(src=src, aspect_ratio=t.get("aspect_ratio")))
     results = [
         SearchResult(
             page="archive",
             id=row["id"],
-            title=row["archived_url"] or f"Archive Session {row['id']}",
+            title=reconstruct_url(row["archived_url_suffix"], row["platform"]) or f"Archive Session {row['id']}",
             details=row["notes"] or "",
             thumbnails=session_thumbnails.get(row["id"]),
             metadata={
@@ -135,34 +149,25 @@ def search_archive_sessions(query: ISearchQuery, search_results_transform: Searc
     return results
 
 
-def string_to_instagram_account_url(s: str) -> Optional[str]:
-    """complete s to https://www.instagram.com/{handle} format if it looks like it could fit it; otherwise return None"""
+def extract_account_handle(s: str) -> Optional[str]:
+    """Return the bare Instagram handle if s looks like '@handle' or 'handle' (no URL prefix).
+    Does not parse full URLs — call parse_search_url first for those.
+    Returns the handle string without trailing slash, or None."""
     if not s:
         return None
-    import re
     s = s.strip()
     if s.startswith('@'):
         s = s[1:]
-    # try extract handle from full URL (with or without scheme/www)
-    m = re.search(r'(?:https?://)?(?:www\.)?instagram\.com/([^/?#\s]+)', s, flags=re.I)
-    if m:
-        handle = m.group(1).strip('/')
-    else:
-        # remove query/fragment and any scheme/www prefix
-        s_no_q = re.split(r'[?#]', s, 1)[0]
-        s_no_q = re.sub(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', '', s_no_q)
-        if s_no_q.lower().startswith('www.'):
-            s_no_q = s_no_q[4:]
-        if s_no_q.lower().startswith('instagram.com/'):
-            handle = s_no_q.split('/', 1)[1].strip('/')
-        else:
-            handle = s_no_q.strip('/ ')
+    # Reject anything that looks like a URL — parse_search_url handles those
+    if '://' in s or s.lower().startswith('www.') or '.' in s.split('/')[0]:
+        return None
+    # Strip any trailing path/query noise and take only the first segment
+    handle = s.split('/')[0].split('?')[0].split('#')[0].strip()
     if not handle:
         return None
-    handle = handle.split('/')[0]
-    # validate basic Instagram username rules (letters, numbers, dot, underscore; up to 30 chars)
+    # Validate basic Instagram username rules: letters, numbers, dot, underscore; up to 30 chars
     if re.fullmatch(r'[A-Za-z0-9._]{1,30}', handle):
-        return f"https://www.instagram.com/{handle}"
+        return handle
     return None
 
 
@@ -217,8 +222,10 @@ def build_tag_filter_join(entity: str, tag_ids: list[int], tag_filter_mode: str)
     return sql, args
 
 
-def _looks_like_url(s: str) -> bool:
-    return '://' in s or s.startswith('www.')
+def _escape_like(value: str) -> str:
+    """Escape LIKE metacharacters so user input is treated as a literal string.
+    Uses '!' as the escape character (declared via ESCAPE '!' in the query)."""
+    return value.replace('!', '!!').replace('%', '!%').replace('_', '!_')
 
 
 def search_accounts(query: ISearchQuery, search_results_transform: SearchResultTransform) -> list[SearchResult]:
@@ -227,14 +234,36 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         "offset": (query.page_number - 1) * query.page_size,
     }
     where_clauses = []
+    has_fulltext = False
     if query.search_term:
-        query_args["search_term"] = default_fulltext_query(query.search_term)
-        insta_account = string_to_instagram_account_url(query.search_term)
-        if insta_account:
-            query_args["account_search_term"] = f"url_{insta_account}"
-            where_clauses.append("JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) OR MATCH(`url`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        parsed_url = parse_search_url(query.search_term)
+        if parsed_url:
+            # Full platform URL → exact suffix + platform match, plus identifier fallback
+            query_args["p_suffix"]     = parsed_url.suffix
+            query_args["p_platform"]   = parsed_url.platform
+            query_args["p_identifier"] = f"url_{parsed_url.suffix}"
+            where_clauses.append(
+                "(url_suffix = %(p_suffix)s AND platform = %(p_platform)s) "
+                "OR JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(p_identifier)s))"
+            )
         else:
-            where_clauses.append("MATCH(`url`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            handle = extract_account_handle(query.search_term)
+            if handle:
+                # Bare handle / @handle → identifier lookup + fulltext on handle token
+                query_args["search_term"]         = default_fulltext_query(handle)
+                query_args["account_search_term"] = f"url_{handle}/"
+                where_clauses.append(
+                    "JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) "
+                    "OR MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)"
+                )
+                has_fulltext = True
+            else:
+                # Free text → fulltext only
+                query_args["search_term"] = default_fulltext_query(query.search_term)
+                where_clauses.append(
+                    "MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)"
+                )
+                has_fulltext = True
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "account")
         where_clauses.append(general_filter)
@@ -244,11 +273,11 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         tag_filter_join, tag_filter_args = build_tag_filter_join("account", query.tag_ids, query.tag_filter_mode or "any")
         query_args.update(tag_filter_args)
     order_by = (
-        "MATCH(`url`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
-        if query.search_term else "account.id DESC"
+        "MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        if has_fulltext else "account.id DESC"
     )
     rows = db.execute_query(  # nosec B608 - tag_filter_join built from safe templates only
-        f"""SELECT account.id, account.url, account.display_name, account.bio
+        f"""SELECT account.id, account.url_suffix, account.platform, account.display_name, account.bio
            FROM account
            {tag_filter_join}
            {'WHERE ' + ' AND '.join(where_clauses) if len(where_clauses) else ''}
@@ -263,9 +292,9 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
     thumb_args = {f"aid_{i}": aid for i, aid in enumerate(account_ids)}
     thumb_in = ", ".join(f"%(aid_{i})s" for i in range(len(account_ids)))
     thumb_rows = db.execute_query(  # nosec B608 - thumb_in contains only %(key)s placeholders
-        f"""SELECT account_id, thumbnail_path, local_url, media_count
+        f"""SELECT account_id, thumbnail_path, local_url, media_count, aspect_ratio
             FROM (
-                SELECT account_id, thumbnail_path, local_url,
+                SELECT account_id, thumbnail_path, local_url, aspect_ratio,
                        COUNT(*) OVER (PARTITION BY account_id) AS media_count,
                        ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY publication_date DESC) AS rn
                 FROM media
@@ -275,21 +304,21 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
             WHERE rn <= 8""",
         thumb_args
     )
-    account_thumbnails: dict[int, list[str]] = {}
+    account_thumbnails: dict[int, list[Thumbnail]] = {}
     account_media_count: dict[int, int] = {}
     for t in thumb_rows:
         aid = t["account_id"]
         account_media_count[aid] = t["media_count"]
-        thumb = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
-        if thumb:
-            account_thumbnails.setdefault(aid, []).append(thumb)
+        src = get_media_thumbnail_path(t["thumbnail_path"], t["local_url"])
+        if src:
+            account_thumbnails.setdefault(aid, []).append(Thumbnail(src=src, aspect_ratio=t.get("aspect_ratio")))
     results = [SearchResult(
         page="account",
         id=row["id"],
-        title=row["url"] + (f" ({row['display_name']})" if row["display_name"] else ""),
+        title=reconstruct_url(row["url_suffix"], row["platform"]) or row["url_suffix"] or "",
         details=row["bio"] or "",
         thumbnails=account_thumbnails.get(row["id"]),
-        metadata={"media_count": account_media_count.get(row["id"], 0)},
+        metadata={"media_count": account_media_count.get(row["id"], 0), "display_name": row["display_name"] or None, "url_suffix": row["url_suffix"] or None},
     ) for row in rows]
     results = apply_search_results_transform(results, search_results_transform)
     return results
@@ -301,14 +330,18 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         "offset": (query.page_number - 1) * query.page_size,
     }
     where_clauses = []
-    is_url_search = bool(query.search_term and _looks_like_url(query.search_term.strip()))
+    has_fulltext = False
     if query.search_term:
-        if is_url_search:
-            query_args["url_pattern"] = query.search_term.strip() + '%'
-            where_clauses.append("url LIKE %(url_pattern)s")
+        parsed_url = parse_search_url(query.search_term)
+        if parsed_url:
+            # Full platform URL → exact suffix + platform match
+            query_args["p_suffix"]   = parsed_url.suffix
+            query_args["p_platform"] = parsed_url.platform
+            where_clauses.append("url_suffix = %(p_suffix)s AND platform = %(p_platform)s")
         else:
             query_args["search_term"] = default_fulltext_query(query.search_term)
-            where_clauses.append("MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            where_clauses.append("MATCH(`url_suffix`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+            has_fulltext = True
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "post")
         where_clauses.append(general_filter)
@@ -319,14 +352,14 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args.update(tag_filter_args)
     inner_where = ('WHERE ' + ' AND '.join(where_clauses)) if where_clauses else ''
     order_by = (
-        "MATCH(`url`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
-        if (query.search_term and not is_url_search) else "publication_date DESC"
+        "MATCH(`url_suffix`, `caption`) AGAINST (%(search_term)s IN BOOLEAN MODE) DESC"
+        if has_fulltext else "publication_date DESC"
     )
     rows = db.execute_query(  # nosec B608 - inner_where, order_by, tag_filter_join built from safe clauses only
-        f"""SELECT p.id, p.url, p.id_on_platform, p.caption, p.publication_date,
-                   a.display_name AS account_display_name, a.url AS account_url
+        f"""SELECT p.id, p.url_suffix, p.platform, p.id_on_platform, p.caption, p.publication_date,
+                   a.display_name AS account_display_name, a.url_suffix AS account_url_suffix, a.platform AS account_platform
            FROM (
-               SELECT post.id, post.url, post.id_on_platform, post.caption, post.publication_date, post.account_id
+               SELECT post.id, post.url_suffix, post.platform, post.id_on_platform, post.caption, post.publication_date, post.account_id
                FROM post
                {tag_filter_join}
                {inner_where}
@@ -343,25 +376,25 @@ def search_posts(query: ISearchQuery, search_results_transform: SearchResultTran
     media_args = {f"pid_{i}": pid for i, pid in enumerate(post_ids)}
     media_in = ", ".join(f"%(pid_{i})s" for i in range(len(post_ids)))
     media_rows = db.execute_query(  # nosec B608 - media_in contains only %(key)s placeholders
-        f"SELECT post_id, thumbnail_path, local_url FROM media WHERE post_id IN ({media_in})",
+        f"SELECT post_id, thumbnail_path, local_url, aspect_ratio FROM media WHERE post_id IN ({media_in})",
         media_args
     )
-    post_thumbnails: dict[int, list[str]] = {}
+    post_thumbnails: dict[int, list[Thumbnail]] = {}
     for m in media_rows:
-        thumb = get_media_thumbnail_path(m["thumbnail_path"], m["local_url"])
-        if thumb:
-            post_thumbnails.setdefault(m["post_id"], []).append(thumb)
+        src = get_media_thumbnail_path(m["thumbnail_path"], m["local_url"])
+        if src:
+            post_thumbnails.setdefault(m["post_id"], []).append(Thumbnail(src=src, aspect_ratio=m.get("aspect_ratio")))
     results = [
         SearchResult(
             page="post",
             id=row["id"],
-            title=row["url"] if row["url"] else f"item {row['id_on_platform']}",
+            title=reconstruct_url(row["url_suffix"], row["platform"]) or row["url_suffix"] or f"item {row['id_on_platform']}",
             details=(row["caption"][:100] + '...') if row["caption"] and len(row["caption"]) > 100 else (row["caption"] or ""),
             thumbnails=post_thumbnails.get(row["id"]),
             metadata={
                 "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
                 "account_display_name": row["account_display_name"],
-                "account_url": row["account_url"],
+                "account_url": reconstruct_url(row["account_url_suffix"], row["account_platform"]),
             }
         )
         for row in rows
@@ -375,12 +408,20 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         "limit": query.page_size,
         "offset": (query.page_number - 1) * query.page_size,
     }
-    where_clauses = [
-        "local_url IS NOT NULL"
-    ]
     if query.search_term:
-        query_args["search_term"] = default_fulltext_query(query.search_term)
-        where_clauses.append("MATCH(`annotation`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
+        parsed_url = parse_search_url(query.search_term)
+    else:
+        parsed_url = None
+    if parsed_url:
+        # CDN URL → exact suffix + platform match (no local_url requirement)
+        query_args["p_suffix"]   = parsed_url.suffix
+        query_args["p_platform"] = parsed_url.platform
+        where_clauses = ["url_suffix = %(p_suffix)s AND platform = %(p_platform)s"]
+    else:
+        where_clauses = ["local_url IS NOT NULL"]
+        if query.search_term:
+            query_args["search_term"] = default_fulltext_query(query.search_term)
+            where_clauses.append("MATCH(`annotation`) AGAINST (%(search_term)s IN BOOLEAN MODE)")
     if query.advanced_filters:
         general_filter, general_args = json_logic_format_to_where_clause(query.advanced_filters, "media")
         where_clauses.append(general_filter)
@@ -391,10 +432,10 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         query_args.update(tag_filter_args)
     inner_where = ' AND '.join(where_clauses)
     rows = db.execute_query(  # nosec B608 - inner_where and tag_filter_join built from safe clauses only
-        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.media_type, m.publication_date,
-                   a.display_name AS account_display_name, a.url AS account_url
+        f"""SELECT m.id, m.thumbnail_path, m.local_url, m.aspect_ratio, m.media_type, m.publication_date,
+                   a.display_name AS account_display_name, a.url_suffix AS account_url_suffix, a.platform AS account_platform
            FROM (
-               SELECT media.id, media.thumbnail_path, media.local_url, media.publication_date, media.account_id, media.media_type
+               SELECT media.id, media.thumbnail_path, media.local_url, media.aspect_ratio, media.publication_date, media.account_id, media.media_type
                FROM media
                {tag_filter_join}
                WHERE {inner_where}
@@ -409,16 +450,16 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
         SearchResult(
             page="media",
             id=row["id"],
-            title=row["account_url"] or "",
+            title=reconstruct_url(row["account_url_suffix"], row["account_platform"]) or "",
             details="",
-            thumbnails=[thumb for thumb in [
+            thumbnails=[Thumbnail(src=src, aspect_ratio=row.get("aspect_ratio")) for src in [
                 get_media_thumbnail_path(row["thumbnail_path"], row["local_url"]),
                 row["local_url"],
-            ] if thumb],
+            ] if src],
             metadata={
                 "publication_date": row["publication_date"].isoformat() if row["publication_date"] else None,
                 "account_display_name": row["account_display_name"],
-                "account_url": row["account_url"],
+                "account_url": reconstruct_url(row["account_url_suffix"], row["account_platform"]),
                 "media_type": row["media_type"],
             }
         )
@@ -428,26 +469,26 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
     return results
 
 
+def sign_thumbnail_path(path: str, transform: SearchResultTransform) -> str:
+    if LOCAL_ARCHIVES_DIR_ALIAS in path:
+        local_path = path.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+    elif LOCAL_THUMBNAILS_DIR_ALIAS in path:
+        local_path = path.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
+    else:
+        local_path = path
+    parsed = urlparse(local_path)
+    qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    qs['ft'] = generate_file_token(
+        transform.access_token,
+        local_path.split(f"{transform.local_files_root}")[-1]
+    )
+    return str(urlunparse(parsed._replace(query=urlencode(qs, doseq=True))))
+
+
 def sign_search_result_thumbnails(res: SearchResult, transform: SearchResultTransform) -> SearchResult:
     if not res.thumbnails:
         return res
-    for i in range(len(res.thumbnails)):
-        thumb: str = res.thumbnails[i]
-        if LOCAL_ARCHIVES_DIR_ALIAS in thumb:
-            local_path = thumb.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
-        elif LOCAL_THUMBNAILS_DIR_ALIAS in thumb:
-            local_path = thumb.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
-        else:
-            local_path = thumb
-        parsed = urlparse(local_path)
-        qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        qs['ft'] = generate_file_token(
-            transform.access_token,
-            local_path.split(f"{transform.local_files_root}")[-1]
-        )
-        new_query = urlencode(qs, doseq=True)
-        local_signed_url = str(urlunparse(parsed._replace(query=new_query)))
-        res.thumbnails[i] = local_signed_url
+    res.thumbnails = [Thumbnail(src=sign_thumbnail_path(t.src, transform), aspect_ratio=t.aspect_ratio) for t in res.thumbnails]
     return res
 
 
@@ -472,7 +513,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("id_on_platform", "text"),
-        ("url", "text"),
+        ("url_suffix", "text"),
         ("display_name", "text"),
         ("bio", "text"),
         ("data", "text"),
@@ -484,7 +525,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("external_id", "text"),
-        ("archived_url", "text"),
+        ("archived_url_suffix", "text"),
         ("archive_location", "text"),
         ("summary_html", "text"),
         ("parse_algorithm_version", "number"),
@@ -504,7 +545,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("id_on_platform", "text"),
-        ("url", "text"),
+        ("url_suffix", "text"),
         ("account_id", "number"),
         ("publication_date", "date"),
         ("caption", "text"),
@@ -515,7 +556,7 @@ _ALLOWED_COLUMNS_RAW: dict[str, list[tuple[str, Literal["text", "number", "date"
         ("create_date", "date"),
         ("update_date", "date"),
         ("id_on_platform", "text"),
-        ("url", "text"),
+        ("url_suffix", "text"),
         ("post_id", "number"),
         ("local_url", "text"),
         ("media_type", "text"),
@@ -586,8 +627,8 @@ def json_logic_format_to_where_clause(json_logic: dict, table_name: str) -> tupl
                 col_def = sanitize_column(col, table_rec)
                 col = col_def.column_name
                 arg_key = next_key(col, "like")
-                args_rec[arg_key] = f'%{v}%'
-                return f"`{col}` LIKE %({arg_key})s"
+                args_rec[arg_key] = f'%{_escape_like(v)}%'
+                return f"`{col}` LIKE %({arg_key})s ESCAPE '!'"
             elif op == "!=":
                 col, v = val
                 col_def = sanitize_column(col, table_rec)

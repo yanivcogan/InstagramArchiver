@@ -81,6 +81,10 @@ async def get_share_permissions(request: Request) -> Optional[str]:
     return request.headers.get("X-Share-Link")
 
 
+async def get_share_password_token(request: Request) -> Optional[str]:
+    return request.headers.get("X-Share-Password-Token")
+
+
 async def raise_share_access_error(request: Request, share_permissions: Optional[SharePermissions]):
     if not share_permissions:
         body_snippet = await _log_body_snippet(request)
@@ -121,8 +125,9 @@ async def require_any_auth(request: Request) -> None:
 async def auth_entity_view_access(request: Request, entity: T_Entities, entity_id: int):
     token_permissions = await get_auth_permissions(request)
     if not token_permissions or not token_permissions.valid:
-        share_permissions = await get_share_permissions(request)
-        entity_access = check_share_permissions(share_permissions, entity, entity_id)
+        share_link = await get_share_permissions(request)
+        password_token = await get_share_password_token(request)
+        entity_access = check_share_permissions(share_link, entity, entity_id, password_token)
         return await raise_share_access_error(request, entity_access)
     else:
         return await raise_auth_user_error(request, token_permissions)

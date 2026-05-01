@@ -16,12 +16,16 @@ class User(BaseModel):
     password_hash: Optional[str] = None
     password_alg: Optional[str] = None
     password_set_at: Optional[datetime] = None
-    last_password_failure: Optional[datetime] = None
+    last_pwd_failure: Optional[datetime] = None
     force_pwd_reset: Optional[bool] = False
     last_login: Optional[datetime] = None
     login_attempts: Optional[int] = 0
     admin: Optional[bool] = False
     password_to_set: Optional[str] = None
+    totp_configured: Optional[bool] = False
+    totp_secret: Optional[str] = None
+    totp_pending_secret: Optional[str] = None
+    totp_method: Optional[str] = None
 
 
 def get_user_by_email(email: str):

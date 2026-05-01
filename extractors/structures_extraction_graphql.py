@@ -1,12 +1,9 @@
 from typing import Optional, Dict
-
 from pydantic import BaseModel
-
 from extractors.models import StoriesFeed, CommentsConnection
 from extractors.models_api_v1 import LikersApiV1
 from extractors.models_graphql import ProfileTimelineGraphQL, FriendsListGraphQL, ReelsMediaConnection, \
     ClipsUserConnection
-from extractors.models_har import HarRequest
 
 
 class GraphQLResponse(BaseModel):
@@ -20,31 +17,73 @@ class GraphQLResponse(BaseModel):
     likes: Optional[LikersApiV1] = None
 
 
-def extract_data_from_graphql_entry(graphql_data: dict, req: HarRequest) -> Optional[GraphQLResponse]:
-    payload = req.postData
-    res = GraphQLResponse(context={p['name']: p['value'] for p in payload.params} if payload and payload.params else dict())
-    method_type = None
-    for h in req.headers:
-        if h.name == 'X-FB-Friendly-Name':
-            method_type = h.value
-            break
-    if not method_type:
+def extract_graphql_from_response(
+    response_json: dict,
+    context: Optional[Dict] = None,
+) -> Optional[GraphQLResponse]:
+    """
+    Detects GraphQL query type by inspecting the response JSON structure.
+    Does not require the X-FB-Friendly-Name request header, making it
+    suitable for both HAR and WACZ/WARC archives.
+
+    context: optional dict of POST params from the HAR request (used to
+    populate structure.context for downstream comment/like/account URL
+    construction). Pass None for WACZ where request params are unavailable.
+    """
+    data = response_json.get("data", {})
+    if not data:
         return None
-    if (method_type == "PolarisProfilePostsTabContentQuery_connection" or
-        method_type == "PolarisProfilePostsQuery"):
-        res.profile_timeline=ProfileTimelineGraphQL(**graphql_data["data"]["xdt_api__v1__feed__user_timeline_graphql_connection"])
-    if method_type == "PolarisProfileSuggestedUsersWithPreloadableQuery":
-        res.friends_list = FriendsListGraphQL(**graphql_data["data"]["xdt_api__v1__discover__chaining"])
-    if method_type == "PolarisStoriesV3HighlightsPageQuery" or method_type == "PolarisStoriesV3HighlightsPagePaginationQuery":
-        res.reels_media = ReelsMediaConnection(**graphql_data["data"]["xdt_api__v1__feed__reels_media__connection"])
-    if method_type == "PolarisStoriesV3ReelPageStandaloneQuery":
-        res.stories_feed = StoriesFeed(**graphql_data["data"]["xdt_api__v1__feed__reels_media"])
-    if method_type == "PolarisProfileReelsTabContentQuery":
-        res.clips_user_connection = ClipsUserConnection(**graphql_data["data"]["xdt_api__v1__clips__user__connection_v2"])
-    if method_type == "PolarisPostCommentsContainerQuery":
-        res.comments_connection = CommentsConnection(**graphql_data["data"]["xdt_api__v1__media__media_id__comments__connection"])
-    if method_type == "PolarisPostLikedByListDialogQuery":
-        res.likes = LikersApiV1(**graphql_data["data"]["xdt_api__v1__likes__media_id__likers"])
+
+    res = GraphQLResponse(context=context or {})
+
+    try:
+        if "xdt_api__v1__feed__user_timeline_graphql_connection" in data:
+            res.profile_timeline = ProfileTimelineGraphQL(
+                **data["xdt_api__v1__feed__user_timeline_graphql_connection"]
+            )
+    except Exception as e:
+        print(f"[graphql_response] Error parsing profile_timeline: {e}")
+
+    try:
+        if "xdt_api__v1__discover__chaining" in data:
+            res.friends_list = FriendsListGraphQL(**data["xdt_api__v1__discover__chaining"])
+    except Exception as e:
+        print(f"[graphql_response] Error parsing friends_list: {e}")
+
+    try:
+        if "xdt_api__v1__feed__reels_media__connection" in data:
+            res.reels_media = ReelsMediaConnection(**data["xdt_api__v1__feed__reels_media__connection"])
+    except Exception as e:
+        print(f"[graphql_response] Error parsing reels_media: {e}")
+
+    try:
+        if "xdt_api__v1__feed__reels_media" in data:
+            res.stories_feed = StoriesFeed(**data["xdt_api__v1__feed__reels_media"])
+    except Exception as e:
+        print(f"[graphql_response] Error parsing stories_feed: {e}")
+
+    try:
+        if "xdt_api__v1__clips__user__connection_v2" in data:
+            res.clips_user_connection = ClipsUserConnection(
+                **data["xdt_api__v1__clips__user__connection_v2"]
+            )
+    except Exception as e:
+        print(f"[graphql_response] Error parsing clips_user_connection: {e}")
+
+    try:
+        if "xdt_api__v1__media__media_id__comments__connection" in data:
+            res.comments_connection = CommentsConnection(
+                **data["xdt_api__v1__media__media_id__comments__connection"]
+            )
+    except Exception as e:
+        print(f"[graphql_response] Error parsing comments_connection: {e}")
+
+    try:
+        if "xdt_api__v1__likes__media_id__likers" in data:
+            res.likes = LikersApiV1(**data["xdt_api__v1__likes__media_id__likers"])
+    except Exception as e:
+        print(f"[graphql_response] Error parsing likes: {e}")
+
     return res if any([
         res.profile_timeline,
         res.friends_list,
@@ -52,5 +91,5 @@ def extract_data_from_graphql_entry(graphql_data: dict, req: HarRequest) -> Opti
         res.clips_user_connection,
         res.stories_feed,
         res.comments_connection,
-        res.likes
+        res.likes,
     ]) else None

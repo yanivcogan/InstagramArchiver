@@ -5,6 +5,8 @@ import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc';
 import AccountLink from "./AccountLink";
 import {SHARE_URL_PARAM} from "../../services/linkSharing";
+import {ITagWithType} from "../../types/tags";
+import InlineTagsDisplay from "../Tags/InlineTagsDisplay";
 
 dayjs.extend(utc);
 
@@ -13,9 +15,10 @@ interface IProps {
     /** DB id of the parent post — used to build the permalink. Inferred from comment.post_id if omitted. */
     postId?: number;
     shareToken?: string | null;
+    accountTagsMap?: Record<number, ITagWithType[]>;
 }
 
-export default function Comment({comment, postId, shareToken}: IProps) {
+export default function Comment({comment, postId, shareToken, accountTagsMap}: IProps) {
     const dateRaw = comment.publication_date;
     const dateStr = dateRaw ? dayjs.utc(dateRaw).format('YYYY-MM-DD HH:mm') + ' UTC' : null;
 
@@ -48,6 +51,7 @@ export default function Comment({comment, postId, shareToken}: IProps) {
                 </Typography>
             )}
         </Stack>
+        <InlineTagsDisplay tags={comment.account_id != null ? (accountTagsMap?.[comment.account_id] ?? []) : []}/>
         {comment.text && <Typography variant="body2">{comment.text}</Typography>}
     </Stack>;
 }

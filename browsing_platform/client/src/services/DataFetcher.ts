@@ -1,18 +1,19 @@
 import {
+    E_ENTITY_TYPES,
     IAccountAuxiliaryCounts,
     IAccountInteractions,
-    IAccountRelation,
+    IAccountRelationsResponse,
     IArchiveSession,
     IArchiveSessionWithEntities,
-    IComment,
+    ICommentsResponse,
     IExtractedEntitiesNested,
+    ILikesResponse,
     IMediaPart,
     IPostAuxiliaryCounts,
-    IPostLike
 } from "../types/entities";
 import server, {HTTP_METHODS} from "./server";
 import {Fields, JsonLogicFunction} from "@react-awesome-query-builder/mui";
-import {ITagStat, ITagWithType} from "../types/tags";
+import {IQuickAccessTypeDropdown, ITagStat, ITagWithType} from "../types/tags";
 import {getShareTokenFromHref} from "./linkSharing";
 
 interface FlattenedEntitiesTransform {
@@ -31,42 +32,39 @@ interface EntitiesTransformConfig {
     nested_entities_transform?: NestedEntitiesTransform | null;
 }
 
+const appendIfDefined = (params: URLSearchParams, key: string, value: string | boolean | null | undefined) => {
+    if (value !== undefined) params.append(key, value === null ? "" : String(value));
+};
+
 const transformConfigToQueryParams = (config: EntitiesTransformConfig): string => {
     const params = new URLSearchParams();
     const shareToken = getShareTokenFromHref();
-    if (shareToken) {
-        params.append("st", shareToken);
+    if (shareToken) params.append("st", shareToken);
+    const f = config.flattened_entities_transform;
+    if (f) {
+        appendIfDefined(params, "lfr", f.local_files_root);
+        appendIfDefined(params, "mwf", f.retain_only_media_with_local_files);
+        appendIfDefined(params, "srd", f.strip_raw_data !== undefined ? (f.strip_raw_data ? "1" : "0") : undefined);
     }
-    if (config.flattened_entities_transform) {
-        const f = config.flattened_entities_transform;
-        if (f.local_files_root !== undefined) {
-            params.append("lfr", f.local_files_root || "");
-        }
-        if (f.retain_only_media_with_local_files !== undefined) {
-            params.append("mwf", String(f.retain_only_media_with_local_files));
-        }
-        if (f.strip_raw_data !== undefined) {
-            params.append("srd", f.strip_raw_data ? "1" : "0");
-        }
-    }
-    if (config.nested_entities_transform) {
-        const n = config.nested_entities_transform;
-        if (n.retain_only_posts_with_media !== undefined) {
-            params.append("pwm", String(n.retain_only_posts_with_media));
-        }
-        if (n.retain_only_accounts_with_posts !== undefined) {
-            params.append("awp", String(n.retain_only_accounts_with_posts));
-        }
+    const n = config.nested_entities_transform;
+    if (n) {
+        appendIfDefined(params, "pwm", n.retain_only_posts_with_media);
+        appendIfDefined(params, "awp", n.retain_only_accounts_with_posts);
     }
     return params.toString();
 }
 
+const parseAccountTagsMap = (raw: Record<string, ITagWithType[]> | undefined): Record<number, ITagWithType[]> =>
+    raw ? Object.fromEntries(Object.entries(raw).map(([k, v]) => [Number(k), v])) : {};
+
 export const fetchAccount = async (accountId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("account/" + accountId + "?" + transformConfigToQueryParams(config));
+    const result = await server.get("account/" + accountId + "?" + transformConfigToQueryParams(config));
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
 export const fetchPost = async (postId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
-    return await server.get("post/" + postId + "?" + transformConfigToQueryParams(config));
+    const result = await server.get("post/" + postId + "?" + transformConfigToQueryParams(config));
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
 export const fetchMedia = async (mediaId: number | string, config: EntitiesTransformConfig): Promise<IExtractedEntitiesNested> => {
@@ -93,32 +91,48 @@ export const fetchMediaParts = async (mediaId: number): Promise<IMediaPart[]> =>
     return await server.get(`media/parts/${mediaId}/`);
 }
 
-export const fetchArchivingSessionData = async (archivingSessionId: number): Promise<Record<string, unknown>> => {
-    return await server.get(`archiving_session/data/${archivingSessionId}/`);
+export const fetchPostComments = async (postId: number): Promise<ICommentsResponse> => {
+    const result = await server.get(`post/${postId}/comments/`);
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
-export const fetchPostComments = async (postId: number): Promise<IComment[]> => {
-    return await server.get(`post/${postId}/comments/`);
+export const fetchPostLikes = async (postId: number): Promise<ILikesResponse> => {
+    const result = await server.get(`post/${postId}/likes/`);
+    return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
 }
 
-export const fetchPostLikes = async (postId: number): Promise<IPostLike[]> => {
-    return await server.get(`post/${postId}/likes/`);
+export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelationsResponse | null> => {
+    try {
+        const result = await server.get(`account/${accountId}/relations/`);
+        return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
+    } catch {
+        return null;
+    }
 }
 
-export const fetchAccountRelations = async (accountId: number): Promise<IAccountRelation[]> => {
-    return await server.get(`account/${accountId}/relations/`);
+export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions | null> => {
+    try {
+        const result = await server.get(`account/${accountId}/interactions/`);
+        return {...result, account_tags: parseAccountTagsMap(result.account_tags)};
+    } catch {
+        return null;
+    }
 }
 
-export const fetchAccountInteractions = async (accountId: number): Promise<IAccountInteractions> => {
-    return await server.get(`account/${accountId}/interactions/`);
+export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts | null> => {
+    try {
+        return await server.get(`account/${accountId}/auxiliary-counts/`, {ignoreErrors: true});
+    } catch {
+        return null;
+    }
 }
 
-export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts> => {
-    return await server.get(`account/${accountId}/auxiliary-counts/`);
-}
-
-export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts> => {
-    return await server.get(`post/${postId}/auxiliary-counts/`);
+export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts | null> => {
+    try {
+        return await server.get(`post/${postId}/auxiliary-counts/`, {ignoreErrors: true});
+    } catch {
+        return null;
+    }
 }
 
 export const fetchArchivingSessionsAccount = async (accountId: number, config: EntitiesTransformConfig): Promise<IArchiveSession[]> => {
@@ -133,13 +147,13 @@ export const fetchArchivingSessionsMedia = async (mediaId: number, config: Entit
     return await server.get(`archiving_session/media/${mediaId}/?${transformConfigToQueryParams(config)}`);
 }
 
-export const lookupTags = async (tagQuery: string, entity?: string): Promise<ITagWithType[]> => {
+export const lookupTags = async (tagQuery: string, entity?: E_ENTITY_TYPES): Promise<ITagWithType[]> => {
     const params = new URLSearchParams({q: tagQuery});
     if (entity) params.append('entity', entity);
     return await server.get(`tags/?${params}`);
 }
 
-export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, string>> = {
+export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, E_ENTITY_TYPES>> = {
     accounts: 'account',
     posts: 'post',
     media: 'media',
@@ -156,7 +170,7 @@ export const fetchTagsForSearchResults = async (
 };
 
 export const batchAnnotate = async (
-    entityType: string,
+    entityType: E_ENTITY_TYPES,
     entityIds: number[],
     tags: Array<{id: number; notes?: string | null}>
 ): Promise<void> => {
@@ -172,6 +186,8 @@ export const SEARCH_MODES: readonly { key: string, label: string }[] = [
 
 export type T_Search_Mode = typeof SEARCH_MODES[number]['key'];
 
+export const DEFAULT_PAGE_SIZES: Partial<Record<T_Search_Mode, number>> = {media: 100};
+export const defaultPageSize = (mode: T_Search_Mode): number => DEFAULT_PAGE_SIZES[mode] ?? 20;
 
 const disabled_operators_by_type: { [key: string]: string[] } = {
     'text': ['starts_with', 'ends_with', 'proximity'],
@@ -284,12 +300,18 @@ export interface ISearchQuery {
     tag_filter_mode?: "any" | "all";
 }
 
+export interface Thumbnail {
+    src: string;
+    aspect_ratio: number | null;
+}
+
+
 export interface SearchResult {
     page: string,
     id: number,
     title: string,
     details?: string;
-    thumbnails?: string[];
+    thumbnails?: Thumbnail[];
     metadata?: Record<string, any>;
 }
 
@@ -303,3 +325,73 @@ export const searchData = async (
 export const fetchRelatedTagStats = async (accountId: number): Promise<ITagStat[]> => {
     return await server.get(`account/${accountId}/related_tag_stats/`);
 }
+
+export interface TieWeights {
+    follow: number;
+    suggested: number;
+    like: number;
+    comment: number;
+    tag: number;
+}
+
+export const DEFAULT_TIE_WEIGHTS: TieWeights = {
+    follow: 1,
+    suggested: 0,
+    like: 1,
+    comment: 1,
+    tag: 1,
+};
+
+export interface CandidateAccount {
+    id: number;
+    url_suffix: string | null;
+    display_name: string | null;
+    bio: string | null;
+    is_verified: boolean | null;
+    score: number;
+    kernel_connections: number;
+    thumbnails: Thumbnail[];
+    media_count: number;
+}
+
+export interface CommunityCandidatesResponse {
+    candidates: CandidateAccount[];
+}
+
+export const fetchCommunityCandidates = async (
+    kernelIds: number[],
+    excludedIds: number[],
+    weights: TieWeights,
+): Promise<CommunityCandidatesResponse> => {
+    return await server.post('community/candidates/', {
+        kernel_ids: kernelIds,
+        excluded_ids: excludedIds,
+        weights,
+    });
+};
+
+export interface TagKernelAccount {
+    id: number;
+    url_suffix: string | null;
+    display_name: string | null;
+    bio: string | null;
+    thumbnails: Thumbnail[];
+    media_count: number;
+    applied_tags: ITagWithType[];
+}
+
+export interface TagKernelResponse {
+    accounts: TagKernelAccount[];
+    dropdown: IQuickAccessTypeDropdown;
+}
+
+export const fetchTagKernelAccounts = async (
+    tagId: number,
+): Promise<TagKernelResponse> =>
+    server.get(`community/tag-kernel/${tagId}`);
+
+export const removeAccountTag = async (
+    accountId: number,
+    tagId: number,
+): Promise<void> =>
+    server.post(`annotate/account/${accountId}/tag/${tagId}`, {}, HTTP_METHODS.delete);

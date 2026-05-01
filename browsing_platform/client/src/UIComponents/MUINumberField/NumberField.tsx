@@ -1,103 +1,119 @@
-import React, {ChangeEvent, useEffect, useState} from 'react';
-import TextField, {TextFieldProps} from '@mui/material/TextField';
-import InputAdornment from '@mui/material/InputAdornment';
+import * as React from 'react';
+import {NumberField as BaseNumberField} from '@base-ui/react/number-field';
 import IconButton from '@mui/material/IconButton';
-import AddIcon from '@mui/icons-material/Add';
-import RemoveIcon from '@mui/icons-material/Remove';
+import FormControl from '@mui/material/FormControl';
+import FormHelperText from '@mui/material/FormHelperText';
+import OutlinedInput from '@mui/material/OutlinedInput';
+import InputAdornment from '@mui/material/InputAdornment';
+import InputLabel from '@mui/material/InputLabel';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import type {SxProps, Theme} from '@mui/material';
 
-interface NumberFieldProps extends Omit<TextFieldProps, 'type' | 'onChange' | 'value'> {
-    value?: number;
-    onChange?: (event: ChangeEvent<HTMLInputElement>, value: number | null) => void;
-    min?: number;
-    max?: number;
-    step?: number;
+/**
+ * This component is a placeholder for FormControl to correctly set the shrink label state on SSR.
+ */
+function SSRInitialFilled(_: BaseNumberField.Root.Props) {
+  return null;
 }
+SSRInitialFilled.muiName = 'Input';
 
-export function NumberField({value: valueProp, onChange, min, max, step = 1, inputProps: propsInputProps, InputProps: propsInputComponentProps, ...rest}: NumberFieldProps) {
-    const [value, setValue] = useState(
-        valueProp !== undefined && valueProp !== null ? String(valueProp) : ''
-    );
-
-    useEffect(() => {
-        if (valueProp !== undefined && valueProp !== null && valueProp !== Number(value)) {
-            setValue(String(valueProp));
-        }
-    }, [valueProp]);
-
-    const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
-        let val = event.target.value;
-        if (/^-?\d*\.?\d*$/.test(val)) {
-            if (val.length > 1 && val[0] === '0' && val[1] !== '.') {
-                val = val.replace(/^0+/, '');
-            }
-            setValue(val);
-            const num = val === '' || val === '-' || val === '.' ? null : Number(val);
-            if (onChange) {
-                if (num !== null) {
-                    let bounded = num;
-                    if (min !== undefined && bounded < min) bounded = min;
-                    if (max !== undefined && bounded > max) bounded = max;
-                    onChange(event, bounded);
-                } else {
-                    onChange(event, null);
-                }
-            }
-        }
-    };
-
-    const handleStep = (direction: 1 | -1) => {
-        let current = Number(value);
-        if (isNaN(current)) current = 0;
-        let next = current + direction * (step ?? 1);
-        next = Math.round((next + Number.EPSILON) * 100) / 100;
-        if (min !== undefined && next < min) next = min;
-        if (max !== undefined && next > max) next = max;
-        setValue(String(next));
-        if (onChange) {
-            const syntheticEvent = {target: {value: String(next)}} as ChangeEvent<HTMLInputElement>;
-            onChange(syntheticEvent, next);
-        }
-    };
-
-    return (
-        <TextField
-            {...rest}
-            type="text"
-            value={value}
-            onChange={handleInputChange}
-            inputProps={{
-                inputMode: 'decimal',
-                pattern: '[0-9]*',
-                min,
-                max,
-                step,
-                ...propsInputProps,
+export default function NumberField({
+  id: idProp,
+  label,
+  error,
+  helperText,
+  size = 'medium',
+  sx,
+  ...other
+}: BaseNumberField.Root.Props & {
+  label?: React.ReactNode;
+  size?: 'small' | 'medium';
+  error?: boolean;
+  helperText?: React.ReactNode;
+  sx?: SxProps<Theme>;
+}) {
+  let id = React.useId();
+  if (idProp) {
+    id = idProp;
+  }
+  return (
+    <BaseNumberField.Root
+      {...other}
+      render={(props, state) => (
+        <FormControl
+          size={size}
+          ref={props.ref}
+          disabled={state.disabled}
+          required={state.required}
+          error={error}
+          variant="outlined"
+          sx={sx}
+        >
+          {props.children}
+        </FormControl>
+      )}
+    >
+      <SSRInitialFilled {...other} />
+      <InputLabel htmlFor={id}>{label}</InputLabel>
+      <BaseNumberField.Input
+        id={id}
+        render={(props, state) => (
+          <OutlinedInput
+            label={label}
+            inputRef={props.ref}
+            value={state.inputValue}
+            onBlur={props.onBlur}
+            onChange={props.onChange}
+            onKeyUp={props.onKeyUp}
+            onKeyDown={props.onKeyDown}
+            onFocus={props.onFocus}
+            slotProps={{
+              input: props,
             }}
-            InputProps={{
-                ...propsInputComponentProps,
-                endAdornment: (
-                    <InputAdornment position="end">
-                        <IconButton
-                            aria-label="decrement"
-                            onClick={() => handleStep(-1)}
-                            size="small"
-                            disabled={min !== undefined && Number(value) <= min}
-                        >
-                            <RemoveIcon fontSize="small"/>
-                        </IconButton>
-                        <IconButton
-                            aria-label="increment"
-                            onClick={() => handleStep(1)}
-                            size="small"
-                            disabled={max !== undefined && Number(value) >= max}
-                        >
-                            <AddIcon fontSize="small"/>
-                        </IconButton>
-                    </InputAdornment>
-                ),
-            }}
-        />
-    );
+            endAdornment={
+              <InputAdornment
+                position="end"
+                sx={{
+                  flexDirection: 'column',
+                  maxHeight: 'unset',
+                  alignSelf: 'stretch',
+                  borderLeft: '1px solid',
+                  borderColor: 'divider',
+                  ml: 0,
+                  '& button': {
+                    py: 0,
+                    flex: 1,
+                    borderRadius: 0.5,
+                  },
+                }}
+              >
+                <BaseNumberField.Increment
+                  render={<IconButton size={size} aria-label="Increase" />}
+                >
+                  <KeyboardArrowUpIcon
+                    fontSize={size}
+                    sx={{ transform: 'translateY(2px)' }}
+                  />
+                </BaseNumberField.Increment>
+
+                <BaseNumberField.Decrement
+                  render={<IconButton size={size} aria-label="Decrease" />}
+                >
+                  <KeyboardArrowDownIcon
+                    fontSize={size}
+                    sx={{ transform: 'translateY(-2px)' }}
+                  />
+                </BaseNumberField.Decrement>
+              </InputAdornment>
+            }
+            sx={{ pr: 0 }}
+          />
+        )}
+      />
+      <FormHelperText sx={{ ml: 0, '&:empty': { mt: 0 } }}>
+        {helperText}
+      </FormHelperText>
+    </BaseNumberField.Root>
+  );
 }
-
-export default NumberField;

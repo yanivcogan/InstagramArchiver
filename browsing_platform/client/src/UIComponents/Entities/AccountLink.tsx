@@ -5,7 +5,7 @@ import {Link, Typography} from "@mui/material";
  * Extracts the Instagram handle from an account URL.
  * e.g. "https://www.instagram.com/somehandle" → "@somehandle"
  */
-export function extractHandle(url: string): string {
+function extractHandle(url: string): string {
     const trimmed = url.replace(/\/$/, '');
     const parts = trimmed.split('/');
     const handle = parts[parts.length - 1];

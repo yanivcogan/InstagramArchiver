@@ -1,21 +1,12 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {AnnotatableEntityType, IAnnotatableEntity, IMediaPart} from "../../types/entities";
-import {
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogTitle,
-    Stack,
-    TextField,
-    Tooltip,
-    Typography
-} from "@mui/material";
-import AddIcon from '@mui/icons-material/Add';
-import {ITagWithType} from "../../types/tags";
+import {Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography} from "@mui/material";
+import {IQuickAccessData, ITagWithType} from "../../types/tags";
 import TagSelector from "../Tags/TagSelector";
+import InlineTagsDisplay from "../Tags/InlineTagsDisplay";
+import QuickAccessBar from "../Tags/QuickAccessBar";
 import {saveAnnotations as saveAnnotationsToServer} from "../../services/DataSaver";
-import {fetchQuickAccessTags} from "../../services/TagManagementService";
+import {fetchQuickAccessData} from "../../services/TagManagementService";
 import {toast} from "material-react-toastify";
 
 interface IProps {
@@ -28,14 +19,15 @@ interface IProps {
 export default function EntityAnnotator({entity, entityType, readonly, onSave}: IProps) {
     const [tags, setTags] = useState<ITagWithType[]>(entity.tags || []);
     const [noteModalTag, setNoteModalTag] = useState<ITagWithType | null>(null);
-    const [quickAccessTags, setQuickAccessTags] = useState<ITagWithType[]>([]);
+    const [quickAccessData, setQuickAccessData] = useState<IQuickAccessData>({individual_tags: [], type_dropdowns: []});
 
     useEffect(() => {
         if (!readonly) {
-            fetchQuickAccessTags().then(setQuickAccessTags).catch(() => {
-            });
+            fetchQuickAccessData(entityType).then(setQuickAccessData).catch(() => {});
         }
-    }, [readonly]);
+    }, [readonly, entityType]);
+
+    const assignedTagIds = useMemo(() => new Set(tags.map(t => t.id)), [tags]);
 
     const saveToServer = async (newTags: ITagWithType[]) => {
         try {
@@ -55,38 +47,21 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
     };
 
     const handleQuickAccess = (qTag: ITagWithType) => {
-        const alreadyHas = tags.some(t => t.id === qTag.id);
-        if (!alreadyHas) {
-            const newTags = [...tags, {...qTag, assignment_notes: ""}];
-            setTags(newTags);
-            saveToServer(newTags);
+        const existingTag = tags.find(t => t.id === qTag.id);
+        if (existingTag) {
+            setNoteModalTag({...existingTag});
+            return;
         }
-        // Open notes modal so the user can immediately annotate the quick-added tag
-        setNoteModalTag({...qTag, assignment_notes: qTag.assignment_notes ?? ""});
+        const newTags = [...tags, {...qTag, assignment_notes: ""}];
+        setTags(newTags);
+        saveToServer(newTags);
+        if (qTag.notes_recommended !== false) {
+            setNoteModalTag({...qTag, assignment_notes: ""});
+        }
     };
 
     if (readonly) {
-        if (tags.length === 0) return null;
-        return <Stack direction="row" gap={0.75} flexWrap="wrap" alignItems="baseline">
-            <Typography variant="caption" color="text.secondary" sx={{fontWeight: 600}}>Tags:</Typography>
-            {tags.map((tag, index) => (
-                <Tooltip key={index} title={tag.tag_type_name} arrow disableInteractive>
-                    <Typography component="span" variant="caption" sx={{
-                        padding: '0.1em 0.4em',
-                        backgroundColor: '#e0e0e0',
-                        borderRadius: '4px',
-                    }}>
-                        {tag.name}
-                        {tag.assignment_notes && (
-                            <Typography component="span" variant="caption"
-                                        sx={{ml: 0.5, color: 'text.secondary', fontStyle: 'italic'}}>
-                                ({tag.assignment_notes})
-                            </Typography>
-                        )}
-                    </Typography>
-                </Tooltip>
-            ))}
-        </Stack>;
+        return <InlineTagsDisplay tags={tags}/>;
     }
 
     return <Stack gap={1}>
@@ -95,25 +70,14 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             onChange={handleTagsChange}
             onChipClick={tag => setNoteModalTag({...tag})}
             label={`Tags on ${entityType} ${entity.id}`}
+            entity={entityType}
         />
-        <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-            {quickAccessTags.map(qTag => (
-                <Tooltip key={qTag.id}
-                         title={`Quick-add: ${qTag.tag_type_name ? `${qTag.tag_type_name} / ` : ""}${qTag.name}`}
-                         disableInteractive>
-                    <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() => handleQuickAccess(qTag)}
-                        startIcon={<AddIcon/>}
-                    >
-                        {qTag.name}
-                    </Button>
-                </Tooltip>
-            ))}
-        </Stack>
+        <QuickAccessBar
+            quickAccessData={quickAccessData}
+            selectedTagIds={assignedTagIds}
+            onSelect={handleQuickAccess}
+        />
 
-        {/* Notes modal — opens when a tag chip is clicked */}
         <Dialog
             open={noteModalTag !== null}
             onClose={() => setNoteModalTag(null)}
@@ -121,10 +85,10 @@ export default function EntityAnnotator({entity, entityType, readonly, onSave}: 
             fullWidth
         >
             <DialogTitle sx={{pb: 0}}>
-                <Typography variant="subtitle2" color="text.secondary">
+                <Typography component="span" display="block" variant="subtitle2" color="text.secondary">
                     {noteModalTag?.tag_type_name ?? 'Tag'}
                 </Typography>
-                <Typography variant="h6">{noteModalTag?.name}</Typography>
+                <Typography component="span" display="block" variant="h6">{noteModalTag?.name}</Typography>
             </DialogTitle>
             <DialogContent>
                 <TextField

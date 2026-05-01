@@ -1,89 +1,58 @@
 # archive.py
-import os
-import sys
-import traceback
-
-import ppdeep
-import pygetwindow as gw
-import time
-import json
 import datetime
+import json
+import ijson
+import os
+import shutil
+import sys
+import threading
+import time
+import traceback
+import hashlib
+import socket
+import ssl
+from urllib.parse import urlparse
 from hashlib import md5
-from typing import Literal, Optional
+from pathlib import Path
+from typing import Optional
 
-from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
-from root_anchor import ROOT_DIR
-from extractors.extract_photos import PhotoAcquisitionConfig
-from extractors.extract_videos import VideoAcquisitionConfig
-from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.commit_tracker.git_helper import ensure_committed
+import base64
 
 import cv2
-import pyautogui
-import threading
-import shutil
-
-from pydantic import BaseModel
-from har2warc.har2warc import har2warc
 import numpy as np
-from pathlib import Path
-from playwright.sync_api import sync_playwright, Browser, BrowserContext
+import ppdeep
+import pyautogui
+import pygetwindow as gw
+import subprocess
 from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright, Browser, BrowserContext
+from pydantic import BaseModel
 
-from archiver.profile_selection import select_profile
-from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
+from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
 from archiver.profile_registration import Profile
-from archiver.summarizers.entities_summary_generator import generate_entities_summary
-
+from archiver.profile_selection import select_profile
+from archiver.summarizers.har_summary_generator import generate_entities_summary
+from extractors.extract_photos import PhotoAcquisitionConfig
+from extractors.extract_videos import VideoAcquisitionConfig
+from root_anchor import ROOT_DIR
+from utils.commit_tracker.git_helper import ensure_committed
+from utils.ffmpeg_installer import ensure_ffmpeg_installed
 from utils.misc import get_my_public_ip, get_system_info
+from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
+branch = None
 load_dotenv()
 
-def store_archive_as_warc(archive_dir: Path):
-    har_file = archive_dir / "archive.har"
-    if har_file.exists():
-        try:
-            warc_file = archive_dir / "archive.warc.gz"
-            har2warc(str(har_file), str(warc_file))
-            print(f"WARC file generated at: {warc_file}")
-        except Exception as e:
-            print(f"Error converting HAR to WARC: {e}")
-    else:
-        print("HAR file was not saved successfully.")
 
-class InstagramObject(BaseModel):
-    type: Literal["post", "story", "reel", "highlight", "profile"]
-    username: Optional[str] = None
-    url: str
-    id: str
 
-def get_instagram_object_type(item_url: str, username: Optional[str] = None) -> InstagramObject:
-    item_url = item_url.strip()
-    item_url = item_url.split("?")[0]  # Remove query parameters if any
-    item_url = item_url.rstrip("/")  # Remove trailing slash if any
-    item_url = item_url.replace("www.", "")  # Remove www. if present
-    item_url = item_url.split("://")[-1]  # Remove protocol if present
-    url_components = item_url.split("/")
-    if url_components[1] == "p":
-        return InstagramObject(type="post", url=item_url, id=item_url.split("/")[2], username=username)
-    elif url_components[1] == "reel":
-        return InstagramObject(type="reel", url=item_url, id=item_url.split("/")[2], username=username)
-    elif url_components[1] == "stories":
-        if len(url_components) > 3 and url_components[2] == "highlights":
-            return InstagramObject(type="highlight", url=item_url, id=item_url.split("/")[4], username=username)
-        else:
-            return InstagramObject(type="story", url=item_url, id=item_url.split("/")[2], username=username)
-    if username is None:
-        username = url_components[1]
-        url_stripped_of_username = item_url.replace(f"/{username}", "")
-        if len(url_stripped_of_username.split("/")) > 2:
-            return get_instagram_object_type(url_stripped_of_username, username=username)
-        else:
-            return InstagramObject(type="profile", url=item_url, id=username, username=username)
-    else:
-        return InstagramObject(type="profile", url=item_url, id=username, username=username)
+class TLSCertInfo(BaseModel):
+    fingerprint_sha256: Optional[str] = None
+    subject: Optional[dict] = None
+    issuer: Optional[dict] = None
+    valid_from: Optional[str] = None
+    valid_to: Optional[str] = None
 
 
 class ArchiveSessionMetadata(BaseModel):
@@ -100,13 +69,62 @@ class ArchiveSessionMetadata(BaseModel):
     har_hash: Optional[str] = None
     har_fuzzy_hash: Optional[str] = None
     sanitized_har_hash: Optional[str] = None
+    video_hash: Optional[str] = None
+    video_fuzzy_hash: Optional[str] = None
+    domain_resolutions: Optional[dict] = None
+    tls_cert: Optional[TLSCertInfo] = None
     browser_build_id: Optional[str] = None
     commit_id: Optional[str] = None
+    branch: Optional[str] = None
     signature: Optional[str] = None
     notes: Optional[str] = None
 
 
-def screen_record(output_path, stop_event):
+def get_tls_cert_info(hostname: str) -> Optional[TLSCertInfo]:
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((hostname, 443), timeout=10) as sock:
+            with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                cert_der = ssock.getpeercert(binary_form=True)
+                cert_dict = ssock.getpeercert()
+                info = TLSCertInfo(
+                    fingerprint_sha256=hashlib.sha256(cert_der).hexdigest(),
+                    subject=dict(item for rdn in cert_dict.get('subject', ()) for item in rdn),
+                    issuer=dict(item for rdn in cert_dict.get('issuer', ()) for item in rdn),
+                    valid_from=cert_dict.get('notBefore'),
+                    valid_to=cert_dict.get('notAfter'),
+                )
+                print(f"TLS cert fingerprint for {hostname}: {info.fingerprint_sha256}")
+                return info
+    except Exception as e:
+        print(f"TLS certificate capture failed for {hostname}: {e}")
+        return None
+
+
+def resolve_har_domains(har_path: Path) -> dict:
+    """Parse all unique hostnames from HAR requests and resolve each to an IP."""
+    resolutions = {}
+    try:
+        hostnames = set()
+        with open(har_path, 'rb') as f:
+            for entry in ijson.items(f, 'log.entries.item'):
+                url = entry.get('request', {}).get('url', '')
+                if url:
+                    hostname = urlparse(url).hostname
+                    if hostname:
+                        hostnames.add(hostname)
+        for hostname in sorted(hostnames):
+            try:
+                resolutions[hostname] = socket.getaddrinfo(hostname, None)[0][4][0]
+            except Exception:
+                resolutions[hostname] = None
+        print(f"Resolved {len(resolutions)} domains from HAR.")
+    except Exception as e:
+        print(f"Error resolving HAR domains: {e}")
+    return resolutions
+
+
+def screen_record(output_path, stop_event, frame_hashes_path=None):
     # Screen recording using OpenCV, only capturing the Playwright browser window
     window_keywords = ("Nightly")
     browser_window = None
@@ -122,8 +140,12 @@ def screen_record(output_path, stop_event):
 
     fps = 20.0
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    raw_output_path = output_path.replace(".mp4", "_raw.mp4")
     out = None
     last_size = None
+    frame_index = 0
+    last_hash_time = None
+    frame_hash_interval_seconds = 30
 
     while not stop_event.is_set():
         try:
@@ -140,12 +162,26 @@ def screen_record(output_path, stop_event):
             if out is None or current_size != last_size:
                 if out is not None:
                     out.release()
-                out = cv2.VideoWriter(output_path, fourcc, fps, current_size)
+                out = cv2.VideoWriter(raw_output_path, fourcc, fps, current_size)
                 last_size = current_size
 
             img = pyautogui.screenshot(region=(browser_window.left, browser_window.top, width, height))
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             out.write(frame)
+
+            now = time.time()
+            if frame_hashes_path and (last_hash_time is None or now - last_hash_time >= frame_hash_interval_seconds):
+                frame_hash = hashlib.sha256(frame.tobytes()).hexdigest()
+                entry = json.dumps({
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "frame_index": frame_index,
+                    "sha256": frame_hash,
+                })
+                with open(frame_hashes_path, 'a', encoding='utf-8') as fh:
+                    fh.write(entry + '\n')
+                last_hash_time = now
+
+            frame_index += 1
         except Exception:
             time.sleep(1 / fps)
             continue
@@ -153,7 +189,7 @@ def screen_record(output_path, stop_event):
 
     if out is not None:
         out.release()
-    print(f"Screen recording saved to {output_path}")
+    print("Frame capture stopped.")
 
 
 def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
@@ -162,8 +198,11 @@ The archiving process started at {metadata.archiving_start_timestamp} and was co
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
 The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
-None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (commit {metadata.commit_id})
+None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (branch {metadata.branch}, commit {metadata.commit_id})
 MD5 hash of the HAR file: {metadata.har_hash}
+MD5 hash of the screen recording: {metadata.video_hash}
+At the time of archiving, the following domains were contacted and resolved to the following IP addresses: {metadata.domain_resolutions}
+The TLS certificate presented by www.instagram.com had SHA-256 fingerprint {metadata.tls_cert.fingerprint_sha256 if metadata.tls_cert else 'N/A'}, issued by {metadata.tls_cert.issuer if metadata.tls_cert else 'N/A'}, valid from {metadata.tls_cert.valid_from if metadata.tls_cert else 'N/A'} to {metadata.tls_cert.valid_to if metadata.tls_cert else 'N/A'}.
 OS and hardware details: {metadata.platform}
 Additional Notes: {metadata.notes}"""
     return affidavit
@@ -256,20 +295,98 @@ def get_storage_config() -> Optional[StorageConfig]:
     return StorageConfig(**storage_config_dict)
 
 
-def finish_recording(recording_thread: threading.Thread, browser: Browser, context: BrowserContext, archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None):
-    context.close()
-    browser.close()
+def merge_har_attachments(har_path: Path) -> Path:
+    """
+    Playwright's record_har_content="attach" mode writes each response body as
+    a separate file (named by content hash) in the same directory as the HAR,
+    and stores a "_file" reference in the HAR entry instead of an inline "text"
+    field.  This function inlines those bodies back into the HAR to produce a
+    standard self-contained file at har_path.parent.parent / "archive.har",
+    then removes the entire har_path.parent workspace directory.
+    Returns the path of the merged HAR.
+    If the HAR contains no "_file" references it is moved as-is and the
+    workspace is still removed.
+    """
+    workspace_dir = har_path.parent
+    final_path = workspace_dir.parent / "archive.har"
+    temp_path = workspace_dir / "archive.tmp.har"
 
+    # Read small header fields via separate streaming passes.  These sections
+    # are always tiny; only the entries array grows large.
+    with open(har_path, 'rb') as f:
+        version = next(ijson.items(f, 'log.version', use_float=True), '1.2')
+    with open(har_path, 'rb') as f:
+        creator = next(ijson.items(f, 'log.creator', use_float=True), {})
+    with open(har_path, 'rb') as f:
+        browser = next(ijson.items(f, 'log.browser', use_float=True), None)
+    with open(har_path, 'rb') as f:
+        pages = list(ijson.items(f, 'log.pages.item', use_float=True))
+
+    # Stream entries one-by-one so neither reader nor writer needs the full
+    # document in memory at once.
+    attachment_count = 0
+    with open(har_path, 'rb') as har_f, \
+         open(temp_path, 'w', encoding='utf-8') as out_f:
+
+        out_f.write('{"log":{')
+        out_f.write(f'"version":{json.dumps(version)}')
+        out_f.write(f',"creator":{json.dumps(creator, ensure_ascii=False)}')
+        if browser is not None:
+            out_f.write(f',"browser":{json.dumps(browser, ensure_ascii=False)}')
+        out_f.write(f',"pages":{json.dumps(pages, ensure_ascii=False)}')
+        out_f.write(',"entries":[')
+
+        first = True
+        for entry in ijson.items(har_f, 'log.entries.item', use_float=True):
+            content = entry.get('response', {}).get('content', {})
+            file_ref = content.pop('_file', None)
+            if file_ref is not None:
+                attachment_count += 1
+                attachment_path = workspace_dir / file_ref
+                if attachment_path.exists():
+                    body_bytes = attachment_path.read_bytes()
+                    mime = content.get('mimeType', '')
+                    is_text = (
+                        mime.startswith('text/') or
+                        'json' in mime or
+                        'xml' in mime or
+                        'javascript' in mime
+                    )
+                    if is_text:
+                        try:
+                            content['text'] = body_bytes.decode('utf-8')
+                        except UnicodeDecodeError:
+                            content['text'] = base64.b64encode(body_bytes).decode('ascii')
+                            content['encoding'] = 'base64'
+                    else:
+                        content['text'] = base64.b64encode(body_bytes).decode('ascii')
+                        content['encoding'] = 'base64'
+
+            if not first:
+                out_f.write(',')
+            out_f.write(json.dumps(entry, ensure_ascii=False))
+            first = False
+
+        out_f.write(']}}')
+
+    # Move the merged HAR to the archive root and delete the whole workspace.
+    print(f"Merging HAR attachments into self-contained HAR ({attachment_count} attachments)...")
+    temp_path.rename(final_path)
+    shutil.rmtree(workspace_dir)
+    print("HAR merge complete.")
+    return final_path
+
+
+def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None, storage_config: Optional[StorageConfig] = None):
+    # Stop the recording loop. The thread now exits quickly (no FFmpeg inside it).
     if stop_event is not None:
         stop_event.set()
-    if recording_thread.is_alive():
+    if recording_thread is not None and recording_thread.is_alive():
         recording_thread.join()
-        print("Recording finished.")
 
-    archiving_finished_timestamp = datetime.datetime.now().isoformat()
-    metadata.archiving_finished_timestamp = archiving_finished_timestamp
-
-    storage_config = get_storage_config()
+    # Show the dialog if no pre-supplied config (automated sessions pass config upfront).
+    if storage_config is None:
+        storage_config = get_storage_config()
 
     if storage_config is None:
         print("Archiving cancelled by user. Deleting archive directory.")
@@ -277,12 +394,19 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
             shutil.rmtree(archive_dir)
         return
 
+    metadata.signature = storage_config.signature
+    metadata.notes = storage_config.notes
+
+    # har_path may be updated by merge_har_attachments inside the try block below;
+    # initialise here so it is always defined when generate_entities_summary runs.
+    har_path = metadata.har_archive
+
     # video downloading configuration
     v_download_missing: bool = True
     v_download_media_not_in_structures: bool = storage_config.v_download_media_not_in_structures
     v_download_unfetched_media: bool = storage_config.v_download_unfetched_media
     v_download_full_versions_of_fetched_media: bool = storage_config.v_download_full_versions_of_fetched_media
-    v_download_highest_quality_assets_from_structures: bool = storage_config.p_download_highest_quality_assets_from_structures
+    v_download_highest_quality_assets_from_structures: bool = storage_config.v_download_highest_quality_assets_from_structures
 
     # photo downloading configuration
     p_download_missing: bool = True
@@ -290,55 +414,122 @@ def finish_recording(recording_thread: threading.Thread, browser: Browser, conte
     p_download_unfetched_media: bool = storage_config.p_download_unfetched_media
     p_download_highest_quality_assets_from_structures: bool = storage_config.p_download_highest_quality_assets_from_structures
 
-
-    metadata.signature = storage_config.signature
-    metadata.notes = storage_config.notes
-
-    har_path = metadata.har_archive
-    # sanitized_har_path = archive_dir / "sanitized.har"
-
-    # sanitize_har(har_path, sanitized_har_path)
-
-    with open(har_path, 'rb') as file:
-        print("reading har file")
-        har_content = file.read()
-        print("generating md5 exact hash")
-        har_hash = md5(har_content).hexdigest()
-        print("generating fuzzy hash")
-        har_fuzzy_hash = ppdeep.hash(har_content)
-        metadata.har_hash = har_hash
-        metadata.har_fuzzy_hash = har_fuzzy_hash
-
-    # store and timestamp regular hash
-    har_hash_path = archive_dir / "har_hash.txt"
-    with open(har_hash_path, 'w', encoding='utf-8') as f:
-        f.write(metadata.har_hash)
-
     try:
-        timestamp_file(har_hash_path)
+        # Re-encode the raw screen recording to H.264 (was previously done inside
+        # the recording thread; moved here so the dialog could appear sooner).
+        video_path = archive_dir / "screen_recording.mp4"
+        raw_video_path = archive_dir / "screen_recording_raw.mp4"
+        if raw_video_path.exists():
+            print("Re-encoding screen recording to H.264 for browser compatibility...")
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-i", str(raw_video_path), "-c:v", "libx264",
+                     "-pix_fmt", "yuv420p", "-y", str(video_path)],
+                    check=True, capture_output=True
+                )
+                raw_video_path.unlink()
+                print(f"Screen recording saved to {video_path}")
+            except Exception as e:
+                print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
+                shutil.move(str(raw_video_path), str(video_path))
+
+        # Hash and timestamp the screen recording
+        if video_path.exists():
+            with open(video_path, 'rb') as f:
+                video_content = f.read()
+            metadata.video_hash = md5(video_content).hexdigest()
+            metadata.video_fuzzy_hash = ppdeep.hash(video_content)
+
+            video_hash_path = archive_dir / "video_hash.txt"
+            with open(video_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.video_hash)
+            try:
+                timestamp_file(video_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping video hash file: {e}")
+
+            video_fuzzy_hash_path = archive_dir / "fuzzy_video_hash.txt"
+            with open(video_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.video_fuzzy_hash)
+            try:
+                timestamp_file(video_fuzzy_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping video fuzzy hash file: {e}")
+
+        # Timestamp the frame hashes log
+        frame_hashes_path = archive_dir / "frame_hashes.jsonl"
+        if frame_hashes_path.exists():
+            try:
+                timestamp_file(frame_hashes_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping frame hashes file: {e}")
+
+        # Inline response bodies from the har_workspace into a single self-contained
+        # HAR at archive_dir / "archive.har", then remove the workspace directory.
+        try:
+            metadata.har_archive = merge_har_attachments(metadata.har_archive)
+            har_path = metadata.har_archive
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ HAR merge failed, proceeding with unmerged HAR: {e}")
+
+        # Resolve all domains contacted during the session
+        metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
+
+        metadata.archiving_finished_timestamp = datetime.datetime.now().isoformat()
+        # sanitized_har_path = archive_dir / "sanitized.har"
+
+        # sanitize_har(har_path, sanitized_har_path)
+
+        try:
+            with open(har_path, 'rb') as file:
+                print("reading har file")
+                har_content = file.read()
+                print("generating md5 exact hash")
+                har_hash = md5(har_content).hexdigest()
+                print("generating fuzzy hash")
+                har_fuzzy_hash = ppdeep.hash(har_content)
+                metadata.har_hash = har_hash
+                metadata.har_fuzzy_hash = har_fuzzy_hash
+
+            # store and timestamp regular hash
+            har_hash_path = archive_dir / "har_hash.txt"
+            with open(har_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.har_hash)
+            try:
+                timestamp_file(har_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping HAR hash file: {e}")
+
+            # store and timestamp fuzzy hash
+            har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
+            with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
+                f.write(metadata.har_fuzzy_hash)
+            try:
+                timestamp_file(har_fuzzy_hash_path)
+            except Exception as e:
+                traceback.print_exc()
+                print(f"❌ Error timestamping HAR fuzzy hash file: {e}")
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ HAR hashing failed: {e}")
+
+        # with open(sanitized_har_path, 'rb') as file:
+        #     sanitized_har_content = file.read()
+        #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
+        #     metadata.sanitized_har_hash = sanitized_har_hash
+
     except Exception as e:
         traceback.print_exc()
-        print(f"❌ Error timestamping HAR hash file: {e}")
-
-    # store and timestamp fuzzy hash
-    har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
-    with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
-        f.write(metadata.har_fuzzy_hash)
-
-    try:
-        timestamp_file(har_fuzzy_hash_path)
-    except Exception as e:
-        traceback.print_exc()
-        print(f"❌ Error timestamping HAR hash file: {e}")
-
-    # with open(sanitized_har_path, 'rb') as file:
-    #     sanitized_har_content = file.read()
-    #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
-    #     metadata.sanitized_har_hash = sanitized_har_hash
-
-    with open(archive_dir / "metadata.json", "w", encoding="utf-8") as f:
-        metadata_dict = metadata.model_dump()
-        json.dump(metadata_dict, f, indent=2, default=str)
+        print(f"❌ Error during post-processing (metadata.json will still be saved): {e}")
+    finally:
+        with open(archive_dir / "metadata.json", "w", encoding="utf-8") as f:
+            metadata_dict = metadata.model_dump()
+            json.dump(metadata_dict, f, indent=2, default=str)
 
     with open(archive_dir / "affidavit.txt", "w", encoding="utf-8") as f:
         f.write(affidavit_from_metadata(metadata))
@@ -389,62 +580,84 @@ def archive_instagram_content(profile: Profile, target_url: str):
     archive_dir = Path(ROOT_DIR) / "archives" / f"{profile_name}_{archiving_start_time.strftime('%Y%m%d_%H%M%S')}"
     archive_dir.mkdir(parents=True, exist_ok=True)
     my_public_ip = get_my_public_ip()
+    tls_cert = get_tls_cert_info("www.instagram.com")
 
     with open(profile_path / "state.json", "r") as f:
         storage_state = json.load(f)
 
-    with sync_playwright() as p:
-        # Start screen recording in a separate thread
-        video_path = archive_dir / "screen_recording.mp4"
-        stop_event = threading.Event()
-        recording_start_timestamp = datetime.datetime.now().isoformat()
-        metadata = ArchiveSessionMetadata(
-            commit_id=commit_id,
-            profile_name=profile.insta_username,
-            target_url=target_url,
-            archiving_start_timestamp=archiving_start_timestamp,
-            recording_start_timestamp=recording_start_timestamp,
-            archiving_timezone=datetime.datetime.now().astimezone().tzname(),
-            har_archive=archive_dir / "archive.har",
-            my_ip=my_public_ip,
-            platform=get_system_info()
-        )
-        # Launch browser with the saved state
-        browser = p.firefox.launch(headless=False)
-        browser_build_id = f"{browser.browser_type.name}_{browser.version}"
-        metadata.browser_build_id = browser_build_id
-        context = browser.new_context(
-            storage_state=storage_state,
-            record_har_path=metadata.har_archive,
-            record_video_dir=archive_dir / "screen_recordings",
-        )
+    stop_event = threading.Event()
+    recording_thread = None
+    video_path = archive_dir / "screen_recording.mp4"
+    metadata = ArchiveSessionMetadata(
+        commit_id=commit_id,
+        branch=branch,
+        profile_name=profile.insta_username,
+        target_url=target_url,
+        archiving_start_timestamp=archiving_start_timestamp,
+        recording_start_timestamp=datetime.datetime.now().isoformat(),
+        archiving_timezone=datetime.datetime.now().astimezone().tzname(),
+        har_archive=archive_dir / "har_workspace" / "archive.har",
+        my_ip=my_public_ip,
+        platform=get_system_info(),
+        tls_cert=tls_cert,
+    )
 
-        page = context.new_page()
-        recording_thread = threading.Thread(
-            target=screen_record,
-            args=(str(video_path), stop_event)
-        )
-        recording_thread.start()
+    try:
+        with sync_playwright() as p:
+            # Launch browser with the saved state
+            browser = p.firefox.launch(headless=False)
+            browser_build_id = f"{browser.browser_type.name}_{browser.version}"
+            metadata.browser_build_id = browser_build_id
+            context = browser.new_context(
+                storage_state=storage_state,
+                record_har_path=metadata.har_archive,
+                record_har_content="attach",
+                record_video_dir=archive_dir / "screen_recordings",
+            )
 
-        try:
-            # Navigate to the target URL
-            page.goto(target_url)
+            page = context.new_page()
+            frame_hashes_path = archive_dir / "frame_hashes.jsonl"
+            recording_thread = threading.Thread(
+                target=screen_record,
+                args=(str(video_path), stop_event, str(frame_hashes_path))
+            )
+            recording_thread.start()
 
-            # Allow user to do whatever they want
-            print(f"Archiving content from {target_url}")
-            page.wait_for_event("close", timeout=0)
-        except Exception as e:
-            if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
-                print("Browser shutdown detected, wrapping up archiving session...")
-            else:
-                print(f"Error during archiving: {e}")
-        finally:
-            finish_recording(recording_thread, browser, context, archive_dir, metadata, stop_event)
+            try:
+                # Navigate to the target URL
+                page.goto(target_url)
+
+                # Allow user to do whatever they want
+                print(f"Archiving content from {target_url}")
+                page.wait_for_event("close", timeout=0)
+            except Exception as e:
+                if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
+                    print("Browser shutdown detected, wrapping up archiving session...")
+                else:
+                    print(f"Error during archiving: {e}")
+            finally:
+                # Close browser inside the sync_playwright context. Both calls may fail
+                # if the browser already disconnected — that's expected and safe.
+                try:
+                    context.close()
+                except Exception as e:
+                    print(f"Warning: context.close() raised an error (browser may have already closed): {e}")
+                try:
+                    browser.close()
+                except Exception as e:
+                    print(f"Warning: browser.close() raised an error (browser may have already closed): {e}")
+    except Exception as e:
+        # sync_playwright().__exit__ can raise if the Playwright server subprocess
+        # crashed (e.g. due to an unhandled Node.js error during HAR flush). We
+        # catch it here so that post-processing always runs.
+        print(f"Playwright session ended with an error: {e}")
+
+    finish_recording(recording_thread, archive_dir, metadata, stop_event)
 
 
 
 if __name__ == "__main__":
-    commit_id = ensure_committed()
+    commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
     selected_profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")

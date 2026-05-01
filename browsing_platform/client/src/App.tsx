@@ -24,11 +24,19 @@ import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/Upload";
 import IncorporatePage from "./pages/Incorporate";
 import TagManagementPage from "./pages/TagManagementPage";
+import EditTagPage from "./pages/EditTagPage";
+import SecuritySettings from "./pages/SecuritySettings";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import CommunityDetectionPage from "./pages/CommunityDetectionPage";
+import SharePasswordGate from "./UIComponents/LinkSharing/SharePasswordGate";
 
 export default function App() {
     const [alertQueue, setAlertQueue] = useState<IPreparedPopupAlert[]>([]);
 
     useEffect(() => {
+        // Clean up stale TUS upload fingerprints that accumulate in localStorage
+        Object.keys(localStorage).filter(k => k.startsWith('tus::')).forEach(k => localStorage.removeItem(k));
+
         function hideError(e: ErrorEvent) {
             if (e.message === 'ResizeObserver loop completed with undelivered notifications.') {
                 const resizeObserverErrDiv = document.getElementById('webpack-dev-server-client-overlay-div');
@@ -61,19 +69,23 @@ export default function App() {
                 <Routes>
                     <Route path="/" element={<Login/>}/>
                     <Route path="/login" element={<Login/>}/>
-                    <Route path="/account/pk/:platformId" element={<AccountPage/>}/>
-                    <Route path="/account/url/*" element={<AccountPage/>}/>
-                    <Route path="/account/:id" element={<AccountPage/>}/>
-                    <Route path="/post/pk/:platformId" element={<PostPage/>}/>
-                    <Route path="/post/url/*" element={<PostPage/>}/>
-                    <Route path="/post/:id" element={<PostPage/>}/>
-                    <Route path="/media/pk/:platformId" element={<MediaPage/>}/>
-                    <Route path="/media/:id" element={<MediaPage/>}/>
-                    <Route path="/archive/:id" element={<SessionPage/>}/>
+                    <Route path="/account/pk/:platformId" element={<SharePasswordGate><AccountPage/></SharePasswordGate>}/>
+                    <Route path="/account/url/*" element={<SharePasswordGate><AccountPage/></SharePasswordGate>}/>
+                    <Route path="/account/:id" element={<SharePasswordGate><AccountPage/></SharePasswordGate>}/>
+                    <Route path="/post/pk/:platformId" element={<SharePasswordGate><PostPage/></SharePasswordGate>}/>
+                    <Route path="/post/url/*" element={<SharePasswordGate><PostPage/></SharePasswordGate>}/>
+                    <Route path="/post/:id" element={<SharePasswordGate><PostPage/></SharePasswordGate>}/>
+                    <Route path="/media/pk/:platformId" element={<SharePasswordGate><MediaPage/></SharePasswordGate>}/>
+                    <Route path="/media/:id" element={<SharePasswordGate><MediaPage/></SharePasswordGate>}/>
+                    <Route path="/archive/:id" element={<SharePasswordGate><SessionPage/></SharePasswordGate>}/>
                     <Route path="/search" element={<SearchPage/>}/>
+                    <Route path="/community" element={<CommunityDetectionPage/>}/>
                     <Route path="/upload" element={<UploadPage/>}/>
                     <Route path="/incorporate" element={<IncorporatePage/>}/>
                     <Route path="/tags" element={<TagManagementPage/>}/>
+                    <Route path="/tags/:tag_id" element={<EditTagPage/>}/>
+                    <Route path="/settings/security" element={<SecuritySettings/>}/>
+                    <Route path="/admin/users" element={<AdminUsersPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
                 <ToastContainer

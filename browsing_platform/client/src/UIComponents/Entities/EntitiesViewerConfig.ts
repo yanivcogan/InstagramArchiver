@@ -18,6 +18,7 @@ interface IEntityViewerConfig {
     post: {
         display: IEntityDisplayOption;
         annotator: IEntityAnnotatorOption;
+        compactMode?: boolean;
     }
     media: {
         display: IEntityDisplayOption;
@@ -61,6 +62,7 @@ export class EntityViewerConfig implements IEntityViewerConfig {
     post = {
         display: "display" as IEntityDisplayOption,
         annotator: "show" as IEntityAnnotatorOption,
+        compactMode: false,
     };
     media = {
         display: "display" as IEntityDisplayOption,
@@ -92,12 +94,19 @@ export class EntityViewerConfig implements IEntityViewerConfig {
     };
 
     constructor(config?: DeepPartial<IEntityViewerConfig>) {
-        if (config) {
-            Object.keys(config).forEach((key) => {
-                if (this.hasOwnProperty(key) && config[key as keyof IEntityViewerConfig]) {
-                    Object.assign(this[key as keyof EntityViewerConfig], config[key as keyof IEntityViewerConfig]);
-                }
-            });
-        }
+        if (!config) return;
+        const merge = (target: object, source: object | undefined) => {
+            if (source) Object.assign(target, source);
+        };
+        merge(this.all, config.all);
+        merge(this.account, config.account);
+        merge(this.post, config.post);
+        merge(this.media, config.media);
+        merge(this.mediaPart, config.mediaPart);
+        merge(this.archivingSession, config.archivingSession);
+        merge(this.comment, config.comment);
+        merge(this.postLike, config.postLike);
+        merge(this.taggedAccount, config.taggedAccount);
+        merge(this.accountRelation, config.accountRelation);
     }
 }

@@ -7,13 +7,13 @@ from pydantic import BaseModel, ConfigDict
 
 from extractors.entity_types import EntityBase, ExtractedEntitiesFlattened, Account, Post, Media, Comment, Like, TaggedAccount, AccountRelation
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media, reconcile_comments, reconcile_likes, reconcile_tagged_accounts, reconcile_account_relations, synthesize_from_archives, reconcile_primitives
-from root_anchor import ROOT_DIR
+from root_anchor import ROOT_ARCHIVES
 from utils import db
 
 logger = logging.getLogger(__name__)
 
 LOCAL_ARCHIVES_DIR_ALIAS = 'local_archive_har'
-ROOT_ARCHIVES = Path(ROOT_DIR) / "archives"
+LOCAL_WACZ_ARCHIVES_DIR_ALIAS = "local_archive_wacz"
 EntityType = TypeVar("EntityType", bound="EntityBase")
 
 
@@ -42,15 +42,26 @@ class EntityProcessingConfig(BaseModel, Generic[EntityType]):
 # Generic batch query helpers
 # ---------------------------------------------------------------------------
 
+def _is_valid_identifier(value) -> bool:
+    """Return False for null-like values that must not be used as entity-match keys.
+
+    Null-like means: Python None, empty string, or the literal string 'None' /
+    'None/' which is the f-string artifact of formatting a Python None value.
+    Matching multiple distinct entities on a shared null-like identifier would
+    incorrectly merge them into the same canonical.
+    """
+    return bool(value) and str(value).rstrip('/') != 'None'
+
+
 def batch_get_canonicals_url_and_id(entities: list, table: str, entity_class: type) -> list:
     """One batch lookup for entity types matched by url OR id_on_platform."""
-    urls = list({e.url for e in entities if getattr(e, 'url', None)})
+    urls = list({e.url_suffix for e in entities if _is_valid_identifier(getattr(e, 'url_suffix', None))})
     ids = list({e.id_on_platform for e in entities if getattr(e, 'id_on_platform', None)})
 
     rows: list = []
     if urls:
         ph = ','.join(['%s'] * len(urls))
-        rows.extend(db.execute_query(f"SELECT * FROM `{table}` WHERE url IN ({ph})", urls, return_type="rows") or [])
+        rows.extend(db.execute_query(f"SELECT * FROM `{table}` WHERE url_suffix IN ({ph})", urls, return_type="rows") or [])
     if ids:
         ph = ','.join(['%s'] * len(ids))
         rows.extend(db.execute_query(f"SELECT * FROM `{table}` WHERE id_on_platform IN ({ph})", ids, return_type="rows") or [])
@@ -62,9 +73,9 @@ def batch_get_canonicals_url_and_id(entities: list, table: str, entity_class: ty
             seen.add(row['id'])
             canonicals.append(entity_class(**row))
 
-    by_url = {c.url: c for c in canonicals if getattr(c, 'url', None)}
+    by_url = {c.url_suffix: c for c in canonicals if _is_valid_identifier(getattr(c, 'url_suffix', None))}
     by_id = {c.id_on_platform: c for c in canonicals if getattr(c, 'id_on_platform', None)}
-    return [by_url.get(getattr(e, 'url', None)) or by_id.get(getattr(e, 'id_on_platform', None))
+    return [by_url.get(getattr(e, 'url_suffix', None)) or by_id.get(getattr(e, 'id_on_platform', None))
             for e in entities]
 
 
@@ -122,8 +133,8 @@ def batch_resolve_account_fks_by_url_and_id(entities: list, url_attr: str, id_at
     by_url, by_id_op = {}, {}
     if urls:
         ph = ','.join(['%s'] * len(urls))
-        rows = db.execute_query(f"SELECT id, url FROM account WHERE url IN ({ph})", urls, return_type="rows") or []
-        by_url = {r['url']: r['id'] for r in rows}
+        rows = db.execute_query(f"SELECT id, url_suffix FROM account WHERE url_suffix IN ({ph})", urls, return_type="rows") or []
+        by_url = {r['url_suffix']: r['id'] for r in rows}
     if ids_op:
         ph = ','.join(['%s'] * len(ids_op))
         rows = db.execute_query(f"SELECT id, id_on_platform FROM account WHERE id_on_platform IN ({ph})", ids_op, return_type="rows") or []
@@ -141,8 +152,8 @@ def batch_resolve_post_fks(entities: list, url_attr: str, id_attr: str, id_field
     by_url, by_id_op = {}, {}
     if urls:
         ph = ','.join(['%s'] * len(urls))
-        rows = db.execute_query(f"SELECT id, url FROM post WHERE url IN ({ph})", urls, return_type="rows") or []
-        by_url = {r['url']: r['id'] for r in rows}
+        rows = db.execute_query(f"SELECT id, url_suffix FROM post WHERE url_suffix IN ({ph})", urls, return_type="rows") or []
+        by_url = {r['url_suffix']: r['id'] for r in rows}
     if ids_op:
         ph = ','.join(['%s'] * len(ids_op))
         rows = db.execute_query(f"SELECT id, id_on_platform FROM post WHERE id_on_platform IN ({ph})", ids_op, return_type="rows") or []
@@ -158,35 +169,35 @@ def batch_resolve_post_fks(entities: list, url_attr: str, id_attr: str, id_field
 # ---------------------------------------------------------------------------
 
 def batch_store_new_accounts(new_accounts: list, _) -> list:
-    columns = ['url', 'id_on_platform', 'identifiers', 'display_name', 'bio', 'data']
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'identifiers', 'display_name', 'bio', 'data']
     rows = []
     for a in new_accounts:
         identifiers = []
         if a.id_on_platform:
             identifiers.append(f"id_{a.id_on_platform}")
-        if a.url:
-            identifiers.append(f"url_{a.url}")
-        rows.append([a.url, a.id_on_platform, json.dumps(identifiers), a.display_name, a.bio,
+        if a.url_suffix:
+            identifiers.append(f"url_{a.url_suffix}")
+        rows.append([a.url_suffix, a.platform, a.id_on_platform, json.dumps(identifiers), a.display_name, a.bio,
                      json.dumps(a.data) if a.data else None])
     return db.batch_insert('account', columns, rows)
 
 
 def batch_store_new_account_archives(new_accounts: list, canonical_ids: list, archive_session_id: int, _) -> list:
-    columns = ['url', 'id_on_platform', 'display_name', 'bio', 'data', 'archive_session_id', 'canonical_id']
-    rows = [[a.url, a.id_on_platform, a.display_name, a.bio,
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'display_name', 'bio', 'data', 'archive_session_id', 'canonical_id']
+    rows = [[a.url_suffix, a.platform, a.id_on_platform, a.display_name, a.bio,
              json.dumps(a.data) if a.data else None, archive_session_id, cid]
             for a, cid in zip(new_accounts, canonical_ids)]
     return db.batch_insert('account_archive', columns, rows)
 
 
 def batch_store_new_posts(new_posts: list, _) -> list:
-    batch_resolve_account_fks_by_url_and_id(new_posts, 'account_url', 'account_id_on_platform', 'account_id')
+    batch_resolve_account_fks_by_url_and_id(new_posts, 'account_url_suffix', 'account_id_on_platform', 'account_id')
     for p in new_posts:
         if p.account_id is None:
             raise ValueError(f"Cannot store post {p.id_on_platform!r}: account not found "
-                             f"(url={p.account_url!r}, id_on_platform={p.account_id_on_platform!r})")
-    columns = ['url', 'id_on_platform', 'account_id', 'publication_date', 'caption', 'data']
-    rows = [[p.url, p.id_on_platform, p.account_id,
+                             f"(url={p.account_url_suffix!r}, id_on_platform={p.account_id_on_platform!r})")
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'account_id', 'publication_date', 'caption', 'data']
+    rows = [[p.url_suffix, p.platform, p.id_on_platform, p.account_id,
              p.publication_date.isoformat() if p.publication_date else None,
              p.caption, json.dumps(p.data) if p.data else None]
             for p in new_posts]
@@ -194,49 +205,49 @@ def batch_store_new_posts(new_posts: list, _) -> list:
 
 
 def batch_store_new_post_archives(new_posts: list, canonical_ids: list, archive_session_id: int, _) -> list:
-    columns = ['url', 'id_on_platform', 'publication_date', 'caption', 'data',
-               'archive_session_id', 'canonical_id', 'account_url', 'account_id_on_platform']
-    rows = [[p.url, p.id_on_platform,
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'publication_date', 'caption', 'data',
+               'archive_session_id', 'canonical_id', 'account_url_suffix', 'account_id_on_platform']
+    rows = [[p.url_suffix, p.platform, p.id_on_platform,
              p.publication_date.isoformat() if p.publication_date else None,
              p.caption, json.dumps(p.data) if p.data else None,
-             archive_session_id, cid, p.account_url, p.account_id_on_platform]
+             archive_session_id, cid, p.account_url_suffix, p.account_id_on_platform]
             for p, cid in zip(new_posts, canonical_ids)]
     return db.batch_insert('post_archive', columns, rows)
 
 
 def batch_store_new_media(new_media: list, archive_location) -> list:
-    batch_resolve_post_fks(new_media, 'post_url', 'post_id_on_platform', 'post_id')
+    batch_resolve_post_fks(new_media, 'post_url_suffix', 'post_id_on_platform', 'post_id')
     for m in new_media:
         if m.post_id is None:
             raise ValueError(f"Cannot store media {m.id_on_platform!r}: post not found "
-                             f"(url={m.post_url!r}, id_on_platform={m.post_id_on_platform!r})")
-    columns = ['url', 'id_on_platform', 'post_id', 'local_url', 'media_type', 'data', 'thumbnail_status']
-    rows = [[m.url, m.id_on_platform, m.post_id, m.local_url, m.media_type,
+                             f"(url={m.post_url_suffix!r}, id_on_platform={m.post_id_on_platform!r})")
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'post_id', 'local_url', 'media_type', 'data', 'thumbnail_status']
+    rows = [[m.url_suffix, m.platform, m.id_on_platform, m.post_id, m.local_url, m.media_type,
              json.dumps(m.data) if m.data else None, initial_thumbnail_status(m)]
             for m in new_media]
     return db.batch_insert('media', columns, rows)
 
 
 def batch_store_new_media_archives(new_media: list, canonical_ids: list, archive_session_id: int, _) -> list:
-    columns = ['url', 'id_on_platform', 'local_url', 'media_type', 'data',
-               'archive_session_id', 'canonical_id', 'post_url', 'post_id_on_platform']
-    rows = [[m.url, m.id_on_platform, m.local_url, m.media_type,
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'local_url', 'media_type', 'data',
+               'archive_session_id', 'canonical_id', 'post_url_suffix', 'post_id_on_platform']
+    rows = [[m.url_suffix, m.platform, m.id_on_platform, m.local_url, m.media_type,
              json.dumps(m.data) if m.data else None,
-             archive_session_id, cid, m.post_url, m.post_id_on_platform]
+             archive_session_id, cid, m.post_url_suffix, m.post_id_on_platform]
             for m, cid in zip(new_media, canonical_ids)]
     return db.batch_insert('media_archive', columns, rows)
 
 
 def batch_store_new_comments(new_comments: list, _) -> list:
-    batch_resolve_post_fks(new_comments, 'post_url', 'post_id_on_platform', 'post_id')
+    batch_resolve_post_fks(new_comments, 'post_url_suffix', 'post_id_on_platform', 'post_id')
     for c in new_comments:
         if c.post_id is None and (c.post_url or c.post_id_on_platform):
             raise ValueError(f"Cannot store comment {c.id_on_platform!r}: post not found "
-                             f"(url={c.post_url!r}, id_on_platform={c.post_id_on_platform!r})")
-    batch_resolve_account_fks_by_url_and_id(new_comments, 'account_url', 'account_id_on_platform', 'account_id')
-    columns = ['id_on_platform', 'url', 'post_id', 'account_id', 'parent_comment_id_on_platform',
+                             f"(url={c.post_url_suffix!r}, id_on_platform={c.post_id_on_platform!r})")
+    batch_resolve_account_fks_by_url_and_id(new_comments, 'account_url_suffix', 'account_id_on_platform', 'account_id')
+    columns = ['id_on_platform', 'url_suffix', 'platform', 'post_id', 'account_id', 'parent_comment_id_on_platform',
                'text', 'publication_date', 'data']
-    rows = [[c.id_on_platform, c.url, c.post_id, c.account_id, c.parent_comment_id_on_platform,
+    rows = [[c.id_on_platform, c.url_suffix, c.platform, c.post_id, c.account_id, c.parent_comment_id_on_platform,
              c.text, c.publication_date.isoformat() if c.publication_date else None,
              json.dumps(c.data) if c.data else None]
             for c in new_comments]
@@ -244,11 +255,11 @@ def batch_store_new_comments(new_comments: list, _) -> list:
 
 
 def batch_store_new_comment_archives(new_comments: list, canonical_ids: list, archive_session_id: int, _) -> list:
-    columns = ['id_on_platform', 'url', 'post_url', 'post_id_on_platform', 'account_id_on_platform',
-               'account_url', 'parent_comment_id_on_platform', 'text', 'publication_date', 'data',
+    columns = ['id_on_platform', 'url_suffix', 'platform', 'post_url_suffix', 'post_id_on_platform', 'account_id_on_platform',
+               'account_url_suffix', 'parent_comment_id_on_platform', 'text', 'publication_date', 'data',
                'archive_session_id', 'canonical_id']
-    rows = [[c.id_on_platform, c.url, c.post_url, c.post_id_on_platform,
-             c.account_id_on_platform, c.account_url, c.parent_comment_id_on_platform,
+    rows = [[c.id_on_platform, c.url_suffix, c.platform, c.post_url_suffix, c.post_id_on_platform,
+             c.account_id_on_platform, c.account_url_suffix, c.parent_comment_id_on_platform,
              c.text, c.publication_date.isoformat() if c.publication_date else None,
              json.dumps(c.data) if c.data else None,
              archive_session_id, cid]
@@ -435,16 +446,33 @@ def preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: 
     (e.g. in platform URLs) and must only grow, never shrink. Apply the same
     first-non-empty rule but always favouring the existing canonical value.
 
+    For entities with an identifiers list (Account), the new url_suffix and
+    id_on_platform are accumulated into identifiers before url_suffix is
+    updated, so that username changes are recorded as a historical record.
+    url_suffix itself is updated to the newest known value (prefer synthesized
+    over existing_canonical), while id_on_platform remains frozen to the first
+    known value (platform IDs are immutable).
+
     FK integer IDs (e.g. post_id, account_id) are also copied from the existing
     canonical when the synthesized entity has None, to avoid redundant FK lookups
     inside store_entity for updated entities.
     """
+    if hasattr(synthesized, 'identifiers') and hasattr(existing_canonical, 'identifiers'):
+        ids = list(existing_canonical.identifiers or [])
+        new_id = getattr(synthesized, 'id_on_platform', None)
+        new_url = getattr(synthesized, 'url_suffix', None)
+        if new_id and f"id_{new_id}" not in ids:
+            ids.append(f"id_{new_id}")
+        if new_url and f"url_{new_url}" not in ids:
+            ids.append(f"url_{new_url}")
+        synthesized.identifiers = ids
+
     if hasattr(synthesized, 'id_on_platform'):
         synthesized.id_on_platform = reconcile_primitives(
             existing_canonical.id_on_platform, synthesized.id_on_platform
         )
-    if hasattr(synthesized, 'url'):
-        synthesized.url = reconcile_primitives(existing_canonical.url, synthesized.url)
+    if hasattr(synthesized, 'url_suffix'):
+        synthesized.url_suffix = reconcile_primitives(synthesized.url_suffix, existing_canonical.url_suffix)
     for fk_field in ('account_id', 'post_id', 'media_id', 'tagged_account_id',
                      'follower_account_id', 'followed_account_id'):
         if hasattr(synthesized, fk_field) and getattr(synthesized, fk_field) is None:
@@ -460,10 +488,10 @@ def preserve_canonical_identifiers(synthesized: EntityBase, existing_canonical: 
 def get_canonical_account(account: Account) -> Optional[Account]:
     entry = db.execute_query(
         """SELECT * FROM account
-           WHERE (url = %(url)s AND url IS NOT NULL)
+           WHERE (url_suffix = %(url_suffix)s AND url_suffix IS NOT NULL)
               OR (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
            LIMIT 1""",
-        {"url": account.url, "id_on_platform": account.id_on_platform},
+        {"url_suffix": account.url_suffix, "id_on_platform": account.id_on_platform},
         return_type="single_row"
     )
     return Account(**entry) if entry else None
@@ -490,15 +518,20 @@ def get_all_archives_for_canonical_account(canonical_id: int) -> list[Account]:
 
 
 def store_account(account: Account, existing_account: Optional[Account], _: Optional[Path]) -> int:
-    account_identifiers: list[str] = (existing_account.identifiers if existing_account else None) or []
-    if account.id_on_platform and f"id_{account.id_on_platform}" not in account_identifiers:
-        account_identifiers.append(f"id_{account.id_on_platform}")
-    if account.url and f"url_{account.url}" not in account_identifiers:
-        account_identifiers.append(f"url_{account.url}")
+    if existing_account is not None:
+        # Identifiers already accumulated by preserve_canonical_identifiers before url_suffix was frozen.
+        account_identifiers: list[str] = account.identifiers or []
+    else:
+        account_identifiers = []
+        if account.id_on_platform and f"id_{account.id_on_platform}" not in account_identifiers:
+            account_identifiers.append(f"id_{account.id_on_platform}")
+        if account.url_suffix and f"url_{account.url_suffix}" not in account_identifiers:
+            account_identifiers.append(f"url_{account.url_suffix}")
     if existing_account is not None:
         db.execute_query(
             """UPDATE account
-               SET url            = %(url)s,
+               SET url_suffix     = %(url_suffix)s,
+                   platform       = %(platform)s,
                    id_on_platform = %(id_on_platform)s,
                    display_name   = %(display_name)s,
                    identifiers    = %(identifiers)s,
@@ -508,7 +541,8 @@ def store_account(account: Account, existing_account: Optional[Account], _: Opti
             {
                 "id": account.id,
                 "id_on_platform": account.id_on_platform,
-                "url": account.url,
+                "url_suffix": account.url_suffix,
+                "platform": account.platform,
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
@@ -519,11 +553,12 @@ def store_account(account: Account, existing_account: Optional[Account], _: Opti
         return account.id
     else:
         return db.execute_query(
-            """INSERT INTO account (url, id_on_platform, identifiers, display_name, bio, data)
-               VALUES (%(url)s, %(id_on_platform)s, %(identifiers)s, %(display_name)s, %(bio)s, %(data)s)""",
+            """INSERT INTO account (url_suffix, platform, id_on_platform, identifiers, display_name, bio, data)
+               VALUES (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(identifiers)s, %(display_name)s, %(bio)s, %(data)s)""",
             {
                 "id_on_platform": account.id_on_platform,
-                "url": account.url,
+                "url_suffix": account.url_suffix,
+                "platform": account.platform,
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
@@ -539,7 +574,8 @@ def store_account_archive(
     if existing_id is not None:
         db.execute_query(
             """UPDATE account_archive
-               SET url                = %(url)s,
+               SET url_suffix         = %(url_suffix)s,
+                   platform           = %(platform)s,
                    id_on_platform     = %(id_on_platform)s,
                    display_name       = %(display_name)s,
                    bio                = %(bio)s,
@@ -550,7 +586,8 @@ def store_account_archive(
             {
                 "id": existing_id,
                 "id_on_platform": account.id_on_platform,
-                "url": account.url,
+                "url_suffix": account.url_suffix,
+                "platform": account.platform,
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
@@ -562,11 +599,12 @@ def store_account_archive(
         return existing_id
     else:
         return db.execute_query(
-            """INSERT INTO account_archive (url, id_on_platform, display_name, bio, data, archive_session_id, canonical_id)
-               VALUES (%(url)s, %(id_on_platform)s, %(display_name)s, %(bio)s, %(data)s, %(archive_session_id)s, %(canonical_id)s)""",
+            """INSERT INTO account_archive (url_suffix, platform, id_on_platform, display_name, bio, data, archive_session_id, canonical_id)
+               VALUES (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(display_name)s, %(bio)s, %(data)s, %(archive_session_id)s, %(canonical_id)s)""",
             {
                 "id_on_platform": account.id_on_platform,
-                "url": account.url,
+                "url_suffix": account.url_suffix,
+                "platform": account.platform,
                 "display_name": account.display_name,
                 "bio": account.bio,
                 "data": json.dumps(account.data) if account.data else None,
@@ -584,10 +622,10 @@ def store_account_archive(
 def get_canonical_post(post: Post) -> Optional[Post]:
     entry = db.execute_query(
         """SELECT * FROM post
-           WHERE (url = %(url)s AND url IS NOT NULL)
+           WHERE (url_suffix = %(url_suffix)s AND url_suffix IS NOT NULL)
               OR (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
            LIMIT 1""",
-        {"url": post.url, "id_on_platform": post.id_on_platform},
+        {"url_suffix": post.url_suffix, "id_on_platform": post.id_on_platform},
         return_type="single_row"
     )
     return Post(**entry) if entry else None
@@ -616,7 +654,7 @@ def get_all_archives_for_canonical_post(canonical_id: int) -> list[Post]:
 def store_post(post: Post, existing_post: Optional[Post], _: Optional[Path]) -> int:
     if post.account_id is None:
         stored_account = get_canonical_account(
-            Account(url=post.account_url, id_on_platform=post.account_id_on_platform)
+            Account(url_suffix=post.account_url_suffix, id_on_platform=post.account_id_on_platform, platform=post.platform)
         )
         if stored_account is None:
             raise ValueError(f"Cannot store post {post.id_on_platform!r}: account not found "
@@ -625,7 +663,8 @@ def store_post(post: Post, existing_post: Optional[Post], _: Optional[Path]) -> 
     if existing_post is not None:
         db.execute_query(
             """UPDATE post
-               SET url              = %(url)s,
+               SET url_suffix        = %(url_suffix)s,
+                   platform         = %(platform)s,
                    id_on_platform   = %(id_on_platform)s,
                    account_id       = %(account_id)s,
                    publication_date = %(publication_date)s,
@@ -634,7 +673,8 @@ def store_post(post: Post, existing_post: Optional[Post], _: Optional[Path]) -> 
                WHERE id = %(id)s""",
             {
                 "id": post.id,
-                "url": post.url,
+                "url_suffix": post.url_suffix,
+                "platform": post.platform,
                 "id_on_platform": post.id_on_platform,
                 "account_id": post.account_id,
                 "publication_date": post.publication_date.isoformat() if post.publication_date else None,
@@ -646,10 +686,11 @@ def store_post(post: Post, existing_post: Optional[Post], _: Optional[Path]) -> 
         return post.id
     else:
         return db.execute_query(
-            """INSERT INTO post (url, id_on_platform, account_id, publication_date, caption, data)
-               VALUES (%(url)s, %(id_on_platform)s, %(account_id)s, %(publication_date)s, %(caption)s, %(data)s)""",
+            """INSERT INTO post (url_suffix, platform, id_on_platform, account_id, publication_date, caption, data)
+               VALUES (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(account_id)s, %(publication_date)s, %(caption)s, %(data)s)""",
             {
-                "url": post.url,
+                "url_suffix": post.url_suffix,
+                "platform": post.platform,
                 "id_on_platform": post.id_on_platform,
                 "account_id": post.account_id,
                 "publication_date": post.publication_date.isoformat() if post.publication_date else None,
@@ -666,26 +707,28 @@ def store_post_archive(
     if existing_id is not None:
         db.execute_query(
             """UPDATE post_archive
-               SET url                    = %(url)s,
+               SET url_suffix              = %(url_suffix)s,
+                   platform               = %(platform)s,
                    id_on_platform         = %(id_on_platform)s,
                    publication_date       = %(publication_date)s,
                    caption                = %(caption)s,
                    data                   = %(data)s,
                    archive_session_id     = %(archive_session_id)s,
                    canonical_id           = %(canonical_id)s,
-                   account_url            = %(account_url)s,
+                   account_url_suffix     = %(account_url_suffix)s,
                    account_id_on_platform = %(account_id_on_platform)s
                WHERE id = %(id)s""",
             {
                 "id": existing_id,
-                "url": post.url,
+                "url_suffix": post.url_suffix,
+                "platform": post.platform,
                 "id_on_platform": post.id_on_platform,
                 "publication_date": post.publication_date.isoformat() if post.publication_date else None,
                 "caption": post.caption,
                 "data": json.dumps(post.data) if post.data else None,
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
-                "account_url": post.account_url,
+                "account_url_suffix": post.account_url_suffix,
                 "account_id_on_platform": post.account_id_on_platform,
             },
             return_type="none"
@@ -694,20 +737,21 @@ def store_post_archive(
     else:
         return db.execute_query(
             """INSERT INTO post_archive
-                   (url, id_on_platform, publication_date, caption, data,
-                    archive_session_id, canonical_id, account_url, account_id_on_platform)
+                   (url_suffix, platform, id_on_platform, publication_date, caption, data,
+                    archive_session_id, canonical_id, account_url_suffix, account_id_on_platform)
                VALUES
-                   (%(url)s, %(id_on_platform)s, %(publication_date)s, %(caption)s, %(data)s,
-                    %(archive_session_id)s, %(canonical_id)s, %(account_url)s, %(account_id_on_platform)s)""",
+                   (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(publication_date)s, %(caption)s, %(data)s,
+                    %(archive_session_id)s, %(canonical_id)s, %(account_url_suffix)s, %(account_id_on_platform)s)""",
             {
-                "url": post.url,
+                "url_suffix": post.url_suffix,
+                "platform": post.platform,
                 "id_on_platform": post.id_on_platform,
                 "publication_date": post.publication_date.isoformat() if post.publication_date else None,
                 "caption": post.caption,
                 "data": json.dumps(post.data) if post.data else None,
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
-                "account_url": post.account_url,
+                "account_url_suffix": post.account_url_suffix,
                 "account_id_on_platform": post.account_id_on_platform,
             },
             return_type="id"
@@ -730,10 +774,10 @@ def preprocess_media(media: Media, _: Optional[int], archive_location: Path) -> 
 def get_canonical_media(media: Media) -> Optional[Media]:
     entry = db.execute_query(
         """SELECT * FROM media
-           WHERE (url = %(url)s AND url IS NOT NULL)
+           WHERE (url_suffix = %(url_suffix)s AND url_suffix IS NOT NULL)
               OR (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
            LIMIT 1""",
-        {"url": media.url, "id_on_platform": media.id_on_platform},
+        {"url_suffix": media.url_suffix, "id_on_platform": media.id_on_platform},
         return_type="single_row"
     )
     return Media(**entry) if entry else None
@@ -769,7 +813,7 @@ def initial_thumbnail_status(media: Media) -> str:
 def store_media(media: Media, existing_media: Optional[Media], archive_location: Path) -> int:
     if media.post_id is None:
         stored_post = get_canonical_post(
-            Post(url=media.post_url, id_on_platform=media.post_id_on_platform)
+            Post(url_suffix=media.post_url_suffix, id_on_platform=media.post_id_on_platform, platform=media.platform, media_type="image")
         )
         if stored_post is None:
             raise ValueError(f"Cannot store media {media.id_on_platform!r}: post not found "
@@ -778,7 +822,8 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
     if existing_media is not None:
         db.execute_query(
             """UPDATE media
-               SET url              = %(url)s,
+               SET url_suffix        = %(url_suffix)s,
+                   platform         = %(platform)s,
                    id_on_platform   = %(id_on_platform)s,
                    post_id          = %(post_id)s,
                    local_url        = %(local_url)s,
@@ -788,7 +833,8 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                WHERE id = %(id)s""",
             {
                 "id": media.id,
-                "url": media.url,
+                "url_suffix": media.url_suffix,
+                "platform": media.platform,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
                 "local_url": media.local_url,
@@ -801,10 +847,11 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
         return media.id
     else:
         return db.execute_query(
-            """INSERT INTO media (url, id_on_platform, post_id, local_url, media_type, data, thumbnail_status)
-               VALUES (%(url)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s, %(thumbnail_status)s)""",
+            """INSERT INTO media (url_suffix, platform, id_on_platform, post_id, local_url, media_type, data, thumbnail_status)
+               VALUES (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s, %(thumbnail_status)s)""",
             {
-                "url": media.url,
+                "url_suffix": media.url_suffix,
+                "platform": media.platform,
                 "id_on_platform": media.id_on_platform,
                 "post_id": media.post_id,
                 "local_url": media.local_url,
@@ -822,26 +869,28 @@ def store_media_archive(
     if existing_id is not None:
         db.execute_query(
             """UPDATE media_archive
-               SET url                 = %(url)s,
+               SET url_suffix           = %(url_suffix)s,
+                   platform            = %(platform)s,
                    id_on_platform      = %(id_on_platform)s,
                    local_url           = %(local_url)s,
                    media_type          = %(media_type)s,
                    data                = %(data)s,
                    archive_session_id  = %(archive_session_id)s,
                    canonical_id        = %(canonical_id)s,
-                   post_url            = %(post_url)s,
+                   post_url_suffix     = %(post_url_suffix)s,
                    post_id_on_platform = %(post_id_on_platform)s
                WHERE id = %(id)s""",
             {
                 "id": existing_id,
-                "url": media.url,
+                "url_suffix": media.url_suffix,
+                "platform": media.platform,
                 "id_on_platform": media.id_on_platform,
                 "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
-                "post_url": media.post_url,
+                "post_url_suffix": media.post_url_suffix,
                 "post_id_on_platform": media.post_id_on_platform,
             },
             return_type="none"
@@ -850,20 +899,21 @@ def store_media_archive(
     else:
         return db.execute_query(
             """INSERT INTO media_archive
-                   (url, id_on_platform, local_url, media_type, data,
-                    archive_session_id, canonical_id, post_url, post_id_on_platform)
+                   (url_suffix, platform, id_on_platform, local_url, media_type, data,
+                    archive_session_id, canonical_id, post_url_suffix, post_id_on_platform)
                VALUES
-                   (%(url)s, %(id_on_platform)s, %(local_url)s, %(media_type)s, %(data)s,
-                    %(archive_session_id)s, %(canonical_id)s, %(post_url)s, %(post_id_on_platform)s)""",
+                   (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(local_url)s, %(media_type)s, %(data)s,
+                    %(archive_session_id)s, %(canonical_id)s, %(post_url_suffix)s, %(post_id_on_platform)s)""",
             {
-                "url": media.url,
+                "url_suffix": media.url_suffix,
+                "platform": media.platform,
                 "id_on_platform": media.id_on_platform,
                 "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
-                "post_url": media.post_url,
+                "post_url_suffix": media.post_url_suffix,
                 "post_id_on_platform": media.post_id_on_platform,
             },
             return_type="id"
@@ -878,9 +928,9 @@ def get_canonical_comment(comment: Comment) -> Optional[Comment]:
     entry = db.execute_query(
         """SELECT * FROM comment
            WHERE (id_on_platform = %(id_on_platform)s AND id_on_platform IS NOT NULL)
-              OR (url = %(url)s AND url IS NOT NULL)
+              OR (url_suffix = %(url_suffix)s AND url_suffix IS NOT NULL)
            LIMIT 1""",
-        {"id_on_platform": comment.id_on_platform, "url": comment.url},
+        {"id_on_platform": comment.id_on_platform, "url_suffix": comment.url_suffix},
         return_type="single_row"
     )
     return Comment(**entry) if entry else None
@@ -907,16 +957,16 @@ def get_all_archives_for_canonical_comment(canonical_id: int) -> list[Comment]:
 
 
 def store_comment(comment: Comment, existing_comment: Optional[Comment], _: Optional[Path]) -> int:
-    if comment.post_id is None and (comment.post_url or comment.post_id_on_platform):
-        stored_post = get_canonical_post(Post(url=comment.post_url, id_on_platform=comment.post_id_on_platform))
+    if comment.post_id is None and (comment.post_url_suffix or comment.post_id_on_platform):
+        stored_post = get_canonical_post(Post(url_suffix=comment.post_url_suffix, id_on_platform=comment.post_id_on_platform, platform=comment.platform, account_url_suffix=None))
         if stored_post is None:
             raise ValueError(f"Cannot store comment {comment.id_on_platform!r}: post not found "
-                             f"(url={comment.post_url!r}, id_on_platform={comment.post_id_on_platform!r})")
+                             f"(url={comment.post_url_suffix!r}, id_on_platform={comment.post_id_on_platform!r})")
         comment.post_id = stored_post.id
-    if comment.account_id is None and comment.account_url:
+    if comment.account_id is None and comment.account_url_suffix:
         stored_account = db.execute_query(
-            "SELECT id FROM account WHERE url = %(url)s LIMIT 1",
-            {"url": comment.account_url},
+            "SELECT id FROM account WHERE url_suffix = %(url_suffix)s LIMIT 1",
+            {"url_suffix": comment.account_url_suffix},
             return_type="single_row"
         )
         if stored_account:
@@ -933,7 +983,8 @@ def store_comment(comment: Comment, existing_comment: Optional[Comment], _: Opti
         db.execute_query(
             """UPDATE comment
                SET id_on_platform                = %(id_on_platform)s,
-                   url                           = %(url)s,
+                   url_suffix                    = %(url_suffix)s,
+                   platform                      = %(platform)s,
                    post_id                       = %(post_id)s,
                    account_id                    = %(account_id)s,
                    parent_comment_id_on_platform = %(parent_comment_id_on_platform)s,
@@ -944,7 +995,8 @@ def store_comment(comment: Comment, existing_comment: Optional[Comment], _: Opti
             {
                 "id": comment.id,
                 "id_on_platform": comment.id_on_platform,
-                "url": comment.url,
+                "url_suffix": comment.url_suffix,
+                "platform": comment.platform,
                 "post_id": comment.post_id,
                 "account_id": comment.account_id,
                 "parent_comment_id_on_platform": comment.parent_comment_id_on_platform,
@@ -958,14 +1010,15 @@ def store_comment(comment: Comment, existing_comment: Optional[Comment], _: Opti
     else:
         return db.execute_query(
             """INSERT INTO comment
-                   (id_on_platform, url, post_id, account_id, parent_comment_id_on_platform,
+                   (id_on_platform, url_suffix, platform, post_id, account_id, parent_comment_id_on_platform,
                     text, publication_date, data)
                VALUES
-                   (%(id_on_platform)s, %(url)s, %(post_id)s, %(account_id)s,
+                   (%(id_on_platform)s, %(url_suffix)s, %(platform)s, %(post_id)s, %(account_id)s,
                     %(parent_comment_id_on_platform)s, %(text)s, %(publication_date)s, %(data)s)""",
             {
                 "id_on_platform": comment.id_on_platform,
-                "url": comment.url,
+                "url_suffix": comment.url_suffix,
+                "platform": comment.platform,
                 "post_id": comment.post_id,
                 "account_id": comment.account_id,
                 "parent_comment_id_on_platform": comment.parent_comment_id_on_platform,
@@ -984,11 +1037,12 @@ def store_comment_archive(
         db.execute_query(
             """UPDATE comment_archive
                SET id_on_platform                = %(id_on_platform)s,
-                   url                           = %(url)s,
-                   post_url                      = %(post_url)s,
+                   url_suffix                    = %(url_suffix)s,
+                   platform                      = %(platform)s,
+                   post_url_suffix               = %(post_url_suffix)s,
                    post_id_on_platform           = %(post_id_on_platform)s,
                    account_id_on_platform        = %(account_id_on_platform)s,
-                   account_url                   = %(account_url)s,
+                   account_url_suffix            = %(account_url_suffix)s,
                    parent_comment_id_on_platform = %(parent_comment_id_on_platform)s,
                    text                          = %(text)s,
                    publication_date              = %(publication_date)s,
@@ -999,11 +1053,12 @@ def store_comment_archive(
             {
                 "id": existing_id,
                 "id_on_platform": comment.id_on_platform,
-                "url": comment.url,
-                "post_url": comment.post_url,
+                "url_suffix": comment.url_suffix,
+                "platform": comment.platform,
+                "post_url_suffix": comment.post_url_suffix,
                 "post_id_on_platform": comment.post_id_on_platform,
                 "account_id_on_platform": comment.account_id_on_platform,
-                "account_url": comment.account_url,
+                "account_url_suffix": comment.account_url_suffix,
                 "parent_comment_id_on_platform": comment.parent_comment_id_on_platform,
                 "text": comment.text,
                 "publication_date": comment.publication_date.isoformat() if comment.publication_date else None,
@@ -1017,20 +1072,22 @@ def store_comment_archive(
     else:
         return db.execute_query(
             """INSERT INTO comment_archive
-                   (id_on_platform, url, post_url, post_id_on_platform, account_id_on_platform,
-                    account_url, parent_comment_id_on_platform, text, publication_date, data,
-                    archive_session_id, canonical_id)
+                   (id_on_platform, url_suffix, platform, post_url_suffix, post_id_on_platform,
+                    account_id_on_platform, account_url_suffix, parent_comment_id_on_platform,
+                    text, publication_date, data, archive_session_id, canonical_id)
                VALUES
-                   (%(id_on_platform)s, %(url)s, %(post_url)s, %(post_id_on_platform)s,
-                    %(account_id_on_platform)s, %(account_url)s, %(parent_comment_id_on_platform)s,
-                    %(text)s, %(publication_date)s, %(data)s, %(archive_session_id)s, %(canonical_id)s)""",
+                   (%(id_on_platform)s, %(url_suffix)s, %(platform)s, %(post_url_suffix)s,
+                    %(post_id_on_platform)s, %(account_id_on_platform)s, %(account_url_suffix)s,
+                    %(parent_comment_id_on_platform)s, %(text)s, %(publication_date)s, %(data)s,
+                    %(archive_session_id)s, %(canonical_id)s)""",
             {
                 "id_on_platform": comment.id_on_platform,
-                "url": comment.url,
-                "post_url": comment.post_url,
+                "url_suffix": comment.url_suffix,
+                "platform": comment.platform,
+                "post_url_suffix": comment.post_url_suffix,
                 "post_id_on_platform": comment.post_id_on_platform,
                 "account_id_on_platform": comment.account_id_on_platform,
-                "account_url": comment.account_url,
+                "account_url_suffix": comment.account_url_suffix,
                 "parent_comment_id_on_platform": comment.parent_comment_id_on_platform,
                 "text": comment.text,
                 "publication_date": comment.publication_date.isoformat() if comment.publication_date else None,
@@ -1080,16 +1137,16 @@ def get_all_archives_for_canonical_post_like(canonical_id: int) -> list[Like]:
 
 
 def store_post_like(like: Like, existing_like: Optional[Like], _: Optional[Path]) -> int:
-    if like.post_id is None and (like.post_url or like.post_id_on_platform):
-        stored_post = get_canonical_post(Post(url=like.post_url, id_on_platform=like.post_id_on_platform))
+    if like.post_id is None and (like.post_url_suffix or like.post_id_on_platform):
+        stored_post = get_canonical_post(Post(url_suffix=like.post_url_suffix, id_on_platform=like.post_id_on_platform, platform=like.platform))
         if stored_post is None:
             raise ValueError(f"Cannot store like {like.id_on_platform!r}: post not found "
-                             f"(url={like.post_url!r}, id_on_platform={like.post_id_on_platform!r})")
+                             f"(url={like.post_url_suffix!r}, id_on_platform={like.post_id_on_platform!r})")
         like.post_id = stored_post.id
-    if like.account_id is None and like.account_url:
+    if like.account_id is None and like.account_url_suffix:
         stored_account = db.execute_query(
-            "SELECT id FROM account WHERE url = %(url)s LIMIT 1",
-            {"url": like.account_url},
+            "SELECT id FROM account WHERE url_suffix = %(url)s LIMIT 1",
+            {"url": like.account_url_suffix},
             return_type="single_row"
         )
         if stored_account:
@@ -1142,9 +1199,10 @@ def store_post_like_archive(
             """UPDATE post_like_archive
                SET id_on_platform         = %(id_on_platform)s,
                    post_id_on_platform    = %(post_id_on_platform)s,
-                   post_url               = %(post_url)s,
+                   post_url_suffix        = %(post_url_suffix)s,
+                   platform               = %(platform)s,
                    account_id_on_platform = %(account_id_on_platform)s,
-                   account_url            = %(account_url)s,
+                   account_url_suffix     = %(account_url_suffix)s,
                    data                   = %(data)s,
                    archive_session_id     = %(archive_session_id)s,
                    canonical_id           = %(canonical_id)s
@@ -1153,9 +1211,10 @@ def store_post_like_archive(
                 "id": existing_id,
                 "id_on_platform": like.id_on_platform,
                 "post_id_on_platform": like.post_id_on_platform,
-                "post_url": like.post_url,
+                "post_url_suffix": like.post_url_suffix,
+                "platform": like.platform,
                 "account_id_on_platform": like.account_id_on_platform,
-                "account_url": like.account_url,
+                "account_url_suffix": like.account_url_suffix,
                 "data": json.dumps(like.data) if like.data else None,
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
@@ -1166,18 +1225,19 @@ def store_post_like_archive(
     else:
         return db.execute_query(
             """INSERT INTO post_like_archive
-                   (id_on_platform, post_id_on_platform, post_url, account_id_on_platform,
-                    account_url, data, archive_session_id, canonical_id)
+                   (id_on_platform, post_id_on_platform, post_url_suffix, platform,
+                    account_id_on_platform, account_url_suffix, data, archive_session_id, canonical_id)
                VALUES
-                   (%(id_on_platform)s, %(post_id_on_platform)s, %(post_url)s,
-                    %(account_id_on_platform)s, %(account_url)s, %(data)s,
+                   (%(id_on_platform)s, %(post_id_on_platform)s, %(post_url_suffix)s, %(platform)s,
+                    %(account_id_on_platform)s, %(account_url_suffix)s, %(data)s,
                     %(archive_session_id)s, %(canonical_id)s)""",
             {
                 "id_on_platform": like.id_on_platform,
                 "post_id_on_platform": like.post_id_on_platform,
-                "post_url": like.post_url,
+                "post_url_suffix": like.post_url_suffix,
+                "platform": like.platform,
                 "account_id_on_platform": like.account_id_on_platform,
-                "account_url": like.account_url,
+                "account_url_suffix": like.account_url_suffix,
                 "data": json.dumps(like.data) if like.data else None,
                 "archive_session_id": archive_session_id,
                 "canonical_id": canonical_id,
@@ -1224,10 +1284,10 @@ def get_all_archives_for_canonical_tagged_account(canonical_id: int) -> list[Tag
 
 
 def store_tagged_account(ta: TaggedAccount, existing_ta: Optional[TaggedAccount], _: Optional[Path]) -> int:
-    if ta.tagged_account_id is None and ta.tagged_account_url:
+    if ta.tagged_account_id is None and ta.tagged_account_url_suffix:
         stored_account = db.execute_query(
-            "SELECT id FROM account WHERE url = %(url)s LIMIT 1",
-            {"url": ta.tagged_account_url},
+            "SELECT id FROM account WHERE url_suffix = %(url)s LIMIT 1",
+            {"url": ta.tagged_account_url_suffix},
             return_type="single_row"
         )
         if stored_account:
@@ -1240,12 +1300,12 @@ def store_tagged_account(ta: TaggedAccount, existing_ta: Optional[TaggedAccount]
         )
         if stored_account:
             ta.tagged_account_id = stored_account["id"]
-    if ta.post_id is None and (ta.context_post_url or ta.context_post_id_on_platform):
-        stored_post = get_canonical_post(Post(url=ta.context_post_url, id_on_platform=ta.context_post_id_on_platform))
+    if ta.post_id is None and (ta.context_post_url_suffix or ta.context_post_id_on_platform):
+        stored_post = get_canonical_post(Post(url_suffix=ta.context_post_url_suffix, id_on_platform=ta.context_post_id_on_platform, platform=ta.platform))
         if stored_post:
             ta.post_id = stored_post.id
-    if ta.media_id is None and ta.context_media_url:
-        stored_media = get_canonical_media(Media(url=ta.context_media_url, media_type="image"))
+    if ta.media_id is None and ta.context_media_url_suffix:
+        stored_media = get_canonical_media(Media(url_suffix=ta.context_media_url_suffix, media_type="image", platform=ta.platform))
         if stored_media:
             ta.media_id = stored_media.id
     if existing_ta is not None:
@@ -1301,9 +1361,10 @@ def store_tagged_account_archive(
             """UPDATE tagged_account_archive
                SET id_on_platform                = %(id_on_platform)s,
                    tagged_account_id_on_platform = %(tagged_account_id_on_platform)s,
-                   tagged_account_url            = %(tagged_account_url)s,
-                   context_post_url              = %(context_post_url)s,
-                   context_media_url             = %(context_media_url)s,
+                   tagged_account_url_suffix     = %(tagged_account_url_suffix)s,
+                   platform                      = %(platform)s,
+                   context_post_url_suffix       = %(context_post_url_suffix)s,
+                   context_media_url_suffix      = %(context_media_url_suffix)s,
                    context_post_id_on_platform   = %(context_post_id_on_platform)s,
                    context_media_id_on_platform  = %(context_media_id_on_platform)s,
                    tag_x_position                = %(tag_x_position)s,
@@ -1316,9 +1377,10 @@ def store_tagged_account_archive(
                 "id": existing_id,
                 "id_on_platform": ta.id_on_platform,
                 "tagged_account_id_on_platform": ta.tagged_account_id_on_platform,
-                "tagged_account_url": ta.tagged_account_url,
-                "context_post_url": ta.context_post_url,
-                "context_media_url": ta.context_media_url,
+                "tagged_account_url_suffix": ta.tagged_account_url_suffix,
+                "platform": ta.platform,
+                "context_post_url_suffix": ta.context_post_url_suffix,
+                "context_media_url_suffix": ta.context_media_url_suffix,
                 "context_post_id_on_platform": ta.context_post_id_on_platform,
                 "context_media_id_on_platform": ta.context_media_id_on_platform,
                 "tag_x_position": ta.tag_x_position,
@@ -1333,21 +1395,23 @@ def store_tagged_account_archive(
     else:
         return db.execute_query(
             """INSERT INTO tagged_account_archive
-                   (id_on_platform, tagged_account_id_on_platform, tagged_account_url,
-                    context_post_url, context_media_url, context_post_id_on_platform,
-                    context_media_id_on_platform, tag_x_position, tag_y_position, data,
-                    archive_session_id, canonical_id)
+                   (id_on_platform, tagged_account_id_on_platform, tagged_account_url_suffix,
+                    platform, context_post_url_suffix, context_media_url_suffix,
+                    context_post_id_on_platform, context_media_id_on_platform,
+                    tag_x_position, tag_y_position, data, archive_session_id, canonical_id)
                VALUES
-                   (%(id_on_platform)s, %(tagged_account_id_on_platform)s, %(tagged_account_url)s,
-                    %(context_post_url)s, %(context_media_url)s, %(context_post_id_on_platform)s,
-                    %(context_media_id_on_platform)s, %(tag_x_position)s, %(tag_y_position)s, %(data)s,
+                   (%(id_on_platform)s, %(tagged_account_id_on_platform)s, %(tagged_account_url_suffix)s,
+                    %(platform)s, %(context_post_url_suffix)s, %(context_media_url_suffix)s,
+                    %(context_post_id_on_platform)s, %(context_media_id_on_platform)s,
+                    %(tag_x_position)s, %(tag_y_position)s, %(data)s,
                     %(archive_session_id)s, %(canonical_id)s)""",
             {
                 "id_on_platform": ta.id_on_platform,
                 "tagged_account_id_on_platform": ta.tagged_account_id_on_platform,
-                "tagged_account_url": ta.tagged_account_url,
-                "context_post_url": ta.context_post_url,
-                "context_media_url": ta.context_media_url,
+                "tagged_account_url_suffix": ta.tagged_account_url_suffix,
+                "platform": ta.platform,
+                "context_post_url_suffix": ta.context_post_url_suffix,
+                "context_media_url_suffix": ta.context_media_url_suffix,
                 "context_post_id_on_platform": ta.context_post_id_on_platform,
                 "context_media_id_on_platform": ta.context_media_id_on_platform,
                 "tag_x_position": ta.tag_x_position,
@@ -1400,7 +1464,7 @@ def get_all_archives_for_canonical_account_relation(canonical_id: int) -> list[A
 def _resolve_account_canonical_id(id_on_platform: Optional[str], url: Optional[str]) -> Optional[int]:
     if url:
         result = db.execute_query(
-            "SELECT id FROM account WHERE url = %(url)s LIMIT 1",
+            "SELECT id FROM account WHERE url_suffix = %(url)s LIMIT 1",
             {"url": url},
             return_type="single_row"
         )
@@ -1420,17 +1484,17 @@ def _resolve_account_canonical_id(id_on_platform: Optional[str], url: Optional[s
 def store_account_relation(ar: AccountRelation, existing_ar: Optional[AccountRelation], _: Optional[Path]) -> int:
     if ar.follower_account_id is None:
         ar.follower_account_id = _resolve_account_canonical_id(
-            ar.follower_account_id_on_platform, ar.follower_account_url
+            ar.follower_account_id_on_platform, ar.follower_account_url_suffix
         )
     if ar.followed_account_id is None:
         ar.followed_account_id = _resolve_account_canonical_id(
-            ar.followed_account_id_on_platform, ar.followed_account_url
+            ar.followed_account_id_on_platform, ar.followed_account_url_suffix
         )
     if ar.follower_account_id is None or ar.followed_account_id is None:
         raise ValueError(
             f"Cannot store account_relation {ar.id_on_platform!r}: "
-            f"could not resolve account IDs (follower={ar.follower_account_id_on_platform!r}/{ar.follower_account_url!r}, "
-            f"followed={ar.followed_account_id_on_platform!r}/{ar.followed_account_url!r})"
+            f"could not resolve account IDs (follower={ar.follower_account_id_on_platform!r}/{ar.follower_account_url_suffix!r}, "
+            f"followed={ar.followed_account_id_on_platform!r}/{ar.followed_account_url_suffix!r})"
         )
     if existing_ar is not None:
         db.execute_query(
@@ -1477,10 +1541,11 @@ def store_account_relation_archive(
         db.execute_query(
             """UPDATE account_relation_archive
                SET id_on_platform                  = %(id_on_platform)s,
-                   follower_account_url             = %(follower_account_url)s,
+                   follower_account_url_suffix      = %(follower_account_url_suffix)s,
                    follower_account_id_on_platform  = %(follower_account_id_on_platform)s,
-                   followed_account_url             = %(followed_account_url)s,
+                   followed_account_url_suffix      = %(followed_account_url_suffix)s,
                    followed_account_id_on_platform  = %(followed_account_id_on_platform)s,
+                   platform                         = %(platform)s,
                    relation_type                    = %(relation_type)s,
                    data                             = %(data)s,
                    archive_session_id               = %(archive_session_id)s,
@@ -1489,10 +1554,11 @@ def store_account_relation_archive(
             {
                 "id": existing_id,
                 "id_on_platform": ar.id_on_platform,
-                "follower_account_url": ar.follower_account_url,
+                "follower_account_url_suffix": ar.follower_account_url_suffix,
                 "follower_account_id_on_platform": ar.follower_account_id_on_platform,
-                "followed_account_url": ar.followed_account_url,
+                "followed_account_url_suffix": ar.followed_account_url_suffix,
                 "followed_account_id_on_platform": ar.followed_account_id_on_platform,
+                "platform": ar.platform,
                 "relation_type": ar.relation_type,
                 "data": json.dumps(ar.data) if ar.data else None,
                 "archive_session_id": archive_session_id,
@@ -1504,19 +1570,20 @@ def store_account_relation_archive(
     else:
         return db.execute_query(
             """INSERT INTO account_relation_archive
-                   (id_on_platform, follower_account_url, follower_account_id_on_platform,
-                    followed_account_url, followed_account_id_on_platform, relation_type,
-                    data, archive_session_id, canonical_id)
+                   (id_on_platform, follower_account_url_suffix, follower_account_id_on_platform,
+                    followed_account_url_suffix, followed_account_id_on_platform, platform,
+                    relation_type, data, archive_session_id, canonical_id)
                VALUES
-                   (%(id_on_platform)s, %(follower_account_url)s, %(follower_account_id_on_platform)s,
-                    %(followed_account_url)s, %(followed_account_id_on_platform)s, %(relation_type)s,
-                    %(data)s, %(archive_session_id)s, %(canonical_id)s)""",
+                   (%(id_on_platform)s, %(follower_account_url_suffix)s, %(follower_account_id_on_platform)s,
+                    %(followed_account_url_suffix)s, %(followed_account_id_on_platform)s, %(platform)s,
+                    %(relation_type)s, %(data)s, %(archive_session_id)s, %(canonical_id)s)""",
             {
                 "id_on_platform": ar.id_on_platform,
-                "follower_account_url": ar.follower_account_url,
+                "follower_account_url_suffix": ar.follower_account_url_suffix,
                 "follower_account_id_on_platform": ar.follower_account_id_on_platform,
-                "followed_account_url": ar.followed_account_url,
+                "followed_account_url_suffix": ar.followed_account_url_suffix,
                 "followed_account_id_on_platform": ar.followed_account_id_on_platform,
+                "platform": ar.platform,
                 "relation_type": ar.relation_type,
                 "data": json.dumps(ar.data) if ar.data else None,
                 "archive_session_id": archive_session_id,

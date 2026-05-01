@@ -1,6 +1,9 @@
 import {ITagWithType} from "./tags";
 
-export interface IEntityBase {
+
+export type E_ENTITY_TYPES = "archiving_session" | "account" | "post" | "media" | "media_part"
+
+interface IEntityBase {
     id?: number;
     created_at?: string; // ISO date string
     updated_at?: string;
@@ -8,18 +11,20 @@ export interface IEntityBase {
     tags?: ITagWithType[];
 }
 
-export interface IAccount extends IEntityBase {
+interface IAccount extends IEntityBase {
     id_on_platform?: string;
     url: string;
+    url_suffix: string;
     display_name?: string;
     bio?: string;
     data?: any;
     identifiers?: string[]
 }
 
-export interface IPost extends IEntityBase {
+interface IPost extends IEntityBase {
     id_on_platform: string;
     url?: string;
+    url_suffix: string;
     account_id?: number;
     account_id_on_platform?: string;
     account_url?: string;
@@ -28,15 +33,18 @@ export interface IPost extends IEntityBase {
     data?: any;
 }
 
-export type EMediaType = 'video' | 'audio' | 'image';
+type EMediaType = 'video' | 'audio' | 'image';
 
 export interface IMedia extends IEntityBase {
     id_on_platform?: string;
     url: string;
+    url_suffix: string;
     post_id?: number;
     post_id_on_platform?: string;
     post_url?: string;
     local_url?: string;
+    thumbnail_path?: string;
+    aspect_ratio?: number;
     media_type: EMediaType;
     data?: any;
 }
@@ -61,6 +69,10 @@ export interface IComment extends IEntityBase {
     text?: string;
     publication_date?: string;
     parent_comment_id_on_platform?: string;
+    post_publication_date?: string;
+    post_author_account_id?: number;
+    post_author_url_suffix?: string;
+    post_author_display_name?: string;
     data?: any;
 }
 
@@ -73,6 +85,10 @@ export interface IPostLike extends IEntityBase {
     account_id_on_platform?: string;
     account_url?: string;
     account_display_name?: string;
+    post_publication_date?: string;
+    post_author_account_id?: number;
+    post_author_url_suffix?: string;
+    post_author_display_name?: string;
     data?: any;
 }
 
@@ -96,16 +112,21 @@ export interface ITaggedAccount extends IEntityBase {
     tagged_account_id_on_platform?: string;
     tagged_account_url?: string;
     tagged_account_display_name?: string;
+    post_id?: number;
     context_post_url?: string;
     context_media_url?: string;
     context_post_id_on_platform?: string;
     context_media_id_on_platform?: string;
     tag_x_position?: number;
     tag_y_position?: number;
+    post_publication_date?: string;
+    post_author_account_id?: number;
+    post_author_url_suffix?: string;
+    post_author_display_name?: string;
     data?: any;
 }
 
-export interface IExtractedEntitiesFlattened {
+interface IExtractedEntitiesFlattened {
     accounts: IAccount[];
     posts: IPost[];
     media: IMedia[];
@@ -137,9 +158,10 @@ export interface IExtractedEntitiesNested {
     accounts: IAccountAndAssociatedEntities[];
     posts: IPostAndAssociatedEntities[];
     media: IMediaAndAssociatedEntities[];
+    account_tags?: Record<number, ITagWithType[]>;
 }
 
-export interface ISessionAttachments {
+interface ISessionAttachments {
     screen_recordings: string[];
     screen_shots: string[];
     wacz_archives: string[];
@@ -161,6 +183,7 @@ export interface IArchiveSession {
     structures?: Record<string, any>;
     metadata?: Record<string, any>;
     attachments?: ISessionAttachments;
+    attachments_redacted?: string[];
     extract_algorithm_version?: number;
     archiving_timestamp?: string;
     notes?: string;
@@ -182,9 +205,25 @@ export interface IAccountInteractions {
     comments: IComment[];
     likes: IPostLike[];
     tagged_in: ITaggedAccount[];
+    account_tags?: Record<number, ITagWithType[]>;
 }
 
-export interface IAccountInteractionCounts {
+export interface IAccountRelationsResponse {
+    relations: IAccountRelation[];
+    account_tags: Record<number, ITagWithType[]>;
+}
+
+export interface ICommentsResponse {
+    comments: IComment[];
+    account_tags: Record<number, ITagWithType[]>;
+}
+
+export interface ILikesResponse {
+    likes: IPostLike[];
+    account_tags: Record<number, ITagWithType[]>;
+}
+
+interface IAccountInteractionCounts {
     comments_count: number;
     likes_count: number;
     tagged_in_count: number;

@@ -32,8 +32,8 @@ def get_post_data_by_id(post_id: int) -> tuple[bool, Any]:
     return True, data
 
 
-_POST_COLS = "id, id_on_platform, url, account_id, publication_date, caption, data, create_date"
-_POST_COLS_NO_DATA = "id, id_on_platform, url, account_id, publication_date, caption, NULL AS data, create_date"
+_POST_COLS = "id, id_on_platform, url_suffix, platform, account_id, publication_date, caption, data, create_date"
+_POST_COLS_NO_DATA = "id, id_on_platform, url_suffix, platform, account_id, publication_date, caption, NULL AS data, create_date"
 
 
 def get_post_by_id(post_id: int, include_data: bool = True) -> Optional[Post]:
@@ -61,7 +61,7 @@ def get_post_by_platform_id(platform_id: str, include_data: bool = True) -> Opti
 def get_post_by_url(url: str, include_data: bool = True) -> Optional[Post]:
     cols = _POST_COLS if include_data else _POST_COLS_NO_DATA
     row = db.execute_query(
-        f"SELECT {cols} FROM post WHERE url = %(url)s LIMIT 1",
+        f"SELECT {cols} FROM post WHERE url_suffix = %(url)s LIMIT 1",
         {"url": url},
         return_type="single_row"
     )

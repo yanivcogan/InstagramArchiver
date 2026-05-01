@@ -3,7 +3,7 @@ from typing import Literal, Optional
 from utils import db
 
 
-def log_event(event_type: Literal["server_call", "sql_error", "scraping_error", "scraping_progress", "unknown_error",  "unauthorized_access", "login_attempt"],
+def log_event(event_type: Literal["server_call", "sql_error", "scraping_error", "scraping_progress", "unknown_error",  "unauthorized_access", "login_attempt", "2fa_attempt", "password_change"],
               user_id: Optional[int], details: str, args: Optional[str]):
     return db.execute_query(
         '''

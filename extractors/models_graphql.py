@@ -1,6 +1,6 @@
 from typing import Optional, List, Any
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field
 
 from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo, VideoVersion, \
     InstagramImageVersions2, InstagramCarouselMedia
@@ -12,27 +12,21 @@ class ProfileTimelinePageInfo(BaseModel):
     has_previous_page: Optional[bool] = None
     start_cursor: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class ProfileTimelineEdge(BaseModel):
     node: InstagramPost # Reusing InstagramPost as the structure matches
     cursor: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class ProfileTimelineGraphQL(BaseModel):
     edges: List[ProfileTimelineEdge]
-    page_info: ProfileTimelinePageInfo
+    page_info: Optional[ProfileTimelinePageInfo] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class FriendUser(BaseModel):
@@ -51,31 +45,25 @@ class FriendUser(BaseModel):
     is_unpublished: Optional[bool] = None # Assuming boolean if not null
     id: str
 
-    class Config:
-        extra = "allow" # Allows for other fields not explicitly defined
+    model_config = ConfigDict(extra="allow")
 
 
 class FriendsListGraphQL(BaseModel):
     users: List[FriendUser]
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class ReelsMediaCoverMediaCroppedImageVersion(BaseModel):
     url: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ReelsMediaCoverMedia(BaseModel):
     cropped_image_version: ReelsMediaCoverMediaCroppedImageVersion
     full_image_version: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ReelsMediaNode(BaseModel):
     id: str
@@ -89,40 +77,32 @@ class ReelsMediaNode(BaseModel):
     muted: Optional[Any] = None
     typename: str = Field(alias="__typename")
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ReelsMediaEdge(BaseModel):
     node: ReelsMediaNode
     cursor: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ReelsMediaConnection(BaseModel):
     edges: List[ReelsMediaEdge]
     page_info: HighlightsReelPageInfo
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class HighlightsReelUser(BaseModel): # Placeholder
     pk: str
     id: str
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class GenericCursorInfo(BaseModel): # Placeholder
     end_cursor: Optional[str] = None
     has_next_page: bool
     has_previous_page: Optional[bool] = None
     start_cursor: Optional[str] = None
-    class Config:
-        extra = "allow"
-        populate_by_name = True
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
 
 
 class ClipsUserMedia(BaseModel):
@@ -137,7 +117,7 @@ class ClipsUserMedia(BaseModel):
     product_type: str
     play_count: Optional[int] = None # Made optional as it might not always be present
     view_count: Optional[int] = None
-    like_and_view_counts_disabled: bool
+    like_and_view_counts_disabled: Optional[bool] = None
     comment_count: int
     like_count: int
     audience: Optional[Any] = None
@@ -151,30 +131,22 @@ class ClipsUserMedia(BaseModel):
     original_height: int
     original_width: int
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ClipsUserNode(BaseModel):
     media: ClipsUserMedia
     typename: str = Field(alias="__typename")
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ClipsUserEdge(BaseModel):
     node: ClipsUserNode
     cursor: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ClipsUserConnection(BaseModel):
     edges: List[ClipsUserEdge]
     page_info: GenericCursorInfo
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")

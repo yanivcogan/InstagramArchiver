@@ -7,6 +7,7 @@ from browsing_platform.server.services.enriched_entities import EntitiesTransfor
     NestedEntitiesTransform
 from browsing_platform.server.services.permissions import parse_token_from_header
 from browsing_platform.server.services.search import SearchResultTransform
+from browsing_platform.server.services.sharing_manager import get_link_permissions
 
 SERVER_HOST = os.getenv("SERVER_HOST")
 
@@ -34,10 +35,23 @@ def extract_session_transform_config(request: Request) -> ArchivingSessionTransf
     params = request.query_params
     auth_header = request.headers.get("Authorization")
     token = parse_token_from_header(auth_header)
+
+    include_screen_recordings = True
+    include_har = True
+    if not token:
+        share_link = request.headers.get("X-Share-Link")
+        if share_link:
+            password_token = request.headers.get("X-Share-Password-Token")
+            share_perms = get_link_permissions(share_link, password_token)
+            include_screen_recordings = share_perms.include_screen_recordings
+            include_har = share_perms.include_har
+
     config: ArchivingSessionTransform = ArchivingSessionTransform(
         access_token=params.get("st", None) or token,
         local_files_root=params.get("lfr", None) or SERVER_HOST,
-        properties_to_censor=[] if token else ["signature", "profile_name", "har_archive", "my_ip"]
+        properties_to_censor=[] if token else ["signature", "profile_name", "har_archive", "my_ip"],
+        include_screen_recordings=include_screen_recordings,
+        include_har=include_har,
     )
     return config
 

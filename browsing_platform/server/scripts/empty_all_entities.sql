@@ -48,5 +48,6 @@ UPDATE archive_session SET extraction_error = NULL, structures = NULL, extract_a
 UPDATE archive_session SET incorporation_status = 'pending' WHERE TRUE;
 
 DELETE FROM archive_session WHERE TRUE;
+alter table archive_session auto_increment = 1;
 
 SET FOREIGN_KEY_CHECKS = 1;

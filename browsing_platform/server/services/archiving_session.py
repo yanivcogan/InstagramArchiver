@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import Literal, Optional
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, computed_field, field_validator
 
 from browsing_platform.server.services.file_tokens import generate_file_token
-from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
-from extractors.entity_types import ExtractedEntitiesNested
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS, LOCAL_WACZ_ARCHIVES_DIR_ALIAS
+from extractors.entity_types import ExtractedEntitiesNested, reconstruct_url
 from utils import db
 
 SERVER_HOST = os.getenv("SERVER_HOST")
@@ -19,13 +19,20 @@ class ArchiveSession(BaseModel):
     create_date: Optional[datetime] = None
     update_date: Optional[datetime] = None
     external_id: Optional[str] = None
-    archived_url: Optional[str] = None
+    archived_url_suffix: Optional[str] = None
+    platform: Optional[str] = None
     archive_location: Optional[str] = None
+
+    @computed_field
+    @property
+    def archived_url(self) -> Optional[str]:
+        return reconstruct_url(self.archived_url_suffix, self.platform)
     summary_html: Optional[str] = None
     parse_algorithm_version: Optional[int] = None
     structures: Optional[dict] = None
     metadata: Optional[dict] = None
     attachments: Optional[dict[str, list[str]]] = None
+    attachments_redacted: Optional[list[str]] = None
     extract_algorithm_version: Optional[int] = None
     archiving_timestamp: Optional[datetime] = None
     notes: Optional[str] = None
@@ -61,6 +68,8 @@ class ArchivingSessionTransform(BaseModel):
     local_files_root: Optional[str] = None
     access_token: Optional[str] = None
     properties_to_censor: Optional[list[str]] = None
+    include_screen_recordings: bool = True
+    include_har: bool = True
 
 
 def get_archiving_session_structures(session_id: int) -> tuple[bool, Optional[dict]]:
@@ -81,11 +90,17 @@ def get_archiving_session_structures(session_id: int) -> tuple[bool, Optional[di
     return True, structures
 
 
+_ARCHIVE_SESSION_COLS = (
+    "id, create_date, external_id, archived_url_suffix, platform, archive_location, "
+    "summary_html, parse_algorithm_version, structures, metadata, attachments, "
+    "extract_algorithm_version, archiving_timestamp, notes, extraction_error, "
+    "source_type, incorporation_status"
+)
+
+
 def get_archiving_session_by_id(session_id: int) -> Optional[ArchiveSession]:
     session = db.execute_query(
-        """SELECT *
-           FROM archive_session
-           WHERE id = %(id)s""",
+        f"SELECT {_ARCHIVE_SESSION_COLS} FROM archive_session WHERE id = %(id)s",
         {"id": session_id},
         return_type="single_row"
     )
@@ -108,11 +123,28 @@ def sign_archiving_session(session: ArchiveSession, transform: ArchivingSessionT
     attachments = session.attachments
     if not attachments:
         return session
-    for attachment_type in dict.keys(attachments):
+
+    # Redact attachment types the share link doesn't permit, marking them so
+    # the client can show an appropriate "no access" placeholder.
+    redacted: list[str] = []
+    _REDACT_MAP = {
+        'screen_recordings': transform.include_screen_recordings,
+        'har_archives': transform.include_har,
+        'wacz_archives': transform.include_har, # intentional reuse of include_har
+    }
+    for key, allowed in _REDACT_MAP.items():
+        if not allowed and attachments.get(key):
+            redacted.append(key)
+            del attachments[key]
+    if redacted:
+        session.attachments_redacted = redacted
+
+    for attachment_type in list(attachments.keys()):
         for i in range(len(attachments.get(attachment_type, []))):
             attachment: str = attachments.get(attachment_type)[i]
             local_path = session.archive_location + "/" + attachment
             local_path = local_path.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+            local_path = local_path.replace(LOCAL_WACZ_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
             parsed = urlparse(local_path)
             qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
             qs['ft'] = generate_file_token(

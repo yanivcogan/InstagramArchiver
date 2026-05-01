@@ -1,6 +1,6 @@
 import subprocess
 
-from db_loaders.db_intake import ROOT_ARCHIVES
+from root_anchor import ROOT_ARCHIVES
 
 # Your keywords (case-insensitive)
 KEYWORDS = ["daniel_abramov3", "danielabramov1718"]

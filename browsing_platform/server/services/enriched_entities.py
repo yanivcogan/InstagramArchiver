@@ -10,8 +10,9 @@ from browsing_platform.server.services.entities_hierarchy import nest_entities
 from browsing_platform.server.services.file_tokens import generate_file_token
 from browsing_platform.server.services.media import get_media_by_posts, get_media_by_id
 from browsing_platform.server.services.post import get_post_by_id, get_posts_by_accounts
-from browsing_platform.server.services.tag import get_tags_by_entity_ids
+from browsing_platform.server.services.tag import get_tags_by_entity_ids, ITagWithType
 from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS
 from extractors.entity_types import ExtractedEntitiesNested, Media, ExtractedEntitiesFlattened, Account, Post, \
     Comment, Like, TaggedAccount, AccountRelation
 from utils import db
@@ -21,6 +22,22 @@ class AccountInteractions(BaseModel):
     comments: list[Comment] = []
     likes: list[Like] = []
     tagged_in: list[TaggedAccount] = []
+    account_tags: dict[int, list[ITagWithType]] = {}
+
+
+class AccountRelationsResponse(BaseModel):
+    relations: list[AccountRelation]
+    account_tags: dict[int, list[ITagWithType]] = {}
+
+
+class CommentsResponse(BaseModel):
+    comments: list[Comment]
+    account_tags: dict[int, list[ITagWithType]] = {}
+
+
+class LikesResponse(BaseModel):
+    likes: list[Like]
+    account_tags: dict[int, list[ITagWithType]] = {}
 
 
 class AccountInteractionCounts(BaseModel):
@@ -46,14 +63,112 @@ def _build_in_clause(ids: list[int]) -> tuple[dict, str]:
     return args, clause
 
 
+_ACCOUNT_TAG_SELECT = """
+    SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+           tt.name AS tag_type_name, tt.description AS tag_type_description,
+           tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+    FROM account_tag at
+    JOIN tag t ON at.tag_id = t.id
+    LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+"""
+
+
+def _group_tags_by_account_id(rows: list[dict]) -> dict[int, list[ITagWithType]]:
+    result: dict[int, list[ITagWithType]] = {}
+    for row in rows:
+        account_id = row.pop("entity_id")
+        result.setdefault(account_id, []).append(ITagWithType(**row))
+    return result
+
+
+def get_account_tags_for_post_comments(post_ids: list[int]) -> dict[int, list[ITagWithType]]:
+    """Tags for accounts that commented on the given posts."""
+    if not post_ids:
+        return {}
+    args, clause = _build_in_clause(post_ids)
+    rows = db.execute_query(
+        f"""SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                   tt.name AS tag_type_name, tt.description AS tag_type_description,
+                   tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+            FROM account_tag at
+            JOIN comment c ON at.account_id = c.account_id
+            JOIN tag t ON at.tag_id = t.id
+            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+            WHERE c.post_id IN ({clause})""",
+        args,
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
+def get_account_tags_for_post_likes(post_id: int) -> dict[int, list[ITagWithType]]:
+    """Tags for accounts that liked a post."""
+    rows = db.execute_query(
+        """SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                  tt.name AS tag_type_name, tt.description AS tag_type_description,
+                  tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+           FROM account_tag at
+           JOIN post_like pl ON at.account_id = pl.account_id
+           JOIN tag t ON at.tag_id = t.id
+           LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+           WHERE pl.post_id = %(post_id)s""",
+        {"post_id": post_id},
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
+def get_account_tags_for_account_relations(account_id: int) -> dict[int, list[ITagWithType]]:
+    """Tags for all accounts related to a given account (both directions)."""
+    rows = db.execute_query(
+        """SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                  tt.name AS tag_type_name, tt.description AS tag_type_description,
+                  tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+           FROM account_tag at
+           JOIN tag t ON at.tag_id = t.id
+           LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+           WHERE at.account_id IN (
+               SELECT follower_account_id FROM account_relation
+                 WHERE follower_account_id = %(id)s OR followed_account_id = %(id)s
+               UNION
+               SELECT followed_account_id FROM account_relation
+                 WHERE follower_account_id = %(id)s OR followed_account_id = %(id)s
+           )""",
+        {"id": account_id},
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
+def get_account_tags_for_tagged_accounts(post_ids: list[int]) -> dict[int, list[ITagWithType]]:
+    """Tags for tagged_account_id values in the given posts."""
+    if not post_ids:
+        return {}
+    args, clause = _build_in_clause(post_ids)
+    rows = db.execute_query(
+        f"""SELECT at.account_id AS entity_id, t.*, at.notes AS assignment_notes,
+                   tt.name AS tag_type_name, tt.description AS tag_type_description,
+                   tt.notes AS tag_type_notes, tt.entity_affinity AS tag_type_entity_affinity
+            FROM account_tag at
+            JOIN tagged_account ta ON at.account_id = ta.tagged_account_id
+            JOIN tag t ON at.tag_id = t.id
+            LEFT JOIN tag_type tt ON t.tag_type_id = tt.id
+            WHERE ta.post_id IN ({clause})""",
+        args,
+        return_type="rows"
+    )
+    return _group_tags_by_account_id(rows)
+
+
 def get_comments_by_post_ids(post_ids: list[int]) -> list[Comment]:
     if not post_ids:
         return []
     args, clause = _build_in_clause(post_ids)
     rows = db.execute_query(
-        f"""SELECT c.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        f"""SELECT c.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                   a.id_on_platform AS account_id_on_platform,
                    a.display_name AS account_display_name,
-                   p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                   p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
             FROM comment c
             LEFT JOIN account a ON c.account_id = a.id
             LEFT JOIN post p ON c.post_id = p.id
@@ -70,7 +185,8 @@ def get_tagged_accounts_by_post_ids(post_ids: list[int]) -> list[TaggedAccount]:
         return []
     args, clause = _build_in_clause(post_ids)
     rows = db.execute_query(
-        f"""SELECT ta.*, a.url AS tagged_account_url, a.id_on_platform AS tagged_account_id_on_platform,
+        f"""SELECT ta.*, a.url_suffix AS tagged_account_url_suffix, a.platform AS platform,
+                   a.id_on_platform AS tagged_account_id_on_platform,
                    a.display_name AS tagged_account_display_name
             FROM tagged_account ta
             LEFT JOIN account a ON ta.tagged_account_id = a.id
@@ -83,9 +199,10 @@ def get_tagged_accounts_by_post_ids(post_ids: list[int]) -> list[TaggedAccount]:
 
 def get_likes_by_post_id(post_id: int) -> list[Like]:
     rows = db.execute_query(
-        """SELECT pl.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        """SELECT pl.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform
            FROM post_like pl
            LEFT JOIN account a ON pl.account_id = a.id
            LEFT JOIN post p ON pl.post_id = p.id
@@ -99,9 +216,11 @@ def get_likes_by_post_id(post_id: int) -> list[Like]:
 def get_account_relations_by_account_id(account_id: int) -> list[AccountRelation]:
     rows = db.execute_query(
         """SELECT ar.*,
-                  fa.url AS follower_account_url, fa.id_on_platform AS follower_account_id_on_platform,
+                  fa.url_suffix AS follower_account_url_suffix, fa.platform AS platform,
+                  fa.id_on_platform AS follower_account_id_on_platform,
                   fa.display_name AS follower_account_display_name,
-                  fd.url AS followed_account_url, fd.id_on_platform AS followed_account_id_on_platform,
+                  fd.url_suffix AS followed_account_url_suffix,
+                  fd.id_on_platform AS followed_account_id_on_platform,
                   fd.display_name AS followed_account_display_name
            FROM account_relation ar
            LEFT JOIN account fa ON ar.follower_account_id = fa.id
@@ -115,36 +234,54 @@ def get_account_relations_by_account_id(account_id: int) -> list[AccountRelation
 
 def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
     comment_rows = db.execute_query(
-        """SELECT c.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        """SELECT c.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform,
+                  p.publication_date AS post_publication_date,
+                  pa.id AS post_author_account_id,
+                  pa.url_suffix AS post_author_url_suffix,
+                  pa.display_name AS post_author_display_name
            FROM comment c
            LEFT JOIN account a ON c.account_id = a.id
            LEFT JOIN post p ON c.post_id = p.id
+           LEFT JOIN account pa ON p.account_id = pa.id
            WHERE c.account_id = %(id)s
            ORDER BY c.publication_date""",
         {"id": account_id},
         return_type="rows"
     )
     like_rows = db.execute_query(
-        """SELECT pl.*, a.url AS account_url, a.id_on_platform AS account_id_on_platform,
+        """SELECT pl.*, a.url_suffix AS account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS account_id_on_platform,
                   a.display_name AS account_display_name,
-                  p.url AS post_url, p.id_on_platform AS post_id_on_platform
+                  p.url_suffix AS post_url_suffix, p.id_on_platform AS post_id_on_platform,
+                  p.publication_date AS post_publication_date,
+                  pa.id AS post_author_account_id,
+                  pa.url_suffix AS post_author_url_suffix,
+                  pa.display_name AS post_author_display_name
            FROM post_like pl
            LEFT JOIN account a ON pl.account_id = a.id
            LEFT JOIN post p ON pl.post_id = p.id
+           LEFT JOIN account pa ON p.account_id = pa.id
            WHERE pl.account_id = %(id)s""",
         {"id": account_id},
         return_type="rows"
     )
     tagged_rows = db.execute_query(
-        """SELECT ta.*, a.url AS tagged_account_url, a.id_on_platform AS tagged_account_id_on_platform,
+        """SELECT ta.*, a.url_suffix AS tagged_account_url_suffix, a.platform AS platform,
+                  a.id_on_platform AS tagged_account_id_on_platform,
                   a.display_name AS tagged_account_display_name,
-                  p.url AS context_post_url, p.id_on_platform AS context_post_id_on_platform,
-                  m.url AS context_media_url, m.id_on_platform AS context_media_id_on_platform
+                  p.url_suffix AS context_post_url_suffix, p.id_on_platform AS context_post_id_on_platform,
+                  p.publication_date AS post_publication_date,
+                  pa.id AS post_author_account_id,
+                  pa.url_suffix AS post_author_url_suffix,
+                  pa.display_name AS post_author_display_name,
+                  m.url_suffix AS context_media_url_suffix, m.id_on_platform AS context_media_id_on_platform
            FROM tagged_account ta
            LEFT JOIN account a ON ta.tagged_account_id = a.id
            LEFT JOIN post p ON ta.post_id = p.id
+           LEFT JOIN account pa ON p.account_id = pa.id
            LEFT JOIN media m ON ta.media_id = m.id
            WHERE ta.tagged_account_id = %(id)s""",
         {"id": account_id},
@@ -153,7 +290,8 @@ def get_interactions_by_account_id(account_id: int) -> AccountInteractions:
     return AccountInteractions(
         comments=[Comment(**r) for r in comment_rows],
         likes=[Like(**r) for r in like_rows],
-        tagged_in=[TaggedAccount(**r) for r in tagged_rows]
+        tagged_in=[TaggedAccount(**r) for r in tagged_rows],
+        account_tags=get_tags_by_entity_ids('account', [account_id])
     )
 
 
@@ -209,6 +347,11 @@ def apply_flattened_entities_transform(
             if m.local_url is not None and m.local_url.strip() != "":
                 if m.local_url.startswith(f"{LOCAL_ARCHIVES_DIR_ALIAS}/"):
                     m.local_url = m.local_url.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+            if m.thumbnail_path is not None and m.thumbnail_path.strip() != "":
+                if m.thumbnail_path.startswith(f"{LOCAL_ARCHIVES_DIR_ALIAS}/"):
+                    m.thumbnail_path = m.thumbnail_path.replace(LOCAL_ARCHIVES_DIR_ALIAS, f"{transform.local_files_root}/archives", 1)
+                elif m.thumbnail_path.startswith(f"{LOCAL_THUMBNAILS_DIR_ALIAS}/"):
+                    m.thumbnail_path = m.thumbnail_path.replace(LOCAL_THUMBNAILS_DIR_ALIAS, f"{transform.local_files_root}/thumbnails", 1)
     if transform.access_token is not None:
         for m in entities.media:
             if m.local_url is not None and m.local_url.strip() != "":
@@ -217,6 +360,11 @@ def apply_flattened_entities_transform(
                 qs['ft'] = generate_file_token(transform.access_token, parsed.path)
                 new_query = urlencode(qs, doseq=True)
                 m.local_url = str(urlunparse(parsed._replace(query=new_query)))
+            if m.thumbnail_path is not None and m.thumbnail_path.strip() != "":
+                parsed_t = urlparse(m.thumbnail_path)
+                qs_t = dict(parse_qsl(parsed_t.query, keep_blank_values=True))
+                qs_t['ft'] = generate_file_token(transform.access_token, parsed_t.path)
+                m.thumbnail_path = str(urlunparse(parsed_t._replace(query=urlencode(qs_t, doseq=True))))
     if transform.strip_raw_data:
         for a in entities.accounts:
             a.data = None
@@ -348,6 +496,10 @@ def get_enriched_post_by_id(
         tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
+    nested_entities.account_tags = {
+        **get_account_tags_for_post_comments([post_id]),
+        **get_account_tags_for_tagged_accounts([post_id]),
+    }
     return nested_entities
 
 
@@ -371,6 +523,8 @@ def get_enriched_account_by_id(
         tagged_accounts=tagged_accounts
     )
     nested_entities = transform_and_nest(flattened_entities, config)
+    if post_ids:
+        nested_entities.account_tags = get_account_tags_for_tagged_accounts(post_ids)
     return nested_entities
 
 
@@ -384,7 +538,7 @@ def get_enriched_archiving_session_by_id(
         return None
     session = apply_sessions_transform([session], session_transform)[0]
     account_rows = db.execute_query(
-        """SELECT a.id, aa.url, aa.archive_session_id, aa.display_name, aa.bio
+        """SELECT a.id, aa.url_suffix, aa.platform, aa.archive_session_id, aa.display_name, aa.bio
            FROM account_archive AS aa
                     LEFT JOIN account AS a ON aa.canonical_id = a.id
            WHERE archive_session_id = %(id)s
@@ -393,7 +547,7 @@ def get_enriched_archiving_session_by_id(
         return_type="rows"
     )
     post_rows = db.execute_query(
-        """SELECT p.id, p.account_id, pa.url, pa.archive_session_id, pa.caption, pa.publication_date, pa.data
+        """SELECT p.id, p.account_id, pa.url_suffix, pa.platform, pa.archive_session_id, pa.caption, pa.publication_date, pa.data
            FROM post_archive AS pa
                     LEFT JOIN post AS p ON pa.canonical_id = p.id
            WHERE archive_session_id = %(id)s
@@ -402,7 +556,7 @@ def get_enriched_archiving_session_by_id(
         return_type="rows"
     )
     media_rows = db.execute_query(
-        """SELECT m.id, m.post_id, ma.url, ma.local_url, ma.archive_session_id, ma.media_type, ma.data
+        """SELECT m.id, m.post_id, ma.url_suffix, ma.platform, ma.local_url, ma.archive_session_id, ma.media_type, ma.data
            FROM media_archive AS ma
                     LEFT JOIN media AS m ON ma.canonical_id = m.id
            WHERE archive_session_id = %(id)s
@@ -456,7 +610,7 @@ def get_archiving_sessions_by_account_id(
     query_in_clause = ', '.join([f"%(post_id_{i})s" for i in range(len(post_ids))])
     session_rows = db.execute_query(
         f"""SELECT DISTINCT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
-                   a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                   a_s.archived_url_suffix, a_s.platform, a_s.archive_location, a_s.parse_algorithm_version,
                    a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
                    a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                    a_s.source_type, a_s.incorporation_status
@@ -481,7 +635,7 @@ def get_archiving_sessions_by_post_id(
         return []
     session_rows = db.execute_query(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
-                  a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                  a_s.archived_url_suffix, a_s.platform, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status
@@ -510,7 +664,7 @@ def get_archiving_sessions_by_media_id(
         return []
     session_rows = db.execute_query(
         """SELECT a_s.id, a_s.create_date, a_s.update_date, a_s.external_id,
-                  a_s.archived_url, a_s.archive_location, a_s.parse_algorithm_version,
+                  a_s.archived_url_suffix, a_s.platform, a_s.archive_location, a_s.parse_algorithm_version,
                   a_s.metadata, a_s.attachments, a_s.extract_algorithm_version,
                   a_s.archiving_timestamp, a_s.notes, a_s.extraction_error,
                   a_s.source_type, a_s.incorporation_status

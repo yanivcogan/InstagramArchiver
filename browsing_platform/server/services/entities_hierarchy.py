@@ -58,6 +58,12 @@ def nest_entities(
         if ta.post_id in post_map:
             post_map[ta.post_id].post_tagged_accounts.append(ta)
 
+    for relation in entities.account_relations:
+        if relation.follower_account_id in account_map:
+            account_map[relation.follower_account_id].account_relations.append(relation)
+        elif relation.followed_account_id in account_map:
+            account_map[relation.followed_account_id].account_relations.append(relation)
+
     return ExtractedEntitiesNested(
         accounts=nested_accounts,
         posts=orphaned_posts,

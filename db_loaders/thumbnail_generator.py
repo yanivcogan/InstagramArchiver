@@ -61,9 +61,9 @@ from typing import Callable, Optional
 import cv2
 from PIL import Image
 
-from db_loaders.db_intake import ROOT_ARCHIVES, LOCAL_ARCHIVES_DIR_ALIAS
+from db_loaders.db_intake import LOCAL_ARCHIVES_DIR_ALIAS
 from extractors.entity_types import Media
-from root_anchor import ROOT_DIR
+from root_anchor import ROOT_DIR, ROOT_ARCHIVES
 from utils import db
 
 logger = logging.getLogger(__name__)
@@ -214,10 +214,11 @@ async def process_one_media(
             )
             return False
 
+        aspect_ratio = img.width / img.height if img.height > 0 else None
         relative_path = f"{LOCAL_THUMBNAILS_DIR_ALIAS}/{thumbnail_filename}"
         db.execute_query(
-            "UPDATE media SET thumbnail_path = %(p)s, thumbnail_status = 'generated' WHERE id = %(id)s",
-            {"p": relative_path, "id": media.id}, "none"
+            "UPDATE media SET thumbnail_path = %(p)s, thumbnail_status = 'generated', aspect_ratio = %(ar)s WHERE id = %(id)s",
+            {"p": relative_path, "ar": aspect_ratio, "id": media.id}, "none"
         )
         if emit:
             emit(f"Part D — generated thumbnail for media {media.id}")

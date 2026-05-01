@@ -1,7 +1,7 @@
 import {ButtonOwnProps} from "@mui/material";
 import React from "react";
 
-export interface IPopupAlertAction {
+interface IPopupAlertAction {
     label?: string;
     buttonPropsOverride?: Partial<ButtonOwnProps>;
     onClick: () => any;

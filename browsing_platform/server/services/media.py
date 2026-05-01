@@ -32,8 +32,8 @@ def get_media_data_by_id(media_id: int) -> tuple[bool, Any]:
     return True, data
 
 
-_MEDIA_COLS = "id, id_on_platform, url, post_id, local_url, media_type, data, annotation, thumbnail_path, thumbnail_status, create_date"
-_MEDIA_COLS_NO_DATA = "id, id_on_platform, url, post_id, local_url, media_type, NULL AS data, annotation, thumbnail_path, thumbnail_status, create_date"
+_MEDIA_COLS = "id, id_on_platform, url_suffix, platform, post_id, local_url, media_type, data, annotation, thumbnail_path, aspect_ratio, thumbnail_status, create_date"
+_MEDIA_COLS_NO_DATA = "id, id_on_platform, url_suffix, platform, post_id, local_url, media_type, NULL AS data, annotation, thumbnail_path, aspect_ratio, thumbnail_status, create_date"
 
 
 def get_media_by_id(media_id: int, include_data: bool = True) -> Optional[Media]:

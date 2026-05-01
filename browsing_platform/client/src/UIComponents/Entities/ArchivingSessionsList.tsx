@@ -9,7 +9,7 @@ type IProps = {
 };
 
 export default function ArchivingSessionsList({sessions, loadingSessions}: IProps) {
-    return <Stack direction={"column"} gap={1} sx={{width: '100%'}}>
+    return <Stack direction={"column"} gap={1} sx={{width: '100%', boxSizing: 'border-box', '@media (max-width: 768px)': {padding: '1em'}}}>
         <Typography variant={"h6"} fontWeight={"bold"}>Archiving History</Typography>
         {
             loadingSessions ?

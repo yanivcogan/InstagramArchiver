@@ -10,6 +10,6 @@ async def generate_warc(har_path:str):
 
 
 if __name__ == "__main__":
-    har_path_arg = input("Enter the path to the HAR file: ")
+    har_path_arg = input("Enter the path to the HAR file: ").strip().strip('"').strip("'")
 
     asyncio.run(generate_warc(har_path_arg))

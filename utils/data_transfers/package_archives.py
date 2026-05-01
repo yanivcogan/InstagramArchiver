@@ -1,5 +1,6 @@
 import os
 import tarfile
+import shutil
 from pathlib import Path
 from typing import Optional
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -41,7 +42,10 @@ def package_archives_zip():
     else:
         batch_counter = 0
 
-    to_archive: list[Path] = [a for a in archive_dirs if a.name not in already_packaged]
+    to_archive: list[Path] = sorted(
+        [a for a in archive_dirs if a.name not in already_packaged],
+        key=lambda p: p.stat().st_ctime,
+    )
     current_batch: list[Path] = []
     current_batch_size = 0
     for i in range(len(to_archive)):
@@ -71,7 +75,7 @@ def package_archives_zip():
             current_batch_size = 0
 
 
-def package_archives_zstd():
+def package_archives_zstd(single_archive: bool = False):
     root_archives = Path(ROOT_DIR) / "archives"
     archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
 
@@ -89,7 +93,10 @@ def package_archives_zstd():
     else:
         batch_counter = 0
 
-    to_archive: list[Path] = [a for a in archive_dirs if a.name not in already_packaged]
+    to_archive: list[Path] = sorted(
+        [a for a in archive_dirs if a.name not in already_packaged],
+        key=lambda p: p.stat().st_ctime,
+    )
     current_batch: list[Path] = []
     current_batch_size = 0
     for i in range(len(to_archive)):
@@ -109,7 +116,7 @@ def package_archives_zstd():
             print(f"Created tar file for batch {batch_counter} with size {os.path.getsize(root_zips / f'batch_{batch_counter}.tar')} bytes")
             with (root_zips / f'batch_{batch_counter}.tar').open('rb') as tar_file:
                 cctx = zstd.ZstdCompressor(level=22)
-                with (root_zips / f'batch_{batch_counter}.zst').open('wb') as zst_file:
+                with (root_zips / f'batch_{batch_counter}.tar.zst').open('wb') as zst_file:
                     print(f"Compressing batch {batch_counter} to zstd")
                     cctx.copy_stream(tar_file, zst_file)
             os.remove(root_zips / f'batch_{batch_counter}.tar')
@@ -120,6 +127,8 @@ def package_archives_zstd():
                 f.writelines([p.name + "\n" for p in current_batch])
             current_batch = []
             current_batch_size = 0
+            if single_archive:
+                return
 
 
 def decompress_zst(zstd_file: Path, output_dir: Optional[Path]):
@@ -136,5 +145,28 @@ def decompress_zst(zstd_file: Path, output_dir: Optional[Path]):
     print(f"Decompressed {zstd_file.name} to {output_dir}")
 
 
+def clean_already_packaged_archives_zstd():
+    root_archives = Path(ROOT_DIR) / "archives"
+    archive_dirs = [d for d in root_archives.iterdir() if d.is_dir()]
+
+    root_zips = Path(ROOT_DIR) / "utils" / "data_transfers" / "packaged_archives"
+    packaged_list_path = root_zips / "packaged_list_zstd.txt"
+    if packaged_list_path.exists():
+        with packaged_list_path.open("r", encoding="utf-8") as f:
+            already_packaged = set(line.strip() for line in f if line.strip())
+    else:
+        already_packaged = set()
+
+    already_archived: list[Path] = [a for a in archive_dirs if a.name in already_packaged]
+
+    pre_deletion_staging = root_archives / "pre_deletion_staging"
+    if not os.path.exists(pre_deletion_staging):
+        os.makedirs(pre_deletion_staging)
+
+    for a in already_archived:
+        shutil.move(a, pre_deletion_staging)
+
+
 if __name__ == "__main__":
-    package_archives_zstd()
+    # clean_already_packaged_archives_zstd()
+    package_archives_zstd(single_archive=input("Create a single batch? y/n ").strip()=="y")

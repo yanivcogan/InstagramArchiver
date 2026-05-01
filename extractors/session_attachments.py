@@ -41,6 +41,11 @@ def get_session_attachments(archive_location: Path) -> SessionAttachments:
     if har_path.exists() and har_path.is_file():
         attachments.har_archives.append(har_path.relative_to(archive_location).as_posix())
 
+    # wacz archive
+    wacz_path = archive_location / "archive.wacz"
+    if wacz_path.exists() and wacz_path.is_file():
+        attachments.wacz_archives.append(wacz_path.relative_to(archive_location).as_posix())
+
     # har hash
     har_hash_path = archive_location / "har_hash.txt"
     if har_hash_path.exists() and har_hash_path.is_file():

@@ -1,8 +1,13 @@
 from typing import List, Optional, Any, Union
 
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field, field_validator
 
 from extractors.models import VideoVersion, InstagramImageVersions2
+
+
+def _str_id(v: Any) -> Any:
+    """Coerce integer IDs to strings. Instagram's API inconsistently returns IDs as either str or int."""
+    return str(v) if isinstance(v, int) else v
 
 
 class FriendshipUserApiV1(BaseModel):
@@ -22,9 +27,12 @@ class FriendshipUserApiV1(BaseModel):
     account_badges: Optional[List[Any]] = Field(default_factory=list)
     latest_reel_media: Optional[int] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class FriendshipsApiV1(BaseModel):
     users: List[FriendshipUserApiV1]
@@ -37,8 +45,7 @@ class FriendshipsApiV1(BaseModel):
     follow_ranking_token: Optional[str] = None
     status: str
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class FriendshipStatusApiV1(BaseModel):
     is_muting_reel: Optional[bool] = None
@@ -57,9 +64,7 @@ class FriendshipStatusApiV1(BaseModel):
     is_eligible_to_subscribe: Optional[bool] = None
     subscribed: Optional[bool] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class LikerUserApiV1(BaseModel):
@@ -83,9 +88,12 @@ class LikerUserApiV1(BaseModel):
     hd_profile_pic_url_info: Optional[Any] = None
     is_unpublished: Optional[Any] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class LikersApiV1(BaseModel):
@@ -94,13 +102,12 @@ class LikersApiV1(BaseModel):
     follow_ranking_token: Optional[str] = None
     status: Optional[str] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class CommentUserApiV1(BaseModel):
-    pk: Union[str, int]
-    pk_id: Union[str, int]
-    id: Union[str, int]
+    pk: Optional[str]
+    pk_id: Optional[str]
+    id: Optional[str]
     full_name: str
     is_private: bool
     is_unpublished: Optional[bool] = None
@@ -112,13 +119,16 @@ class CommentUserApiV1(BaseModel):
     profile_pic_url: str
     is_mentionable: Optional[bool] = None # Specific to user in comment items
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentCaptionApiV1(BaseModel):
-    pk: Union[str, int]
-    user_id: Union[str, int]
+    pk: Optional[str]
+    user_id: Optional[str]
     type: int
     did_report_as_spam: bool
     created_at: int
@@ -139,13 +149,16 @@ class CommentCaptionApiV1(BaseModel):
     has_translation: Optional[bool] = None
     user: CommentUserApiV1
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'user_id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentItemApiV1(BaseModel):
-    pk: Union[str, int]
-    user_id: Union[str, int]
+    pk: Optional[str]
+    user_id: Optional[str]
     type: int
     did_report_as_spam: bool
     created_at: int
@@ -173,16 +186,17 @@ class CommentItemApiV1(BaseModel):
     other_preview_users: Optional[List[Any]] = Field(default_factory=list)
     user: CommentUserApiV1
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'user_id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class QuickResponseEmojiApiV1(BaseModel):
     unicode: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class CommentsApiV1(BaseModel):
     can_view_more_preview_comments: Optional[bool] = None
@@ -208,9 +222,7 @@ class CommentsApiV1(BaseModel):
     should_render_upsell: Optional[bool] = None
     status: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class TaggedUserInTagApiV1(BaseModel):
@@ -225,47 +237,44 @@ class TaggedUserInTagApiV1(BaseModel):
     profile_pic_id: Optional[str] = None
     profile_pic_url: str
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class UserTagInApiV1(BaseModel):
     position: Optional[List[float]] = None # Expecting [0, 0] as [float, float]
     user: Optional[TaggedUserInTagApiV1] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class UserTagsApiV1(BaseModel):
     in_field: Optional[List[UserTagInApiV1]] = Field(default_factory=list, alias="in")
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class SharingFrictionInfoApiV1(BaseModel):
     bloks_app_url: Optional[str] = None
     should_have_sharing_friction: bool
     sharing_friction_payload: Optional[Any] = None # Assuming it can be any type or null
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class HdProfilePicUrlInfoApiV1(BaseModel):
     height: int
     url: str
     width: int
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class ProfilePicVersionApiV1(BaseModel):
     height: int
     url: str
     width: int
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class MediaUserApiV1(BaseModel):
     fbid_v2: Optional[str] = None
@@ -298,33 +307,32 @@ class MediaUserApiV1(BaseModel):
     is_embeds_disabled: Optional[bool] = None
     latest_reel_media: Optional[int] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class FbDownstreamUseXpostMetadataApiV1(BaseModel):
     downstream_use_xpost_deny_reason: Optional[str] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class CrosspostMetadataApiV1(BaseModel):
     fb_downstream_use_xpost_metadata: Optional[FbDownstreamUseXpostMetadataApiV1] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class GenAIDetectionMethodApiV1(BaseModel):
     detection_method: str
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class ReportInfoApiV1(BaseModel):
     has_viewer_submitted_report: Optional[bool] = None
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 class MediaItemApiV1(BaseModel):
     pk: str
@@ -440,9 +448,7 @@ class MediaItemApiV1(BaseModel):
     clips_tab_pinned_user_ids: Optional[List[Any]] = None
     clips_metadata: Optional[dict] = None
 
-    class Config:
-        populate_by_name = True
-        extra = "allow"
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class MediaInfoApiV1(BaseModel):
     num_results: int
@@ -451,5 +457,4 @@ class MediaInfoApiV1(BaseModel):
     auto_load_more_enabled: Optional[bool] = None
     status: str
 
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
