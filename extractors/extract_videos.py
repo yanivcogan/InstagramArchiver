@@ -1,12 +1,10 @@
 import base64
-import datetime
 import html
 import json
 import os
 import re
 import subprocess
 import traceback
-import ppdeep
 from hashlib import md5
 from pathlib import Path
 from typing import Optional, Literal
@@ -28,7 +26,7 @@ def _safe_id(identifier: str, max_len: int = 60) -> str:
 from extractors.structures_extraction_api_v1 import ApiV1Response
 from extractors.structures_extraction_graphql import GraphQLResponse
 from extractors.structures_extraction_html import PageResponse
-from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
+from utils.integrity import FileIntegrity, protect_file
 
 
 class MediaSegment(BaseModel):
@@ -525,8 +523,7 @@ def download_file(url: str) -> Optional[bytes]:
 class AssetSaveResult(BaseModel):
     success: bool = True
     location: Optional[Path] = None
-    hashed_contents: Optional[str] = None
-    fuzzy_hashed_contents: Optional[str] = None
+    integrity: Optional[FileIntegrity] = None
 
 def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool) -> AssetSaveResult:
     temp_video_file: Optional[Path] = None
@@ -661,16 +658,14 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
         return AssetSaveResult(success=False)
 
     try:
-        hashed_contents = md5(open(most_complete_version, 'rb').read()).hexdigest()
-        fuzzy_hashed_contents = ppdeep.hash(open(most_complete_version, 'rb').read())
+        protection = protect_file(most_complete_version)
         return AssetSaveResult(
             success=True,
             location=most_complete_version,
-            hashed_contents=hashed_contents,
-            fuzzy_hashed_contents=fuzzy_hashed_contents
+            integrity=protection.to_integrity(base_dir=output_dir),
         )
     except Exception as e:
-        print(f"Error hashing file {most_complete_version}: {e}")
+        print(f"Error protecting file {most_complete_version}: {e}")
         return AssetSaveResult(success=False)
 
 
@@ -795,41 +790,21 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
     try:
         download_result = download_file(video.full_asset)
         if download_result is not None:
-            hashed_contents = md5(download_result).hexdigest()
-            fuzzy_hashed_contents = ppdeep.hash(download_result)
             file_name = f"xpv_{_safe_id(video.xpv_asset_id)}_full.mp4"
             file_path = output_dir / file_name
             with open(file_path, 'wb') as f:
                 f.write(download_result)
+            protection = protect_file(file_path)
             return AssetSaveResult(
                 success=True,
                 location=file_path,
-                hashed_contents=hashed_contents,
-                fuzzy_hashed_contents=fuzzy_hashed_contents
+                integrity=protection.to_integrity(base_dir=output_dir),
             )
         else:
             raise Exception(f"Failed to download full asset")
     except Exception as e:
         print(f"Error downloading full asset {video.full_asset}: {e}")
         return AssetSaveResult(success=False)
-
-
-def timestamp_downloaded_contents(downloaded_video_hashes: dict[int, str], output_dir: Path, fuzzy: bool = False):
-    if not downloaded_video_hashes or len(downloaded_video_hashes.items()) == 0:
-        return
-    try:
-        now_timestamp = int(datetime.datetime.timestamp(datetime.datetime.now()))
-        full_track_hashes_path = output_dir / f"full_track_{'fuzzy_hashes' if fuzzy else 'hashes'}_{now_timestamp}.json"
-        full_track_hashes_str = json.dumps(downloaded_video_hashes, indent=2, sort_keys=True)
-        with open(full_track_hashes_path, "w", encoding="utf-8") as f:
-            f.write(full_track_hashes_str)
-        full_track_hashes_md5 = md5(full_track_hashes_str.encode("utf-8")).hexdigest()
-        full_track_hashes_hash_path = output_dir / f"full_track_{'fuzzy_hashes' if fuzzy else 'hashes'}_hash_{now_timestamp}.txt"
-        with open(full_track_hashes_hash_path, "w") as f:
-            f.write(full_track_hashes_md5)
-        timestamp_file(full_track_hashes_hash_path)
-    except Exception as e:
-        print(f"Error saving full track hashes: {e}")
 
 
 class VideoAcquisitionConfig(BaseModel):
@@ -917,9 +892,6 @@ def acquire_videos(
             video.local_files = matching
             continue
 
-    downloaded_video_hashes: dict[int, str] = dict()
-    downloaded_video_fuzzy_hashes: dict[int, str] = dict()
-
     for video in combined_videos:
         if video.local_files is None or len(video.local_files) == 0:
             if download_missing:
@@ -942,18 +914,11 @@ def acquire_videos(
                     download_result = save_fetched_asset(video, output_dir, download_full_track=download_full_versions_of_fetched_media)
             else:
                 continue
-            if download_result.hashed_contents is not None:
-                downloaded_video_hashes[video.xpv_asset_id] = download_result.hashed_contents
-            if download_result.fuzzy_hashed_contents is not None:
-                downloaded_video_fuzzy_hashes[video.xpv_asset_id] = download_result.fuzzy_hashed_contents
             if download_result.location is not None:
                 if video.local_files is None:
                     video.local_files = []
                 video.local_files.append(download_result.location)
-    
-    timestamp_downloaded_contents(downloaded_video_hashes, output_dir)
-    timestamp_downloaded_contents(downloaded_video_fuzzy_hashes, output_dir, fuzzy=True)
-    
+
     stored_videos = []
     for video in combined_videos:
         if video.local_files is None or len(video.local_files) == 0:
