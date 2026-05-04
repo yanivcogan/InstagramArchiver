@@ -52,6 +52,14 @@ def find_par2_executable() -> Optional[Path]:
                     return exe_in_dir
         except Exception:
             pass
+    # Project-local install dir (mirrors utils/ffmpeg pattern). Walk recursively
+    # because the par2cmdline-turbo zip extracts into a versioned subdirectory.
+    local_dir = Path(ROOT_DIR) / "utils" / "par2"
+    if local_dir.is_dir():
+        exe_name = _exe_name()
+        for root, _dirs, files in os.walk(local_dir):
+            if exe_name in files:
+                return Path(root) / exe_name
     scripts_dir = Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin")
     candidate = scripts_dir / _exe_name()
     if candidate.exists():

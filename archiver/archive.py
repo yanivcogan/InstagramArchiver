@@ -38,6 +38,7 @@ from utils.ffmpeg_installer import ensure_ffmpeg_installed
 from utils.integrity import FileIntegrity, protect_file
 from utils.misc import get_my_public_ip, get_system_info
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
+from utils.par2_installer import ensure_par2_installed
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
@@ -605,6 +606,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
 if __name__ == "__main__":
     commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
+    ensure_par2_installed()
     selected_profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")
     url = url.split("?igsh=")[0].strip().split("&igsh=")[0].strip()

@@ -14,10 +14,12 @@ archiver/executable/dist/*
 
 utils/commit_tracker/commit_id.txt
 utils/ffmpeg/*
+utils/par2/*
 utils/free_tsa
 utils/data_transfers/packaged_archives/
 utils/opentimestamps/open_timestamps_location.txt
 utils/opentimestamps/open_ssl_location.txt
+utils/integrity/par2_location.txt
 
 /archives/*
 /thumbnails/*
