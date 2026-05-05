@@ -6,7 +6,8 @@ that are missing them. Useful when archiving sessions ran before timestamping
 was set up, or when timestamping failed mid-session.
 
 Files timestamped per archive (if they exist and have no .ots sibling):
-  - **/*.manifest.json  (current scheme: chunked SHA-256 + PAR2 manifests)
+  - manifests.json  (current scheme: archive-level seal covering every per-asset
+    manifest with a single OTS proof)
   - har_hash.txt, fuzzy_har_hash.txt, photos/photo_*hashes_hash_*.txt,
     videos/full_track_*hashes_hash_*.txt  (legacy schemes, kept harmless;
     new archives won't produce these)
@@ -24,8 +25,8 @@ ARCHIVES_DIR = Path(ROOT_DIR) / "archives"
 
 # Glob patterns (relative to each archive directory) for files that should be timestamped.
 HASH_FILE_PATTERNS = [
-    # Current scheme — chunked-hash + PAR2 manifests anywhere in the archive.
-    "**/*.manifest.json",
+    # Current scheme — single archive-level seal.
+    "manifests.json",
     # Legacy schemes — preserved so re-running this tool on old archives still works.
     "har_hash.txt",
     "fuzzy_har_hash.txt",

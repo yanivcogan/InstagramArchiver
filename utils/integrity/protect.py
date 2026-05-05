@@ -76,10 +76,16 @@ def protect_file(
     *,
     redundancy_pct: int = par2_mod.DEFAULT_REDUNDANCY_PCT,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
-    timestamp: bool = True,
+    timestamp: bool = False,
 ) -> ProtectionResult:
     """
     Protect a single file end-to-end.
+
+    Default `timestamp=False`: per-asset OTS is no longer the default — instead,
+    callers should run `utils.integrity.seal_archive()` once at the end of
+    archiving, which writes a single `manifests.json` listing every per-asset
+    manifest hash and OTS-stamps that one file. Pass `timestamp=True` only for
+    standalone uses where there is no enclosing archive seal.
 
     All sub-steps are best-effort: PAR2 failures and OTS failures are logged but
     do not raise, since archiving must always finish writing metadata even if a

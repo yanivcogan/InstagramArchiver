@@ -25,7 +25,7 @@ except Exception:
 
 PAR2_LOCATION_FILE = Path(ROOT_DIR) / "utils" / "integrity" / "par2_location.txt"
 
-DEFAULT_REDUNDANCY_PCT = 10
+DEFAULT_REDUNDANCY_PCT = 40
 
 
 class Par2NotFoundError(RuntimeError):
@@ -100,10 +100,13 @@ def create_recovery(
         raise FileNotFoundError(f"Cannot create PAR2 recovery for missing file: {path}")
 
     par2_index = path.with_suffix(path.suffix + ".par2")
+    # `-n1` collapses recovery data into a single volume file. Combined with the
+    # par2 index file this gives the par2cmdline minimum of 2 files per asset.
     cmd = [
         str(exe),
         "create",
         f"-r{int(redundancy_pct)}",
+        "-n1",
         "-q",
         "-q",
         "--",

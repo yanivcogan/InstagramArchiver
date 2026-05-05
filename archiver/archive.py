@@ -35,7 +35,7 @@ from extractors.extract_videos import VideoAcquisitionConfig
 from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.integrity import FileIntegrity, protect_file
+from utils.integrity import FileIntegrity, protect_file, seal_archive
 from utils.misc import get_my_public_ip, get_system_info
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 from utils.par2_installer import ensure_par2_installed
@@ -198,7 +198,7 @@ The script records the screen during this process, and also saves a HAR file of 
 None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (branch {metadata.branch}, commit {metadata.commit_id})
 SHA-256 hash of the HAR file: {metadata.har_integrity.whole_file_hash if metadata.har_integrity else 'N/A'}
 SHA-256 hash of the screen recording: {metadata.video_integrity.whole_file_hash if metadata.video_integrity else 'N/A'}
-Integrity manifests (chunked SHA-256 + PAR2 recovery, OpenTimestamps-anchored): {metadata.har_integrity.manifest_path if metadata.har_integrity else 'N/A'}, {metadata.video_integrity.manifest_path if metadata.video_integrity else 'N/A'}
+Each archived asset has a sidecar `<asset>.manifest.json` carrying its chunked-SHA-256 + PAR2 recovery metadata, and a sibling `<asset>.par2` recovery file (PAR2). A single archive-level `manifests.json` summary at the archive root commits to every per-asset manifest's SHA-256 and is OpenTimestamps-anchored at `manifests.json.ots` — that one timestamp transitively proves the existence of every chunk hash, whole-file hash, and PAR2 index hash in the archive at the time of sealing.
 At the time of archiving, the following domains were contacted and resolved to the following IP addresses: {metadata.domain_resolutions}
 The TLS certificate presented by www.instagram.com had SHA-256 fingerprint {metadata.tls_cert.fingerprint_sha256 if metadata.tls_cert else 'N/A'}, issued by {metadata.tls_cert.issuer if metadata.tls_cert else 'N/A'}, valid from {metadata.tls_cert.valid_from if metadata.tls_cert else 'N/A'} to {metadata.tls_cert.valid_to if metadata.tls_cert else 'N/A'}.
 OS and hardware details: {metadata.platform}
@@ -505,7 +505,20 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
             )
         )
     except Exception:
-        pass
+        traceback.print_exc()
+
+    # Seal the entire archive: a single manifests.json + .ots commits to every
+    # per-asset manifest hash. Replaces the per-asset .ots files used previously.
+    try:
+        seal = seal_archive(archive_dir)
+        print(
+            f"Sealed archive: {seal.manifest_count} manifest(s), "
+            f"summary={seal.summary_path.name}, "
+            f"ots={'yes' if seal.ots_path else 'MISSING'}"
+        )
+    except Exception as e:
+        traceback.print_exc()
+        print(f"❌ Error sealing archive: {e}")
 
     print(f"Content archived successfully in {archive_dir}")
 
