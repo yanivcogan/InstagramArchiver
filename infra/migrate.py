@@ -4,6 +4,7 @@ Database migration runner.
 
 Usage:
     uv run infra/migrate.py
+    uv run infra/migrate.py --one-at-a-time
 
 Pending migrations are listed and you are prompted to choose a starting
 version.  Migrations before the chosen version are recorded as applied
@@ -146,7 +147,7 @@ def _apply_python(cnx, path: Path):
 # Public interface
 # ---------------------------------------------------------------------------
 
-def run_pending_migrations():
+def run_pending_migrations(one_at_a_time: bool = False):
     cnx = db_utils.cnx_pool.get_connection()
     try:
         _ensure_migration_table(cnx)
@@ -175,12 +176,19 @@ def run_pending_migrations():
         print()
 
         valid_versions = [v for v, _, _ in pending]
-        answer = input(
-            f"Start from which version? "
-            f"[{valid_versions[0]}–{valid_versions[-1]}, default={valid_versions[0]}]: "
-        ).strip()
 
-        if answer == "":
+        if one_at_a_time:
+            answer = input(
+                f"Run which single migration? (only this one will apply) "
+                f"[{valid_versions[0]}–{valid_versions[-1]}]: "
+            ).strip()
+        else:
+            answer = input(
+                f"Start from which version? "
+                f"[{valid_versions[0]}–{valid_versions[-1]}, default={valid_versions[0]}]: "
+            ).strip()
+
+        if answer == "" and not one_at_a_time:
             start_version = valid_versions[0]
         else:
             try:
@@ -192,9 +200,13 @@ def run_pending_migrations():
                 print(f"V{start_version:03d} is not in the pending list.")
                 sys.exit(1)
 
+        stop_version = start_version if one_at_a_time else None
+
         skipped = 0
         applied_count = 0
         for version, description, path in pending:
+            if stop_version is not None and version > stop_version:
+                break
             if version < start_version:
                 _record_version(cnx, version, description)
                 print(f"  Skipped  V{version:03d}: {description}")
@@ -233,9 +245,11 @@ def run_pending_migrations():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    if sys.argv[1:]:
-        print("Usage: uv run db_loaders/migrate.py")
-        sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser(description="Run database migrations.")
+    parser.add_argument("--one-at-a-time", action="store_true",
+                        help="Prompt for a single version to run, then stop.")
+    args = parser.parse_args()
 
     log_dir = ROOT / "logs"
     log_dir.mkdir(exist_ok=True)
@@ -244,8 +258,13 @@ if __name__ == "__main__":
     sys.stdout = tee
     print(f"Logging to {log_path}", flush=True)
 
+    tee_err = _Tee(sys.stderr, log_path)
+    sys.stderr = tee_err
+
     try:
-        run_pending_migrations()
+        run_pending_migrations(one_at_a_time=args.one_at_a_time)
     finally:
         sys.stdout = tee._stream
+        sys.stderr = tee_err._stream
         tee.close()
+        tee_err.close()

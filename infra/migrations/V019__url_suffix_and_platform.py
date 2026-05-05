@@ -52,70 +52,94 @@ def _index_exists(cur, table, index_name):
 def _rename_index_if_exists(cur, table, old_name, new_name):
     if _index_exists(cur, table, old_name) and not _index_exists(cur, table, new_name):
         cur.execute(f"ALTER TABLE `{table}` RENAME INDEX `{old_name}` TO `{new_name}`")
-        print(f"    {table}: renamed index {old_name} → {new_name}")
+        print(f"    {table}: renamed index {old_name} → {new_name}", flush=True)
 
 
 # ---------------------------------------------------------------------------
 # Sub-phase A: Schema rename + add platform
 # ---------------------------------------------------------------------------
 
+def _row_count(cur, table):
+    cur.execute(f"SELECT COUNT(*) FROM `{table}`")
+    return cur.fetchone()[0]
+
+
 def _phase_a(cur):
     """Rename url columns and add platform ENUM. One ALTER per table for efficiency."""
+    import time
 
     # Tables with a single `url` column → url_suffix
-    simple_tables = ['account', 'post', 'media', 'comment',
-                     'account_archive', 'media_archive']
     # media_archive also has post_url — handled separately below
     simple_tables_no_extra = ['account', 'post', 'media', 'comment', 'account_archive']
 
     for tbl in simple_tables_no_extra:
+        n = _row_count(cur, tbl)
+        print(f"    {tbl}: {n} rows", flush=True)
         if not _column_exists(cur, tbl, 'url_suffix'):
+            print(f"    {tbl}: renaming url→url_suffix, adding platform ...", flush=True)
+            t0 = time.perf_counter()
             cur.execute(
                 f"ALTER TABLE `{tbl}` "
                 f"RENAME COLUMN `url` TO `url_suffix`, "
                 f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
             )
-            print(f"    {tbl}: url→url_suffix + platform added")
+            print(f"    {tbl}: done ({time.perf_counter()-t0:.1f}s)", flush=True)
         else:
-            print(f"    {tbl}: already migrated, skipping schema")
+            print(f"    {tbl}: url_suffix already exists, skipping schema", flush=True)
 
     # archive_session: archived_url → archived_url_suffix
+    n = _row_count(cur, 'archive_session')
+    print(f"    archive_session: {n} rows", flush=True)
     if not _column_exists(cur, 'archive_session', 'archived_url_suffix'):
+        print("    archive_session: renaming archived_url→archived_url_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `archive_session` "
             f"RENAME COLUMN `archived_url` TO `archived_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    archive_session: archived_url→archived_url_suffix + platform added")
+        print(f"    archive_session: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    archive_session: already migrated, skipping schema")
+        print("    archive_session: archived_url_suffix already exists, skipping schema", flush=True)
 
     # media_archive: url → url_suffix, post_url → post_url_suffix
+    n = _row_count(cur, 'media_archive')
+    print(f"    media_archive: {n} rows", flush=True)
     if not _column_exists(cur, 'media_archive', 'url_suffix'):
+        print("    media_archive: renaming url→url_suffix, post_url→post_url_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `media_archive` "
             f"RENAME COLUMN `url` TO `url_suffix`, "
             f"RENAME COLUMN `post_url` TO `post_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    media_archive: url→url_suffix, post_url→post_url_suffix + platform")
+        print(f"    media_archive: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    media_archive: already migrated, skipping schema")
+        print("    media_archive: url_suffix already exists, skipping schema", flush=True)
 
     # post_archive: url → url_suffix, account_url → account_url_suffix
+    n = _row_count(cur, 'post_archive')
+    print(f"    post_archive: {n} rows", flush=True)
     if not _column_exists(cur, 'post_archive', 'url_suffix'):
+        print("    post_archive: renaming url→url_suffix, account_url→account_url_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `post_archive` "
             f"RENAME COLUMN `url` TO `url_suffix`, "
             f"RENAME COLUMN `account_url` TO `account_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    post_archive: url→url_suffix, account_url→account_url_suffix + platform")
+        print(f"    post_archive: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    post_archive: already migrated, skipping schema")
+        print("    post_archive: url_suffix already exists, skipping schema", flush=True)
 
     # comment_archive: url, post_url, account_url
+    n = _row_count(cur, 'comment_archive')
+    print(f"    comment_archive: {n} rows", flush=True)
     if not _column_exists(cur, 'comment_archive', 'url_suffix'):
+        print("    comment_archive: renaming url/post_url/account_url → *_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `comment_archive` "
             f"RENAME COLUMN `url` TO `url_suffix`, "
@@ -123,36 +147,48 @@ def _phase_a(cur):
             f"RENAME COLUMN `account_url` TO `account_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    comment_archive: url/post_url/account_url → *_suffix + platform")
+        print(f"    comment_archive: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    comment_archive: already migrated, skipping schema")
+        print("    comment_archive: url_suffix already exists, skipping schema", flush=True)
 
     # account_relation_archive: followed_account_url, follower_account_url
+    n = _row_count(cur, 'account_relation_archive')
+    print(f"    account_relation_archive: {n} rows", flush=True)
     if not _column_exists(cur, 'account_relation_archive', 'followed_account_url_suffix'):
+        print("    account_relation_archive: renaming url columns → *_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `account_relation_archive` "
             f"RENAME COLUMN `followed_account_url` TO `followed_account_url_suffix`, "
             f"RENAME COLUMN `follower_account_url` TO `follower_account_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    account_relation_archive: url columns → *_suffix + platform")
+        print(f"    account_relation_archive: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    account_relation_archive: already migrated, skipping schema")
+        print("    account_relation_archive: followed_account_url_suffix already exists, skipping schema", flush=True)
 
     # post_like_archive: post_url, account_url
+    n = _row_count(cur, 'post_like_archive')
+    print(f"    post_like_archive: {n} rows", flush=True)
     if not _column_exists(cur, 'post_like_archive', 'post_url_suffix'):
+        print("    post_like_archive: renaming post_url/account_url → *_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `post_like_archive` "
             f"RENAME COLUMN `post_url` TO `post_url_suffix`, "
             f"RENAME COLUMN `account_url` TO `account_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    post_like_archive: post_url/account_url → *_suffix + platform")
+        print(f"    post_like_archive: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    post_like_archive: already migrated, skipping schema")
+        print("    post_like_archive: post_url_suffix already exists, skipping schema", flush=True)
 
     # tagged_account_archive: tagged_account_url, context_post_url, context_media_url
+    n = _row_count(cur, 'tagged_account_archive')
+    print(f"    tagged_account_archive: {n} rows", flush=True)
     if not _column_exists(cur, 'tagged_account_archive', 'tagged_account_url_suffix'):
+        print("    tagged_account_archive: renaming url columns → *_suffix, adding platform ...", flush=True)
+        t0 = time.perf_counter()
         cur.execute(
             f"ALTER TABLE `tagged_account_archive` "
             f"RENAME COLUMN `tagged_account_url` TO `tagged_account_url_suffix`, "
@@ -160,9 +196,9 @@ def _phase_a(cur):
             f"RENAME COLUMN `context_media_url` TO `context_media_url_suffix`, "
             f"ADD COLUMN `platform` {_PLATFORM_ENUM}"
         )
-        print("    tagged_account_archive: url columns → *_suffix + platform")
+        print(f"    tagged_account_archive: done ({time.perf_counter()-t0:.1f}s)", flush=True)
     else:
-        print("    tagged_account_archive: already migrated, skipping schema")
+        print("    tagged_account_archive: tagged_account_url_suffix already exists, skipping schema", flush=True)
 
     # Make url_suffix nullable on tables where the original url column was NOT NULL.
     # The RENAME COLUMN above preserves NOT NULL, but url_suffix must accept NULL
@@ -174,12 +210,15 @@ def _phase_a(cur):
         ('media',           'url_suffix', 'VARCHAR(250)'),
         ('media_archive',   'url_suffix', 'VARCHAR(250)'),
     ]
+    print("    Checking nullable constraints ...", flush=True)
     for tbl, col, col_type in nullable_cols:
         if _column_is_not_null(cur, tbl, col):
+            print(f"    {tbl}.{col}: making nullable ...", flush=True)
+            t0 = time.perf_counter()
             cur.execute(f"ALTER TABLE `{tbl}` MODIFY COLUMN `{col}` {col_type} NULL")
-            print(f"    {tbl}.{col}: made nullable")
+            print(f"    {tbl}.{col}: done ({time.perf_counter()-t0:.1f}s)", flush=True)
         else:
-            print(f"    {tbl}.{col}: already nullable, skipping")
+            print(f"    {tbl}.{col}: already nullable, skipping", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +241,30 @@ def _strip_cdn(col):
             f"SUBSTRING(`{col}`, {_CDN_PFX_LEN + 1}), `{col}`)")
 
 
-def _phase_b(cur):
+_PHASE_B_BATCH_SIZE = 10_000
+
+
+def _batched_update(cur, cnx, tbl, sets, guard, label):
+    """Run UPDATE ... WHERE guard LIMIT batch in a loop, committing each batch."""
+    import time
+    t0 = time.perf_counter()
+    total = 0
+    batch = 0
+    while True:
+        cur.execute(
+            f"UPDATE `{tbl}` SET {sets} WHERE {guard} LIMIT {_PHASE_B_BATCH_SIZE}"
+        )
+        n = cur.rowcount
+        if n == 0:
+            break
+        cnx.commit()
+        total += n
+        batch += 1
+        print(f"    {tbl} {label}: batch {batch}, {n} rows ({total} total, {time.perf_counter()-t0:.1f}s)", flush=True)
+    print(f"    {tbl} {label}: done — {total} row(s) in {batch} batch(es) ({time.perf_counter()-t0:.1f}s)", flush=True)
+
+
+def _phase_b(cur, cnx):
     # --- Instagram page URL columns ---
     page_url_tables = [
         ('account',          ['url_suffix']),
@@ -219,37 +281,32 @@ def _phase_b(cur):
     for tbl, cols in page_url_tables:
         sets = ', '.join(f"`{c}` = {_strip_page(c)}" for c in cols)
         sets += ", `platform` = 'instagram'"
-        # guard: only rows where at least one col still has the prefix
         guard = ' OR '.join(f"`{c}` LIKE '{_INSTAGRAM_PAGE_PFX}%'" for c in cols)
-        cur.execute(f"UPDATE `{tbl}` SET {sets} WHERE {guard}")
-        affected = cur.rowcount
-        print(f"    {tbl}: stripped page prefix from {affected} row(s)")
+        _batched_update(cur, cnx, tbl, sets, guard, "strip page prefix")
 
     # --- CDN media URL columns ---
-    cur.execute(
-        f"UPDATE `media` SET "
-        f"`url_suffix` = {_strip_cdn('url_suffix')}, "
-        f"`platform` = 'instagram' "
-        f"WHERE `url_suffix` LIKE '{_INSTAGRAM_CDN_PFX}%'"
+    _batched_update(
+        cur, cnx, 'media',
+        f"`url_suffix` = {_strip_cdn('url_suffix')}, `platform` = 'instagram'",
+        f"`url_suffix` LIKE '{_INSTAGRAM_CDN_PFX}%'",
+        "strip CDN prefix",
     )
-    print(f"    media: stripped CDN prefix from {cur.rowcount} row(s)")
 
-    cur.execute(
-        f"UPDATE `media_archive` SET "
+    _batched_update(
+        cur, cnx, 'media_archive',
         f"`url_suffix` = {_strip_cdn('url_suffix')}, "
         f"`post_url_suffix` = {_strip_page('post_url_suffix')}, "
-        f"`platform` = 'instagram' "
-        f"WHERE `url_suffix` LIKE '{_INSTAGRAM_CDN_PFX}%' "
-        f"   OR `post_url_suffix` LIKE '{_INSTAGRAM_PAGE_PFX}%'"
+        f"`platform` = 'instagram'",
+        f"`url_suffix` LIKE '{_INSTAGRAM_CDN_PFX}%' OR `post_url_suffix` LIKE '{_INSTAGRAM_PAGE_PFX}%'",
+        "strip CDN+page prefixes",
     )
-    print(f"    media_archive: stripped prefixes from {cur.rowcount} row(s)")
 
-    cur.execute(
-        f"UPDATE `tagged_account_archive` SET "
-        f"`context_media_url_suffix` = {_strip_cdn('context_media_url_suffix')} "
-        f"WHERE `context_media_url_suffix` LIKE '{_INSTAGRAM_CDN_PFX}%'"
+    _batched_update(
+        cur, cnx, 'tagged_account_archive',
+        f"`context_media_url_suffix` = {_strip_cdn('context_media_url_suffix')}",
+        f"`context_media_url_suffix` LIKE '{_INSTAGRAM_CDN_PFX}%'",
+        "strip CDN prefix from context_media_url_suffix",
     )
-    print(f"    tagged_account_archive context_media: stripped CDN from {cur.rowcount} row(s)")
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +314,7 @@ def _phase_b(cur):
 # ---------------------------------------------------------------------------
 
 def _phase_c(cur):
+    print("    Phase C: renaming indexes ...", flush=True)
     renames = [
         ('account',                    'account_url_index',                                  'account_url_suffix_index'),
         ('account_archive',            'account_archive_url_index',                          'account_archive_url_suffix_index'),
@@ -283,16 +341,18 @@ def _phase_d(cur):
     def parts_expr(col):
         return (f"REPLACE(REPLACE(REPLACE(REPLACE(`{col}`, '/', ' '), '.', ' '), '?', ' '), '&', ' ')")
 
+    print("    Phase D: recomputing url_parts ...", flush=True)
     cur.execute(
         f"UPDATE `account` SET `url_parts` = {parts_expr('url_suffix')} WHERE `url_suffix` IS NOT NULL"
     )
-    print(f"    account.url_parts recomputed for {cur.rowcount} row(s)")
+    print(f"    account.url_parts recomputed for {cur.rowcount} row(s)", flush=True)
 
+    print("    Updating archive_session.archived_url_parts ...", flush=True)
     cur.execute(
         f"UPDATE `archive_session` SET `archived_url_parts` = {parts_expr('archived_url_suffix')} "
         f"WHERE `archived_url_suffix` IS NOT NULL"
     )
-    print(f"    archive_session.archived_url_parts recomputed for {cur.rowcount} row(s)")
+    print(f"    archive_session.archived_url_parts recomputed for {cur.rowcount} row(s)", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -300,42 +360,62 @@ def _phase_d(cur):
 # ---------------------------------------------------------------------------
 
 _PAGE_PFX_RE = re.compile(r'^url_https://www\.instagram\.com/(.+)$')
+_PHASE_E_BATCH_SIZE = 1000
 
 
 def _phase_e(cur, cnx):
-    cur.execute("SELECT id, identifiers FROM account WHERE identifiers IS NOT NULL")
-    rows = cur.fetchall()
+    print("    Phase E: scanning account.identifiers rows ...", flush=True)
     updated = 0
-    for row in rows:
-        acc_id, identifiers_raw = row
-        if not identifiers_raw:
-            continue
-        try:
-            identifiers = json.loads(identifiers_raw) if isinstance(identifiers_raw, str) else identifiers_raw
-        except (json.JSONDecodeError, TypeError):
-            continue
-        if not isinstance(identifiers, list):
-            continue
-        new_ids = []
-        changed = False
-        for entry in identifiers:
-            if not isinstance(entry, str):
-                new_ids.append(entry)
+    offset = 0
+    batch_num = 0
+    while True:
+        cur.execute(
+            "SELECT id, identifiers FROM account WHERE identifiers IS NOT NULL "
+            "ORDER BY id LIMIT %s OFFSET %s",
+            (_PHASE_E_BATCH_SIZE, offset),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            break
+
+        batch_num += 1
+        batch_updated = 0
+        for row in rows:
+            acc_id, identifiers_raw = row
+            if not identifiers_raw:
                 continue
-            m = _PAGE_PFX_RE.match(entry)
-            if m:
-                new_ids.append(f"url_{m.group(1)}")
-                changed = True
-            else:
-                new_ids.append(entry)
-        if changed:
-            cur.execute(
-                "UPDATE account SET identifiers = %s WHERE id = %s",
-                (json.dumps(new_ids), acc_id)
-            )
-            updated += 1
-    if updated:
-        cnx.commit()
+            try:
+                identifiers = json.loads(identifiers_raw) if isinstance(identifiers_raw, str) else identifiers_raw
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(identifiers, list):
+                continue
+            new_ids = []
+            changed = False
+            for entry in identifiers:
+                if not isinstance(entry, str):
+                    new_ids.append(entry)
+                    continue
+                m = _PAGE_PFX_RE.match(entry)
+                if m:
+                    new_ids.append(f"url_{m.group(1)}")
+                    changed = True
+                else:
+                    new_ids.append(entry)
+            if changed:
+                cur.execute(
+                    "UPDATE account SET identifiers = %s WHERE id = %s",
+                    (json.dumps(new_ids), acc_id)
+                )
+                batch_updated += 1
+
+        if batch_updated > 0:
+            cnx.commit()
+
+        updated += batch_updated
+        print(f"    Phase E batch {batch_num}: processed {len(rows)} rows, updated {batch_updated}", flush=True)
+        offset += _PHASE_E_BATCH_SIZE
+
     print(f"    account.identifiers rewritten for {updated} row(s)")
 
 
@@ -344,26 +424,38 @@ def _phase_e(cur, cnx):
 # ---------------------------------------------------------------------------
 
 def run(cnx):
+    import time
     cur = cnx.cursor()
+    t_total = time.perf_counter()
     try:
-        print("  Phase A: schema rename + platform column")
+        t0 = time.perf_counter()
+        print("  Phase A: schema rename + platform column", flush=True)
         _phase_a(cur)
         cnx.commit()
+        print(f"  Phase A complete ({time.perf_counter()-t0:.1f}s)", flush=True)
 
-        print("  Phase B: strip URL prefixes, set platform = instagram")
-        _phase_b(cur)
-        cnx.commit()
+        t0 = time.perf_counter()
+        print("  Phase B: strip URL prefixes, set platform = instagram", flush=True)
+        _phase_b(cur, cnx)
+        print(f"  Phase B complete ({time.perf_counter()-t0:.1f}s)", flush=True)
 
-        print("  Phase C: rename indexes")
+        t0 = time.perf_counter()
+        print("  Phase C: rename indexes", flush=True)
         _phase_c(cur)
         cnx.commit()
+        print(f"  Phase C complete ({time.perf_counter()-t0:.1f}s)", flush=True)
 
-        print("  Phase D: recompute url_parts")
+        t0 = time.perf_counter()
+        print("  Phase D: recompute url_parts", flush=True)
         _phase_d(cur)
         cnx.commit()
+        print(f"  Phase D complete ({time.perf_counter()-t0:.1f}s)", flush=True)
 
-        print("  Phase E: rewrite account.identifiers")
+        t0 = time.perf_counter()
+        print("  Phase E: rewrite account.identifiers", flush=True)
         _phase_e(cur, cnx)
+        print(f"  Phase E complete ({time.perf_counter()-t0:.1f}s)", flush=True)
 
+        print(f"  V019 total elapsed: {time.perf_counter()-t_total:.1f}s", flush=True)
     finally:
         cur.close()

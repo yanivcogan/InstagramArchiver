@@ -210,6 +210,10 @@ cd ~
 mysqldump -u charlie -ppassword evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
 
 uv run infra/migrate.py
+
+# restore
+mysql -u charlie -ppassword -e "DROP DATABASE evidenceplatform; CREATE DATABASE evidenceplatform;"
+mysql -u charlie -ppassword evidenceplatform < evidenceplatform_backup_20260501_052942.sql
 ```
 
 ~/evidenceplatform/archives folder contains raw archives
@@ -218,3 +222,12 @@ uv run infra/migrate.py
 
 t:/ftk contains a backup from gdrive? 445GB
 u:/archives2 - 208GB.. not sure why.
+
+ "toga>=0.5.3",  
+removed from pyproject.toml
+used in archiver/profile_selection.py - a gui for doing profiles
+
+```bash
+uv run infra/migrate.py --one-at-a-time
+```
+
