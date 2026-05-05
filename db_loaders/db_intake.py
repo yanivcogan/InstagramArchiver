@@ -762,12 +762,12 @@ def store_post_archive(
 # Media
 # ---------------------------------------------------------------------------
 
-def preprocess_media(media: Media, _: Optional[int], archive_location: Path) -> Media:
-    local_url = (
-        f"{LOCAL_ARCHIVES_DIR_ALIAS}/"
-        + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()
-    ) if media.local_url is not None else None
-    media.local_url = local_url
+def preprocess_media(media: Media, _: Optional[int], archive_location: Optional[Path]) -> Media:
+    if archive_location is not None and media.local_url is not None:
+        media.local_url = (
+            f"{LOCAL_ARCHIVES_DIR_ALIAS}/"
+            + (archive_location / media.local_url).relative_to(ROOT_ARCHIVES).as_posix()
+        )
     return media
 
 
