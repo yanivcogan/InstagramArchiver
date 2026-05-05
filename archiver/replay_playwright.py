@@ -16,7 +16,7 @@ async def playback_har():
 
     # Launch Playwright and play back the HAR file
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.firefox.launch(headless=False)
         context = await browser.new_context()
         page = await context.new_page()
 
