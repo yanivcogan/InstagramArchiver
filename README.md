@@ -221,7 +221,12 @@ mysql -u charlie -ppassword evidenceplatform < evidenceplatform_backup_20260501_
   but now yaniv is uploading straight to the server
 
 t:/ftk contains a backup from gdrive? 445GB
-u:/archives2 - 208GB.. not sure why.
+
+g:/   800GB - this is linked via fstab tab to archives folder
+u:/archives2 - 208GB.. stuff that can't fit in above
+
+have got a backup of prod archives on H:/evidence-platform
+and db in t:/backups
 
  "toga>=0.5.3",  
 removed from pyproject.toml
