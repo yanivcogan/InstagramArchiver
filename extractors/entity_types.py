@@ -335,7 +335,7 @@ class Like(EntityBase):
     id_on_platform: Optional[str] = None
     post_id_on_platform: Optional[str] = None
     post_url_suffix: Optional[str] = Field(None, max_length=250)
-    platform: t_platform
+    platform: Optional[t_platform] = None
     account_id_on_platform: Optional[str] = Field(None, max_length=200)
     account_url_suffix: Optional[str] = Field(None, max_length=200)
     account_display_name: Optional[str] = Field(None, max_length=100)
@@ -456,7 +456,7 @@ class TaggedAccount(EntityBase):
     tagged_account_display_name: Optional[str] = Field(None, max_length=100)
     post_id: Optional[int] = None
     media_id: Optional[int] = None
-    platform: t_platform
+    platform: Optional[t_platform] = None
     context_post_url_suffix: Optional[str] = Field(None, max_length=250)
     context_media_url_suffix: Optional[str] = Field(None, max_length=250)
     context_post_id_on_platform: Optional[str] = Field(None, max_length=250)
