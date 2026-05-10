@@ -236,3 +236,19 @@ used in archiver/profile_selection.py - a gui for doing profiles
 uv run infra/migrate.py --one-at-a-time
 ```
 
+## Exoscale
+
+```bash
+# dump prod on Azure
+ mysqldump -u golf -ppassword5 evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
+
+ # copy prod to local filezilla
+# zip?
+#upload to Exoscale
+
+restore
+run migrations
+
+uv run infra/migrate.py
+```
+
