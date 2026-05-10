@@ -242,13 +242,57 @@ uv run infra/migrate.py --one-at-a-time
 # dump prod on Azure
  mysqldump -u golf -ppassword5 evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
 
- # copy prod to local filezilla
+# copy prod to local filezilla
 # zip?
 #upload to Exoscale
+unzip
 
-restore
-run migrations
+tmux
 
+git pull
+uv sync --upgrade
+
+# restore
+mysql -u golf -ppassword5 -e "DROP DATABASE evidenceplatform; CREATE DATABASE evidenceplatform;"
+# mysql -u golf -ppassword5 evidenceplatform < evidenceplatform_backup_20260501_052942.sql
+mysql -u golf -ppassword5 evidenceplatform < evidenceplatform_backup_20260510_095026.sql
+
+# run migrations
+# started at 1238... finished at 1334
 uv run infra/migrate.py
+
+# backup db on exo
+mysqldump --no-tablespaces -u golf -ppassword5 evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
+
+
+mysql -u golf -ppassword5 evidenceplatform -e "UPDATE archive_session SET incorporation_status = 'pending'"
+
+# test for dependencies
+uv run db_loaders/archives_db_loader.py full --limit 1
+
+sudo apt-get install libgl1 libglib2.0-0 -y
+
+uv run db_loaders/archives_db_loader.py full
+
+```
+asdf
+
+```sql
+mysql -u golf -ppassword5
+
+USE evidenceplatform;
+
+UPDATE post SET platform = 'instagram' WHERE platform IS NULL;
+Query OK, 51711 rows affected (15.49 sec)
+Rows matched: 51711  Changed: 51711  Warnings: 0
+
+UPDATE post_archive SET platform = 'instagram' WHERE platform IS NULL;
+Query OK, 0 rows affected (8.94 sec)
+Rows matched: 0  Changed: 0  Warnings: 0
+
+UPDATE archive_session SET incorporation_status = 'pending' WHERE incorporation_status = 'parse_failed' OR incorporation_status = 'extract_failed' ;
+Query OK, 1 row affected (9.09 sec)
+Rows matched: 1  Changed: 1  Warnings: 0
+
 ```
 
