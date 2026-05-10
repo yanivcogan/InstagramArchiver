@@ -12,7 +12,6 @@ import hashlib
 import socket
 import ssl
 from urllib.parse import urlparse
-from hashlib import md5
 from pathlib import Path
 from typing import Optional
 
@@ -20,7 +19,6 @@ import base64
 
 import cv2
 import numpy as np
-import ppdeep
 import pyautogui
 import pygetwindow as gw
 import subprocess
@@ -37,8 +35,10 @@ from extractors.extract_videos import VideoAcquisitionConfig
 from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
+from utils.integrity import FileIntegrity, protect_file, seal_archive
 from utils.misc import get_my_public_ip, get_system_info
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
+from utils.par2_installer import ensure_par2_installed
 
 SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
@@ -66,11 +66,8 @@ class ArchiveSessionMetadata(BaseModel):
     warc_archive: Optional[Path] = None
     my_ip: Optional[str] = None
     platform: Optional[str] = None
-    har_hash: Optional[str] = None
-    har_fuzzy_hash: Optional[str] = None
-    sanitized_har_hash: Optional[str] = None
-    video_hash: Optional[str] = None
-    video_fuzzy_hash: Optional[str] = None
+    har_integrity: Optional[FileIntegrity] = None
+    video_integrity: Optional[FileIntegrity] = None
     domain_resolutions: Optional[dict] = None
     tls_cert: Optional[TLSCertInfo] = None
     browser_build_id: Optional[str] = None
@@ -199,8 +196,9 @@ Archiving was carried out from the IP address {metadata.my_ip}, and was done thr
 The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
 The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
 None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (branch {metadata.branch}, commit {metadata.commit_id})
-MD5 hash of the HAR file: {metadata.har_hash}
-MD5 hash of the screen recording: {metadata.video_hash}
+SHA-256 hash of the HAR file: {metadata.har_integrity.whole_file_hash if metadata.har_integrity else 'N/A'}
+SHA-256 hash of the screen recording: {metadata.video_integrity.whole_file_hash if metadata.video_integrity else 'N/A'}
+Each archived asset has a sidecar `<asset>.manifest.json` carrying its chunked-SHA-256 + PAR2 recovery metadata, and a sibling `<asset>.par2` recovery file (PAR2). A single archive-level `manifests.json` summary at the archive root commits to every per-asset manifest's SHA-256 and is OpenTimestamps-anchored at `manifests.json.ots` — that one timestamp transitively proves the existence of every chunk hash, whole-file hash, and PAR2 index hash in the archive at the time of sealing.
 At the time of archiving, the following domains were contacted and resolved to the following IP addresses: {metadata.domain_resolutions}
 The TLS certificate presented by www.instagram.com had SHA-256 fingerprint {metadata.tls_cert.fingerprint_sha256 if metadata.tls_cert else 'N/A'}, issued by {metadata.tls_cert.issuer if metadata.tls_cert else 'N/A'}, valid from {metadata.tls_cert.valid_from if metadata.tls_cert else 'N/A'} to {metadata.tls_cert.valid_to if metadata.tls_cert else 'N/A'}.
 OS and hardware details: {metadata.platform}
@@ -433,39 +431,23 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
                 print(f"FFmpeg re-encode failed, keeping raw recording: {e}")
                 shutil.move(str(raw_video_path), str(video_path))
 
-        # Hash and timestamp the screen recording
+        # Build chunked-hash manifest + PAR2 recovery + OTS for the screen recording
         if video_path.exists():
-            with open(video_path, 'rb') as f:
-                video_content = f.read()
-            metadata.video_hash = md5(video_content).hexdigest()
-            metadata.video_fuzzy_hash = ppdeep.hash(video_content)
-
-            video_hash_path = archive_dir / "video_hash.txt"
-            with open(video_hash_path, 'w', encoding='utf-8') as f:
-                f.write(metadata.video_hash)
             try:
-                timestamp_file(video_hash_path)
+                video_protection = protect_file(video_path)
+                metadata.video_integrity = video_protection.to_integrity(base_dir=archive_dir)
             except Exception as e:
                 traceback.print_exc()
-                print(f"❌ Error timestamping video hash file: {e}")
+                print(f"❌ Error protecting video file: {e}")
 
-            video_fuzzy_hash_path = archive_dir / "fuzzy_video_hash.txt"
-            with open(video_fuzzy_hash_path, 'w', encoding='utf-8') as f:
-                f.write(metadata.video_fuzzy_hash)
-            try:
-                timestamp_file(video_fuzzy_hash_path)
-            except Exception as e:
-                traceback.print_exc()
-                print(f"❌ Error timestamping video fuzzy hash file: {e}")
-
-        # Timestamp the frame hashes log
+        # Build chunked-hash manifest + PAR2 + OTS for the frame hashes log
         frame_hashes_path = archive_dir / "frame_hashes.jsonl"
         if frame_hashes_path.exists():
             try:
-                timestamp_file(frame_hashes_path)
+                protect_file(frame_hashes_path)
             except Exception as e:
                 traceback.print_exc()
-                print(f"❌ Error timestamping frame hashes file: {e}")
+                print(f"❌ Error protecting frame hashes file: {e}")
 
         # Inline response bodies from the har_workspace into a single self-contained
         # HAR at archive_dir / "archive.har", then remove the workspace directory.
@@ -480,48 +462,13 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
         metadata.domain_resolutions = resolve_har_domains(metadata.har_archive)
 
         metadata.archiving_finished_timestamp = datetime.datetime.now().isoformat()
-        # sanitized_har_path = archive_dir / "sanitized.har"
-
-        # sanitize_har(har_path, sanitized_har_path)
 
         try:
-            with open(har_path, 'rb') as file:
-                print("reading har file")
-                har_content = file.read()
-                print("generating md5 exact hash")
-                har_hash = md5(har_content).hexdigest()
-                print("generating fuzzy hash")
-                har_fuzzy_hash = ppdeep.hash(har_content)
-                metadata.har_hash = har_hash
-                metadata.har_fuzzy_hash = har_fuzzy_hash
-
-            # store and timestamp regular hash
-            har_hash_path = archive_dir / "har_hash.txt"
-            with open(har_hash_path, 'w', encoding='utf-8') as f:
-                f.write(metadata.har_hash)
-            try:
-                timestamp_file(har_hash_path)
-            except Exception as e:
-                traceback.print_exc()
-                print(f"❌ Error timestamping HAR hash file: {e}")
-
-            # store and timestamp fuzzy hash
-            har_fuzzy_hash_path = archive_dir / "fuzzy_har_hash.txt"
-            with open(har_fuzzy_hash_path, 'w', encoding='utf-8') as f:
-                f.write(metadata.har_fuzzy_hash)
-            try:
-                timestamp_file(har_fuzzy_hash_path)
-            except Exception as e:
-                traceback.print_exc()
-                print(f"❌ Error timestamping HAR fuzzy hash file: {e}")
+            har_protection = protect_file(har_path)
+            metadata.har_integrity = har_protection.to_integrity(base_dir=archive_dir)
         except Exception as e:
             traceback.print_exc()
-            print(f"❌ HAR hashing failed: {e}")
-
-        # with open(sanitized_har_path, 'rb') as file:
-        #     sanitized_har_content = file.read()
-        #     sanitized_har_hash = md5(sanitized_har_content).hexdigest()
-        #     metadata.sanitized_har_hash = sanitized_har_hash
+            print(f"❌ HAR integrity protection failed: {e}")
 
     except Exception as e:
         traceback.print_exc()
@@ -558,7 +505,20 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
             )
         )
     except Exception:
-        pass
+        traceback.print_exc()
+
+    # Seal the entire archive: a single manifests.json + .ots commits to every
+    # per-asset manifest hash. Replaces the per-asset .ots files used previously.
+    try:
+        seal = seal_archive(archive_dir)
+        print(
+            f"Sealed archive: {seal.manifest_count} manifest(s), "
+            f"summary={seal.summary_path.name}, "
+            f"ots={'yes' if seal.ots_path else 'MISSING'}"
+        )
+    except Exception as e:
+        traceback.print_exc()
+        print(f"❌ Error sealing archive: {e}")
 
     print(f"Content archived successfully in {archive_dir}")
 
@@ -659,6 +619,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
 if __name__ == "__main__":
     commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
+    ensure_par2_installed()
     selected_profile = select_profile()
     url = input("Enter the Instagram URL to archive: ")
     url = url.split("?igsh=")[0].strip().split("&igsh=")[0].strip()

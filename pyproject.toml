@@ -35,7 +35,6 @@ dependencies = [
     "pytz>=2025.2",
     # pinned: 4.13.0.92 lacks Linux wheels, waiting for fix https://pypi.org/project/opencv-python-headless/#history
     "opencv-python-headless==4.13.0.90",
-    "ppdeep>=20260221",
     "starlette>=0.50.0,<1.0.0",
     # capped: starlette 1.0 is a major version bump; review middleware API changes before upgrading,
     "warcio>=1.8.1",

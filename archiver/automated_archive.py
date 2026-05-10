@@ -31,6 +31,7 @@ from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
 from utils.misc import get_my_public_ip, get_system_info
+from utils.par2_installer import ensure_par2_installed
 
 load_dotenv()
 
@@ -345,6 +346,7 @@ def archive_followers_session(
 if __name__ == "__main__":
     commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
+    ensure_par2_installed()
     targets = read_targets_from_terminal()
     config = get_session_config()
     if config is None:
