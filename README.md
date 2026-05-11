@@ -282,17 +282,12 @@ mysql -u golf -ppassword5
 
 USE evidenceplatform;
 
+-- had to do for migration 019
 UPDATE post SET platform = 'instagram' WHERE platform IS NULL;
-Query OK, 51711 rows affected (15.49 sec)
-Rows matched: 51711  Changed: 51711  Warnings: 0
-
 UPDATE post_archive SET platform = 'instagram' WHERE platform IS NULL;
-Query OK, 0 rows affected (8.94 sec)
-Rows matched: 0  Changed: 0  Warnings: 0
 
+-- useful for rerunning
 UPDATE archive_session SET incorporation_status = 'pending' WHERE incorporation_status = 'parse_failed' OR incorporation_status = 'extract_failed' ;
-Query OK, 1 row affected (9.09 sec)
-Rows matched: 1  Changed: 1  Warnings: 0
 
 ```
 
