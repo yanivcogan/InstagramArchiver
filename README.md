@@ -117,7 +117,7 @@ mysqldump -u golf -pSEESECRETSBUILDWEBSERVER evidenceplatform > evidenceplatform
 #### 2. Backup Files and Archives
 ```bash
 # On production server
-# Excludes SQL dumps from the archive backup and raw images
+# Excludes SQL dumps from the archive backup
 
 # only takes 5 mins or so
 tar \
@@ -195,4 +195,99 @@ The `FILE_TOKEN_SECRET` is used to encrypt file access tokens:
 - Tokens cannot be reused for different files
 - Changing this secret will invalidate all existing file tokens
 - Rotate this secret periodically as part of security best practices
+
+
+## Prod DB
+
+sudo mysql
+use evidenceplatform
+select * from users
+
+## DEV
+
+```bash
+cd ~
+mysqldump -u charlie -ppassword evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
+
+uv run infra/migrate.py
+
+# restore
+mysql -u charlie -ppassword -e "DROP DATABASE evidenceplatform; CREATE DATABASE evidenceplatform;"
+mysql -u charlie -ppassword evidenceplatform < evidenceplatform_backup_20260501_052942.sql
+```
+
+~/evidenceplatform/archives folder contains raw archives
+ about 641GB 
+  but now yaniv is uploading straight to the server
+
+t:/ftk contains a backup from gdrive? 445GB
+
+g:/   800GB - this is linked via fstab tab to archives folder
+u:/archives2 - 208GB.. stuff that can't fit in above
+
+have got a backup of prod archives on H:/evidence-platform
+and db in t:/backups
+
+ "toga>=0.5.3",  
+removed from pyproject.toml
+used in archiver/profile_selection.py - a gui for doing profiles
+
+```bash
+uv run infra/migrate.py --one-at-a-time
+```
+
+## Exoscale
+
+```bash
+# dump prod on Azure
+ mysqldump -u golf -ppassword5 evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
+
+# copy prod to local filezilla
+# zip?
+#upload to Exoscale
+unzip
+
+tmux
+
+git pull
+uv sync --upgrade
+
+# restore
+mysql -u golf -ppassword5 -e "DROP DATABASE evidenceplatform; CREATE DATABASE evidenceplatform;"
+# mysql -u golf -ppassword5 evidenceplatform < evidenceplatform_backup_20260501_052942.sql
+mysql -u golf -ppassword5 evidenceplatform < evidenceplatform_backup_20260510_095026.sql
+
+# run migrations
+# started at 1238... finished at 1334
+uv run infra/migrate.py
+
+# backup db on exo
+mysqldump --no-tablespaces -u golf -ppassword5 evidenceplatform > evidenceplatform_backup_$(date +%Y%m%d_%H%M%S).sql
+
+
+mysql -u golf -ppassword5 evidenceplatform -e "UPDATE archive_session SET incorporation_status = 'pending'"
+
+# test for dependencies
+uv run db_loaders/archives_db_loader.py full --limit 1
+
+sudo apt-get install libgl1 libglib2.0-0 -y
+
+uv run db_loaders/archives_db_loader.py full
+
+```
+asdf
+
+```sql
+mysql -u golf -ppassword5
+
+USE evidenceplatform;
+
+-- had to do for migration 019
+UPDATE post SET platform = 'instagram' WHERE platform IS NULL;
+UPDATE post_archive SET platform = 'instagram' WHERE platform IS NULL;
+
+-- useful for rerunning
+UPDATE archive_session SET incorporation_status = 'pending' WHERE incorporation_status = 'parse_failed' OR incorporation_status = 'extract_failed' ;
+
+```
 

@@ -400,7 +400,7 @@ class AccountRelation(EntityBase):
     followed_account_id_on_platform: Optional[str] = Field(None, max_length=100)
     followed_account_url_suffix: Optional[str] = Field(None, max_length=200)
     followed_account_display_name: Optional[str] = Field(None, max_length=100)
-    platform: t_platform
+    platform: Optional[t_platform] = None
     relation_type: Optional[t_relation_type] = None
     data: Optional[Any] = None
 
