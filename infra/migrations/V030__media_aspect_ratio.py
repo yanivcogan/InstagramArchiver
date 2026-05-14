@@ -13,7 +13,7 @@ from PIL import Image
 
 from db_loaders.thumbnail_generator import LOCAL_THUMBNAILS_DIR_ALIAS, ROOT_THUMBNAILS
 
-BATCH_SIZE = 50
+BATCH_SIZE = 200
 
 
 def run(cnx):
