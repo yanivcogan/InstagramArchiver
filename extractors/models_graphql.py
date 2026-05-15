@@ -3,7 +3,7 @@ from typing import Optional, List, Any
 from pydantic import ConfigDict, BaseModel, Field
 
 from extractors.models import InstagramPost, HighlightsReel, StoryUser, HighlightsReelPageInfo, VideoVersion, \
-    InstagramImageVersions2, InstagramCarouselMedia
+    InstagramImageVersions2, InstagramCarouselMedia, HighlightsReelUser
 
 
 class ProfileTimelinePageInfo(BaseModel):
@@ -91,10 +91,6 @@ class ReelsMediaConnection(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-class HighlightsReelUser(BaseModel): # Placeholder
-    pk: str
-    id: str
-    model_config = ConfigDict(extra="allow")
 
 class GenericCursorInfo(BaseModel): # Placeholder
     end_cursor: Optional[str] = None

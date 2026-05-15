@@ -74,34 +74,54 @@ def _size_of(paths: list[Path]) -> Optional[int]:
     return total if saw_any else None
 
 
+def _upsert(
+    bucket: dict[str, DownloadLogEntry],
+    kind: Literal["video", "photo"],
+    asset_id: str,
+    local_files: list[Path],
+    source: str,
+) -> None:
+    if not asset_id or not local_files:
+        return
+    new_filenames = set(p.name for p in local_files)
+    existing = bucket.get(asset_id)
+    # Short-circuit when nothing has changed: the most common case during a
+    # re-extraction pass is "every asset is still on disk with the same name
+    # and source", so we'd otherwise stat every file and bump every timestamp
+    # only to write a log that's structurally identical.
+    if (
+        existing is not None
+        and existing.source == source
+        and new_filenames.issubset(existing.filenames)
+    ):
+        return
+    size = _size_of(local_files)
+    now = _now()
+    if existing is None:
+        bucket[asset_id] = DownloadLogEntry(
+            id=asset_id,
+            kind=kind,
+            filenames=sorted(new_filenames),
+            source=source,
+            first_acquired_at=now,
+            last_acquired_at=now,
+            size_bytes=size,
+        )
+        return
+    existing.last_acquired_at = now
+    existing.filenames = sorted(set(existing.filenames) | new_filenames)
+    existing.source = source
+    if size is not None:
+        existing.size_bytes = size
+
+
 def upsert_video(
     log: DownloadLog,
     asset_id: str,
     local_files: list[Path],
     source: VideoSource,
 ) -> None:
-    if not asset_id or not local_files:
-        return
-    now = _now()
-    filenames = sorted({p.name for p in local_files})
-    existing = log.videos.get(asset_id)
-    size = _size_of(local_files)
-    if existing is None:
-        log.videos[asset_id] = DownloadLogEntry(
-            id=asset_id,
-            kind="video",
-            filenames=filenames,
-            source=source,
-            first_acquired_at=now,
-            last_acquired_at=now,
-            size_bytes=size,
-        )
-    else:
-        existing.last_acquired_at = now
-        existing.filenames = sorted(set(existing.filenames) | set(filenames))
-        existing.source = source
-        if size is not None:
-            existing.size_bytes = size
+    _upsert(log.videos, "video", asset_id, local_files, source)
 
 
 def upsert_photo(
@@ -110,25 +130,4 @@ def upsert_photo(
     local_files: list[Path],
     source: PhotoSource,
 ) -> None:
-    if not asset_id or not local_files:
-        return
-    now = _now()
-    filenames = sorted({p.name for p in local_files})
-    existing = log.photos.get(asset_id)
-    size = _size_of(local_files)
-    if existing is None:
-        log.photos[asset_id] = DownloadLogEntry(
-            id=asset_id,
-            kind="photo",
-            filenames=filenames,
-            source=source,
-            first_acquired_at=now,
-            last_acquired_at=now,
-            size_bytes=size,
-        )
-    else:
-        existing.last_acquired_at = now
-        existing.filenames = sorted(set(existing.filenames) | set(filenames))
-        existing.source = source
-        if size is not None:
-            existing.size_bytes = size
+    _upsert(log.photos, "photo", asset_id, local_files, source)

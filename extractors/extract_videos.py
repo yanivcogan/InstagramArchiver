@@ -824,6 +824,7 @@ class VideoAcquisitionConfig(BaseModel):
     #   "skip"                     — don't acquire at all.
     #   "redownload"               — ignore the log entry; treat as fresh
     #       acquisition (full network fetch allowed, subject to the other flags).
+    # The default keeps user deletions sticky across re-extraction runs.
     on_logged_missing: OnLoggedMissingVideo = "reassemble_from_har_only"
 
 

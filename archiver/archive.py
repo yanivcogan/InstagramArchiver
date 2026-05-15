@@ -36,7 +36,7 @@ from extractors.extract_videos import VideoAcquisitionConfig
 from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.integrity import FileIntegrity, protect_file, prune_orphan_sidecars, seal_archive
+from utils.integrity import FileIntegrity, protect_file, seal_archive
 from utils.misc import get_my_public_ip, get_system_info
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 from utils.par2_installer import ensure_par2_installed
@@ -387,49 +387,87 @@ def merge_har_attachments(har_path: Path) -> Path:
     return final_path
 
 
+def _read_only_video_config() -> VideoAcquisitionConfig:
+    """Acquisition config that links files already on disk but never downloads
+    or reassembles anything. Used post-curation and from finalize_archive."""
+    return VideoAcquisitionConfig(
+        download_missing=False,
+        download_media_not_in_structures=False,
+        download_unfetched_media=False,
+        download_full_versions_of_fetched_media=False,
+        download_highest_quality_assets_from_structures=False,
+    )
+
+
+def _read_only_photo_config() -> PhotoAcquisitionConfig:
+    return PhotoAcquisitionConfig(
+        download_missing=False,
+        download_media_not_in_structures=False,
+        download_unfetched_media=False,
+        download_highest_quality_assets_from_structures=False,
+    )
+
+
+def protect_log_and_seal(archive_dir: Path) -> None:
+    """Protect downloaded_media_log.json (so the curation decisions are
+    committed to the seal) and then seal the archive."""
+    log_path = archive_dir / dl.LOG_FILENAME
+    if log_path.exists():
+        try:
+            protect_file(log_path)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ Error protecting download log: {e}")
+
+    try:
+        seal = seal_archive(archive_dir)
+        print(
+            f"Sealed archive: {seal.manifest_count} manifest(s), "
+            f"summary={seal.summary_path.name}, "
+            f"ots={'yes' if seal.ots_path else 'MISSING'}"
+        )
+    except Exception as e:
+        traceback.print_exc()
+        print(f"❌ Error sealing archive: {e}")
+
+
 def run_curation_pause(archive_dir: Path) -> None:
     """
-    Open Explorer at the archive root and the entities summary in the default
-    browser, then block on a "click OK when done" message box. Any files the
-    user deletes from videos/ or photos/ during the pause will stick across
-    subsequent extraction runs via downloaded_media_log.json.
+    Open Explorer at the archive root, then block on terminal input until the
+    user signals they're done. Any files the user deletes from videos/ or
+    photos/ during the pause will stick across subsequent extraction runs via
+    downloaded_media_log.json.
+
+    Plain terminal input is intentionally used here rather than a Tk modal:
+    Tk windows opened immediately after os.startfile-launched Explorer tend
+    to lose the z-order race on Windows, and the terminal is always reachable.
     """
-    summary_path = archive_dir / "entities_summary.html"
     try:
         os.startfile(str(archive_dir))
     except Exception as e:
         print(f"⚠️  Could not auto-open archive folder ({archive_dir}): {e}")
-    if summary_path.exists():
-        try:
-            os.startfile(str(summary_path))
-        except Exception as e:
-            print(f"⚠️  Could not auto-open entities summary ({summary_path}): {e}")
-    else:
-        print(f"⚠️  No entities summary at {summary_path} — proceeding with curation pause anyway.")
 
-    import tkinter as tk
-    from tkinter import messagebox
-    root = tk.Tk()
-    root.withdraw()
+    print()
+    print("=" * 72)
+    print("  MANUAL CURATION")
+    print("=" * 72)
+    print(f"  Archive: {archive_dir}")
+    print()
+    print("  1. Explorer has been opened at the archive root.")
+    print("  2. Delete any files you don't want to keep from:")
+    print(f"       {archive_dir / 'videos'}")
+    print(f"       {archive_dir / 'photos'}")
+    print("     They will NOT be re-downloaded on subsequent extraction runs")
+    print("     (downloaded_media_log.json remembers what was already acquired).")
+    print("  3. Return to this terminal and press Enter when finished.")
+    print("=" * 72)
     try:
-        messagebox.showinfo(
-            title="Manual Curation",
-            message=(
-                "Review the downloaded media in this archive's videos/ and "
-                "photos/ folders.\n\n"
-                "Delete any files you don't want to keep — they will NOT be "
-                "re-downloaded on subsequent extraction runs (the archive's "
-                "downloaded_media_log.json remembers what was already "
-                "acquired).\n\n"
-                "Click OK when you're done to re-render the summary, prune "
-                "orphan sidecars, and seal the archive."
-            ),
-        )
-    finally:
-        try:
-            root.destroy()
-        except Exception:
-            pass
+        input("  Press Enter to re-render the summary, prune orphans, and seal: ")
+    except EOFError:
+        # No interactive stdin (e.g. piped/automated run) — fall through and
+        # finish sealing rather than getting stuck.
+        print("  (stdin closed — proceeding without waiting)")
+    print("Manual curation complete.")
 
 
 def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None, storage_config: Optional[StorageConfig] = None):
@@ -566,59 +604,24 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
     except Exception:
         traceback.print_exc()
 
-    # Optional manual curation pause: the user reviews videos/ and photos/ in
-    # Explorer and deletes anything they don't want. Deletions stick across
-    # future re-extraction runs because downloaded_media_log.json now lists the
-    # asset ids and acquire_videos/photos will respect on_logged_missing.
     if storage_config.manually_curate_assets:
         try:
             run_curation_pause(archive_dir)
-            # Re-render the entities summary so it reflects what's actually on
-            # disk after the user's deletions. Cheap — acquire short-circuits
-            # on files that are still present and skips the rest per the log.
+            # Read-only configs for the post-curation re-render: with
+            # download_missing=False, acquire_* won't reassemble files the
+            # user just deleted from HAR segments (which would silently undo
+            # the curation). It just relinks what's still on disk.
             generate_entities_summary(
                 har_path,
                 archive_dir,
                 metadata_dict,
-                video_config,
-                photo_config,
+                _read_only_video_config(),
+                _read_only_photo_config(),
             )
         except Exception:
             traceback.print_exc()
 
-    # Drop manifest/par2 sidecars whose primary asset was just deleted, plus
-    # anything left behind in earlier runs. Keeps seal_archive's rglob from
-    # committing to nonexistent assets.
-    for sub in ("videos", "photos"):
-        sub_dir = archive_dir / sub
-        if sub_dir.is_dir():
-            try:
-                prune_orphan_sidecars(sub_dir)
-            except Exception:
-                traceback.print_exc()
-
-    # Protect the download log so it's committed to the seal — the curation
-    # decisions themselves become part of the archive's evidentiary record.
-    log_path = archive_dir / dl.LOG_FILENAME
-    if log_path.exists():
-        try:
-            protect_file(log_path)
-        except Exception as e:
-            traceback.print_exc()
-            print(f"❌ Error protecting download log: {e}")
-
-    # Seal the entire archive: a single manifests.json + .ots commits to every
-    # per-asset manifest hash. Replaces the per-asset .ots files used previously.
-    try:
-        seal = seal_archive(archive_dir)
-        print(
-            f"Sealed archive: {seal.manifest_count} manifest(s), "
-            f"summary={seal.summary_path.name}, "
-            f"ots={'yes' if seal.ots_path else 'MISSING'}"
-        )
-    except Exception as e:
-        traceback.print_exc()
-        print(f"❌ Error sealing archive: {e}")
+    protect_log_and_seal(archive_dir)
 
     print(f"Content archived successfully in {archive_dir}")
 

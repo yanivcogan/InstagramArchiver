@@ -54,7 +54,8 @@ class PhotoAcquisitionConfig(BaseModel):
     download_highest_quality_assets_from_structures: bool = True
     # Mirrors VideoAcquisitionConfig.on_logged_missing. Photos have no
     # reassembly step (they're atomic), so "use_har_bytes_only" simply means
-    # `save_fetched_photo` is permitted but no CDN fetch.
+    # `save_fetched_photo` is permitted but no CDN fetch. The default keeps
+    # user deletions sticky across re-extraction runs.
     on_logged_missing: OnLoggedMissingPhoto = "use_har_bytes_only"
 
 
