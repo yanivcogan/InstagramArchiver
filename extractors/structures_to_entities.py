@@ -9,6 +9,7 @@ from urllib import parse as urllib_parse
 import ijson
 from pydantic import BaseModel
 
+from archiver.summarizers import download_log as dl
 from extractors.entity_types import Post, Account, Media, \
     ExtractedEntitiesFlattened, Comment, Like, AccountRelation, \
     TaggedAccount, ExtractedEntitiesNested, AccountAndAssociatedEntities, PostAndAssociatedEntities, \
@@ -127,12 +128,18 @@ def extract_data_from_har(
 
     structures, har_video_maps, har_photo_maps = _scan_har_once(har_path)
 
+    # downloaded_media_log.json carries acquisition history across re-extraction
+    # runs. Pass the live object into both acquire_* calls so they can both
+    # consult and update it, then persist once at the end.
+    download_log = dl.load(archive_dir)
+
     videos = acquire_videos(
         har_path,
         archive_dir / "videos",
         structures=structures,
         config=video_acquisition_config,
         har_video_maps=har_video_maps,
+        download_log=download_log,
     )
 
     photos = acquire_photos(
@@ -141,7 +148,10 @@ def extract_data_from_har(
         structures=structures,
         config=photo_acquisition_config,
         har_photo_maps=har_photo_maps,
+        download_log=download_log,
     )
+
+    dl.save(archive_dir, download_log)
 
     return ExtractedHarData(
         structures=structures,

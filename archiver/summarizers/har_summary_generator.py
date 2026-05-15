@@ -288,6 +288,15 @@ body {
 video.media-preview, audio.media-preview { width: 100%; height: auto; }
 audio.media-preview { background: var(--surface-3); }
 
+.media-filename {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    word-break: break-all;
+    line-height: 1.4;
+    padding: 2px 0;
+}
+
 .media-actions {
     display: flex; gap: 6px; flex-wrap: wrap;
     align-items: center;
@@ -721,6 +730,15 @@ def summarize_media(media: MediaAndAssociatedEntities, soup: BeautifulSoup) -> T
         preview.string = "Unsupported media"
     preview['class'] = "media-preview"
     item.append(preview)
+
+    # Filename label — exposes the on-disk file name so the user can
+    # cross-reference Explorer when manually curating which files to delete.
+    if media.local_url:
+        from pathlib import PurePosixPath
+        filename_div = soup.new_tag("div")
+        filename_div['class'] = "media-filename"
+        filename_div.string = PurePosixPath(media.local_url).name
+        item.append(filename_div)
 
     actions = soup.new_tag("div")
     actions['class'] = "media-actions"

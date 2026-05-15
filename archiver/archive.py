@@ -29,13 +29,14 @@ from pydantic import BaseModel
 from archiver.dialogs import show_dialog_form, DialogForm, FormFieldText, FormFieldBool, FormSection
 from archiver.profile_registration import Profile
 from archiver.profile_selection import select_profile
+from archiver.summarizers import download_log as dl
 from archiver.summarizers.har_summary_generator import generate_entities_summary
 from extractors.extract_photos import PhotoAcquisitionConfig
 from extractors.extract_videos import VideoAcquisitionConfig
 from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
-from utils.integrity import FileIntegrity, protect_file, seal_archive
+from utils.integrity import FileIntegrity, protect_file, prune_orphan_sidecars, seal_archive
 from utils.misc import get_my_public_ip, get_system_info
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
 from utils.par2_installer import ensure_par2_installed
@@ -216,6 +217,7 @@ class StorageConfig(BaseModel):
     p_download_media_not_in_structures: bool
     p_download_unfetched_media: bool
     p_download_highest_quality_assets_from_structures: bool
+    manually_curate_assets: bool = False
 
 
 def get_storage_config() -> Optional[StorageConfig]:
@@ -282,6 +284,16 @@ def get_storage_config() -> Optional[StorageConfig]:
                             title="Download Highest Quality Assets from Structures (if set to false, the videos will be downloaded in the quality they were displayed in during the session)",
                             key="p_download_highest_quality_assets_from_structures",
                             default_value=True
+                        )
+                    ]
+                ),
+                FormSection(
+                    title="Post-Archiving Review",
+                    fields=[
+                        FormFieldBool(
+                            title="Pause to let me review the downloaded media in Explorer before sealing (delete unwanted files in videos/ or photos/; they won't be re-downloaded on subsequent runs)",
+                            key="manually_curate_assets",
+                            default_value=False
                         )
                     ]
                 ),
@@ -373,6 +385,51 @@ def merge_har_attachments(har_path: Path) -> Path:
     shutil.rmtree(workspace_dir)
     print("HAR merge complete.")
     return final_path
+
+
+def run_curation_pause(archive_dir: Path) -> None:
+    """
+    Open Explorer at the archive root and the entities summary in the default
+    browser, then block on a "click OK when done" message box. Any files the
+    user deletes from videos/ or photos/ during the pause will stick across
+    subsequent extraction runs via downloaded_media_log.json.
+    """
+    summary_path = archive_dir / "entities_summary.html"
+    try:
+        os.startfile(str(archive_dir))
+    except Exception as e:
+        print(f"⚠️  Could not auto-open archive folder ({archive_dir}): {e}")
+    if summary_path.exists():
+        try:
+            os.startfile(str(summary_path))
+        except Exception as e:
+            print(f"⚠️  Could not auto-open entities summary ({summary_path}): {e}")
+    else:
+        print(f"⚠️  No entities summary at {summary_path} — proceeding with curation pause anyway.")
+
+    import tkinter as tk
+    from tkinter import messagebox
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        messagebox.showinfo(
+            title="Manual Curation",
+            message=(
+                "Review the downloaded media in this archive's videos/ and "
+                "photos/ folders.\n\n"
+                "Delete any files you don't want to keep — they will NOT be "
+                "re-downloaded on subsequent extraction runs (the archive's "
+                "downloaded_media_log.json remembers what was already "
+                "acquired).\n\n"
+                "Click OK when you're done to re-render the summary, prune "
+                "orphan sidecars, and seal the archive."
+            ),
+        )
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
 
 
 def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: Path, metadata: ArchiveSessionMetadata, stop_event=None, storage_config: Optional[StorageConfig] = None):
@@ -485,27 +542,70 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
     #     generate_summary(har_path, archive_dir, metadata_dict, download_full_video=True)
     # except Exception:
     #     pass
+    video_config = VideoAcquisitionConfig(
+        download_missing=v_download_missing,
+        download_media_not_in_structures=v_download_media_not_in_structures,
+        download_unfetched_media=v_download_unfetched_media,
+        download_full_versions_of_fetched_media=v_download_full_versions_of_fetched_media,
+        download_highest_quality_assets_from_structures=v_download_highest_quality_assets_from_structures,
+    )
+    photo_config = PhotoAcquisitionConfig(
+        download_missing=p_download_missing,
+        download_media_not_in_structures=p_download_media_not_in_structures,
+        download_unfetched_media=p_download_unfetched_media,
+        download_highest_quality_assets_from_structures=p_download_highest_quality_assets_from_structures,
+    )
     try:
         generate_entities_summary(
             har_path,
             archive_dir,
             metadata_dict,
-            VideoAcquisitionConfig(
-                download_missing=v_download_missing,
-                download_media_not_in_structures=v_download_media_not_in_structures,
-                download_unfetched_media=v_download_unfetched_media,
-                download_full_versions_of_fetched_media=v_download_full_versions_of_fetched_media,
-                download_highest_quality_assets_from_structures=v_download_highest_quality_assets_from_structures
-            ),
-            PhotoAcquisitionConfig(
-                download_missing=p_download_missing,
-                download_media_not_in_structures=p_download_media_not_in_structures,
-                download_unfetched_media=p_download_unfetched_media,
-                download_highest_quality_assets_from_structures=p_download_highest_quality_assets_from_structures
-            )
+            video_config,
+            photo_config,
         )
     except Exception:
         traceback.print_exc()
+
+    # Optional manual curation pause: the user reviews videos/ and photos/ in
+    # Explorer and deletes anything they don't want. Deletions stick across
+    # future re-extraction runs because downloaded_media_log.json now lists the
+    # asset ids and acquire_videos/photos will respect on_logged_missing.
+    if storage_config.manually_curate_assets:
+        try:
+            run_curation_pause(archive_dir)
+            # Re-render the entities summary so it reflects what's actually on
+            # disk after the user's deletions. Cheap — acquire short-circuits
+            # on files that are still present and skips the rest per the log.
+            generate_entities_summary(
+                har_path,
+                archive_dir,
+                metadata_dict,
+                video_config,
+                photo_config,
+            )
+        except Exception:
+            traceback.print_exc()
+
+    # Drop manifest/par2 sidecars whose primary asset was just deleted, plus
+    # anything left behind in earlier runs. Keeps seal_archive's rglob from
+    # committing to nonexistent assets.
+    for sub in ("videos", "photos"):
+        sub_dir = archive_dir / sub
+        if sub_dir.is_dir():
+            try:
+                prune_orphan_sidecars(sub_dir)
+            except Exception:
+                traceback.print_exc()
+
+    # Protect the download log so it's committed to the seal — the curation
+    # decisions themselves become part of the archive's evidentiary record.
+    log_path = archive_dir / dl.LOG_FILENAME
+    if log_path.exists():
+        try:
+            protect_file(log_path)
+        except Exception as e:
+            traceback.print_exc()
+            print(f"❌ Error protecting download log: {e}")
 
     # Seal the entire archive: a single manifests.json + .ots commits to every
     # per-asset manifest hash. Replaces the per-asset .ots files used previously.
