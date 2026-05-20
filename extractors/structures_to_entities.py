@@ -395,6 +395,10 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
     for edge in structure.edges:
         highlight = edge.node
         highlight_id = highlight.id.split(":")[-1]
+        user = highlight.user
+        username = user.username
+        user_id = user.id or user.user_id
+        is_24_hours_story = username if highlight_id == user_id else highlight_id
         for item in highlight.items:
             account = Account(
                 id_on_platform=highlight.user.id,
@@ -405,9 +409,10 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
                 platform="instagram"
             )
             extracted_accounts.append(account)
+            url_suffix = f"stories/{username}/{item.pk or item.id}/" if is_24_hours_story else f"s/{highlight_id}/?story_media_id={item.pk or item.id}"
             post = Post(
                 id_on_platform=item.pk or item.id,
-                url_suffix=f"s/{highlight_id}/?story_media_id={item.pk or item.id}",
+                url_suffix=url_suffix,
                 account_id_on_platform=account.id_on_platform,
                 account_url_suffix=account.url_suffix,
                 publication_date=datetime.fromtimestamp(item.taken_at, timezone.utc),
