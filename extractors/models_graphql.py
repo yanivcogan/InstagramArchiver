@@ -60,7 +60,7 @@ class ReelsMediaCoverMediaCroppedImageVersion(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 class ReelsMediaCoverMedia(BaseModel):
-    cropped_image_version: ReelsMediaCoverMediaCroppedImageVersion
+    cropped_image_version: Optional[ReelsMediaCoverMediaCroppedImageVersion] = None
     full_image_version: Optional[Any] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
@@ -71,7 +71,7 @@ class ReelsMediaNode(BaseModel):
     user: StoryUser
     seen: Optional[int] = None
     reel_type: str
-    cover_media: ReelsMediaCoverMedia
+    cover_media: Optional[ReelsMediaCoverMedia] = None
     title: Optional[str] = None
     latest_reel_media: Optional[int] = None
     muted: Optional[Any] = None
