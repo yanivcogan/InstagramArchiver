@@ -7,7 +7,6 @@ from typing import Optional
 import zstandard as zstd
 
 from root_anchor import ROOT_DIR
-from utils.compression.zpaq import compress as zpaq_compress, decompress as zpaq_decompress
 from utils.integrity.par2 import create_recovery
 
 BATCH_SIZE_LIMIT = 6000 * 1024 * 1024
@@ -58,9 +57,9 @@ def package_archives_zstd(max_batches: int = 0):
         current_batch.append(a)
         current_batch_size += a_size
         if current_batch_size >= BATCH_SIZE_LIMIT or i == (len(to_archive) - 1):
-            print("starting new batch")
+            print("starting new zstd batch")
             tar_path = root_zips / f'batch_{batch_counter}.tar'
-            zpaq_path = root_zips / f'batch_{batch_counter}.tar.zpaq'
+            zst_path = root_zips / f'batch_{batch_counter}.tar.zst'
             bundle_path = root_zips / f'batch_{batch_counter}_with_par2.tar'
             with tar_path.open('wb') as tar_file:
                 with tarfile.open(fileobj=tar_file, mode='w') as tar:
@@ -68,20 +67,23 @@ def package_archives_zstd(max_batches: int = 0):
                         print(f"adding {p.name}")
                         tar.add(p, arcname=p.name)
             print(f"Created tar file for batch {batch_counter} with size {os.path.getsize(tar_path)} bytes")
-            print(f"Compressing batch {batch_counter} to zpaq (-m5 -t1)")
-            zpaq_compress(tar_path, zpaq_path, level=5, threads=1)
+            with tar_path.open('rb') as tar_file:
+                cctx = zstd.ZstdCompressor(level=22)
+                with zst_path.open('wb') as zst_file:
+                    print(f"Compressing batch {batch_counter} to zstd")
+                    cctx.copy_stream(tar_file, zst_file)
             os.remove(tar_path)
 
             print(f"Generating PAR2 recovery for batch {batch_counter} (10% redundancy)")
-            par2_files = create_recovery(zpaq_path, redundancy_pct=10)
+            par2_files = create_recovery(zst_path, redundancy_pct=10)
 
-            print(f"Bundling {zpaq_path.name} + {len(par2_files)} par2 files into {bundle_path.name}")
+            print(f"Bundling {zst_path.name} + {len(par2_files)} par2 files into {bundle_path.name}")
             with tarfile.open(bundle_path, mode='w') as bundle:
-                bundle.add(zpaq_path, arcname=zpaq_path.name)
+                bundle.add(zst_path, arcname=zst_path.name)
                 for p in par2_files:
                     bundle.add(p, arcname=p.name)
 
-            os.remove(zpaq_path)
+            os.remove(zst_path)
             for p in par2_files:
                 os.remove(p)
 
@@ -109,12 +111,6 @@ def decompress_zst(zstd_file: Path, output_dir: Optional[Path]):
                     break
                 out_f.write(chunk)
     print(f"Decompressed {zstd_file.name} to {output_dir}")
-
-
-def decompress_zpaq(zpaq_file: Path, output_dir: Optional[Path]):
-    target_dir: Path = output_dir if output_dir is not None else zpaq_file.parent
-    zpaq_decompress(zpaq_file, target_dir)
-    print(f"Decompressed {zpaq_file.name} to {target_dir}")
 
 
 def clean_already_packaged_archives_zstd():
