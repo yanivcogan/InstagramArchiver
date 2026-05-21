@@ -174,12 +174,25 @@ def extract_photos_from_structures(structures: list[StructureType]) -> list[Phot
                         media = edge.node.media
                         if media.image_versions2 and media.image_versions2.candidates:
                             register(media.pk, media.image_versions2.candidates[0].url)
+                # post_shortcode (single-post payload arriving via graphql)
+                if s.post_shortcode:
+                    for post in s.post_shortcode.items:
+                        if post.image_versions2 and post.image_versions2.candidates:
+                            register(post.pk, post.image_versions2.candidates[0].url)
+                        if post.carousel_media:
+                            for c in post.carousel_media:
+                                if c.image_versions2 and c.image_versions2.candidates:
+                                    register(c.pk, c.image_versions2.candidates[0].url)
 
             elif isinstance(s, ApiV1Response):
                 if s.media_info:
                     for item in s.media_info.items:
                         if item.image_versions2 and item.image_versions2.candidates:
                             register(item.pk, item.image_versions2.candidates[0].url)
+                        if item.carousel_media:
+                            for c in item.carousel_media:
+                                if c.image_versions2 and c.image_versions2.candidates:
+                                    register(c.pk, c.image_versions2.candidates[0].url)
 
             elif isinstance(s, PageResponse):
                 if s.posts:

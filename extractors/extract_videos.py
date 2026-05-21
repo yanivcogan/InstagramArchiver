@@ -231,10 +231,17 @@ def _build_filename_xpv_map(structures: list[StructureType]) -> dict[str, str]:
                 for edge in s.clips_user_connection.edges:
                     m = edge.node.media
                     _process(m.video_versions, getattr(m, 'video_dash_manifest', None), m.pk)
+            if s.post_shortcode:
+                for post in s.post_shortcode.items:
+                    _process(post.video_versions, getattr(post, 'video_dash_manifest', None), post.pk)
+                    for ci in (post.carousel_media or []):
+                        _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
         elif isinstance(s, ApiV1Response):
             if s.media_info:
                 for item in s.media_info.items:
                     _process(item.video_versions, getattr(item, 'video_dash_manifest', None), item.pk)
+                    for ci in (item.carousel_media or []):
+                        _process(ci.video_versions, getattr(ci, 'video_dash_manifest', None), ci.pk)
         elif isinstance(s, PageResponse):
             if s.posts:
                 for post in s.posts.items:
@@ -709,10 +716,19 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
             if s.clips_user_connection:
                 for edge in s.clips_user_connection.edges:
                     _store(edge.node.media.pk, edge.node.media.video_versions, edge.node.media)
+            if s.post_shortcode:
+                for post in s.post_shortcode.items:
+                    _store(post.pk, post.video_versions, post)
+                    if post.carousel_media:
+                        for carousel_item in post.carousel_media:
+                            _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
         elif isinstance(s, ApiV1Response):
             if s.media_info:
                 for item in s.media_info.items:
                     _store(item.pk, item.video_versions, item)
+                    if item.carousel_media:
+                        for carousel_item in item.carousel_media:
+                            _store(carousel_item.pk, carousel_item.video_versions, carousel_item)
         elif isinstance(s, PageResponse):
             if s.posts:
                 for post in s.posts.items:
