@@ -122,6 +122,68 @@ def resolve_har_domains(har_path: Path) -> dict:
     return resolutions
 
 
+def _finish_button_window(finish_event: threading.Event, shutdown_event: threading.Event) -> None:
+    """Tiny always-on-top window with a single 'Finish Archiving' button.
+
+    Clicking it (or closing the window) sets finish_event so the main loop can
+    call context.close() while the browser is still alive — the only reliable
+    way to flush the HAR. shutdown_event is the reverse channel: the main thread
+    sets it when archiving ends via some other path (e.g. user closed Firefox
+    via the X button), so this window tears itself down.
+
+    Runs in a worker thread. Tkinter from non-main threads is undefined on macOS
+    but works on Windows for a single-window case like this.
+    """
+    import tkinter as tk
+    try:
+        root = tk.Tk()
+    except Exception as e:
+        print(f"Finish-button window failed to start: {e}")
+        return
+    root.title("Archiver")
+    root.attributes("-topmost", True)
+    root.resizable(False, False)
+
+    win_w, win_h = 240, 110
+    screen_w = root.winfo_screenwidth()
+    # Top-right corner. The screen recorder only captures the Firefox window
+    # region (see screen_record), so anything outside that rectangle stays out
+    # of the recording. User can drag this window if it overlaps Firefox.
+    root.geometry(f"{win_w}x{win_h}+{screen_w - win_w - 20}+20")
+
+    label = tk.Label(
+        root,
+        text="Click when done navigating.\nSafely flushes the HAR before close.",
+        font=("Arial", 9),
+        justify="center",
+    )
+    label.pack(pady=(8, 4))
+
+    def on_finish():
+        finish_event.set()
+
+    btn = tk.Button(root, text="Finish Archiving", command=on_finish, height=2)
+    btn.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+
+    # Window X button acts as "Finish" too — safer than silently dismissing it.
+    root.protocol("WM_DELETE_WINDOW", on_finish)
+
+    def poll():
+        if shutdown_event.is_set() or finish_event.is_set():
+            try:
+                root.destroy()
+            except Exception:
+                pass
+            return
+        root.after(100, poll)
+
+    root.after(100, poll)
+    try:
+        root.mainloop()
+    except Exception:
+        pass
+
+
 def screen_record(output_path, stop_event, frame_hashes_path=None):
     # Screen recording using OpenCV, only capturing the Playwright browser window
     window_keywords = ("Nightly")
@@ -649,7 +711,10 @@ def archive_instagram_content(profile: Profile, target_url: str):
         storage_state = json.load(f)
 
     stop_event = threading.Event()
+    finish_event = threading.Event()
+    button_shutdown_event = threading.Event()
     recording_thread = None
+    finish_button_thread = None
     video_path = archive_dir / "screen_recording.mp4"
     metadata = ArchiveSessionMetadata(
         commit_id=commit_id,
@@ -686,19 +751,47 @@ def archive_instagram_content(profile: Profile, target_url: str):
             )
             recording_thread.start()
 
+            finish_button_thread = threading.Thread(
+                target=_finish_button_window,
+                args=(finish_event, button_shutdown_event),
+                daemon=True,
+            )
+            finish_button_thread.start()
+
             try:
                 # Navigate to the target URL
                 page.goto(target_url)
 
-                # Allow user to do whatever they want
+                # Allow user to do whatever they want. The session ends when either:
+                #   (a) user clicks "Finish Archiving" on the floating window → finish_event
+                #       This is the safe path: we call context.close() while the browser is
+                #       still alive, so Playwright's Node side gets a chance to flush the
+                #       HAR's temp file to the destination cleanly.
+                #   (b) user closes the Firefox window via the X button → page.is_closed()
+                #       Best-effort: works ~95% of the time, but can race with Playwright's
+                #       HAR finalization and leave us with no HAR (the temp file gets
+                #       cleaned before the copy). The "Finish Archiving" button is the
+                #       reliable alternative for this case.
                 print(f"Archiving content from {target_url}")
-                page.wait_for_event("close", timeout=0)
+                print("Click 'Finish Archiving' on the floating window when done (recommended), "
+                      "or close the Firefox window.")
+                while True:
+                    if finish_event.is_set():
+                        print("'Finish Archiving' clicked — closing browser cleanly...")
+                        break
+                    if page.is_closed() or not browser.is_connected():
+                        print("Browser/page closed by user, wrapping up archiving session...")
+                        break
+                    time.sleep(0.2)
             except Exception as e:
                 if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
                     print("Browser shutdown detected, wrapping up archiving session...")
                 else:
                     print(f"Error during archiving: {e}")
             finally:
+                # Tear down the Finish button window if it's still up.
+                button_shutdown_event.set()
+
                 # Close browser inside the sync_playwright context. Both calls may fail
                 # if the browser already disconnected — that's expected and safe.
                 try:
@@ -714,6 +807,13 @@ def archive_instagram_content(profile: Profile, target_url: str):
         # crashed (e.g. due to an unhandled Node.js error during HAR flush). We
         # catch it here so that post-processing always runs.
         print(f"Playwright session ended with an error: {e}")
+
+    # Make sure the finish-button Tk window is fully torn down before
+    # finish_recording opens its own Tk dialog — two live Tk roots in the same
+    # process can deadlock or misroute events.
+    button_shutdown_event.set()
+    if finish_button_thread is not None and finish_button_thread.is_alive():
+        finish_button_thread.join(timeout=2)
 
     finish_recording(recording_thread, archive_dir, metadata, stop_event)
 
