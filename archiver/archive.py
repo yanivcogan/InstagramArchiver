@@ -50,7 +50,7 @@ load_dotenv()
 # Locking the recording dimensions deterministically so Playwright's per-page
 # MP4 (and the network video frames it embeds) isn't cropped by whatever the
 # context's default happens to be on a given Playwright/Firefox version.
-_VIEWPORT = {"width": 1618, "height": 1014}
+_VIEWPORT = {"width": 1280, "height": 720}
 
 # Navigating the main frame to this URL is the "safe finish" signal. It tells
 # the archiver "I'm done; finalize the HAR now, while Firefox is still alive."
