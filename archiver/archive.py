@@ -11,7 +11,7 @@ import traceback
 import hashlib
 import socket
 import ssl
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Optional
 
@@ -45,57 +45,6 @@ SCREEN_SIZE = tuple(pyautogui.size())
 commit_id = None
 branch = None
 load_dotenv()
-
-
-# Static HTML shown in the control tab. The user closes this tab to finish
-# the archiving session; that yields a page-close event while Firefox is
-# still alive, which is the precondition for context.close() to finalize
-# the HAR cleanly (no race against the dying browser process — the failure
-# mode that caused the original "temp HAR not found" Node crash).
-# No JavaScript, no external assets, no network requests — pure static
-# content delivered via a data: URL so the affidavit can still assert
-# nothing was injected into the recorded session.
-_CONTROL_TAB_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Close this tab to finish archiving</title>
-<style>
-  html, body { margin: 0; padding: 0; height: 100%; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    background: linear-gradient(135deg, #fef9f3 0%, #fde6e6 100%);
-    color: #212529;
-    display: flex; align-items: center; justify-content: center;
-    padding: 40px; box-sizing: border-box;
-  }
-  .card {
-    max-width: 560px; background: #fff; padding: 36px 40px;
-    border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-    text-align: center;
-  }
-  h1 { font-size: 24px; margin: 0 0 16px; color: #c92a2a; font-weight: 700; }
-  p { font-size: 15px; line-height: 1.55; margin: 0 0 12px; color: #495057; }
-  strong { color: #212529; }
-  kbd {
-    background: #e9ecef; border: 1px solid #ced4da; border-radius: 4px;
-    padding: 2px 6px; font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 13px;
-  }
-  .hint { font-size: 13px; color: #868e96; margin-top: 24px; }
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>⏹ Close this tab to finish archiving</h1>
-  <p>The Instagram tab next to this one is being recorded.</p>
-  <p>When you're done navigating, <strong>close this tab</strong> (click its X, or press <kbd>Ctrl</kbd>+<kbd>W</kbd>) to safely save the archive.</p>
-  <p class="hint">Closing the entire browser also works, but closing just this tab is the most reliable path.</p>
-</div>
-</body>
-</html>"""
-
-_CONTROL_TAB_DATA_URL = "data:text/html;charset=utf-8," + quote(_CONTROL_TAB_HTML)
 
 
 
@@ -245,7 +194,7 @@ def affidavit_from_metadata(metadata: ArchiveSessionMetadata) -> str:
     affidavit = f"""I, {metadata.signature}, have archived the Instagram content from {metadata.target_url} using the profile '{metadata.profile_name}'.
 The archiving process started at {metadata.archiving_start_timestamp} and was completed at {metadata.archiving_finished_timestamp} (timezone: {datetime.datetime.now().astimezone().tzname()}, UTC {datetime.datetime.now().astimezone().utcoffset()}).
 Archiving was carried out from the IP address {metadata.my_ip}, and was done through the use of a custom Python script.
-The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages). Alongside the Instagram tab, the script opens one additional browser tab containing only static HTML instructions delivered via a data: URL (no JavaScript and no network requests originate from this tab); closing that tab is the user's signal that the session is complete, and is what allows the HAR file to be finalized cleanly while the browser is still alive.
+The script launches a Playwright-controlled Firefox browser ({metadata.browser_build_id}), which is used to navigate to the target URL, and allows the user to manually interact with the page (including scrolling, clicking, and navigating to other pages).
 The script records the screen during this process, and also saves a HAR file of the network traffic. The screen recording is saved as a video file. Server requests for video content from the Instagram servers during the sessions are identified through analysis of the HAR file, and the full media files are downloaded and saved to the archive directory (these tracks may include data that does not appear in the HAR, since it only includes byte-range segments which don't necessarily cover the entire duration of the video).
 None of the HAR's content has been altered or modified in any way, and no third party has been granted access to the file system. The code used for this process is available on GitHub at https://github.com/yanivcogan/InstagramArchiver (branch {metadata.branch}, commit {metadata.commit_id})
 SHA-256 hash of the HAR file: {metadata.har_integrity.whole_file_hash if metadata.har_integrity else 'N/A'}
@@ -729,14 +678,6 @@ def archive_instagram_content(profile: Profile, target_url: str):
                 record_video_dir=archive_dir / "screen_recordings",
             )
 
-            # Open the control tab FIRST so it ends up to the left of the
-            # Instagram tab. new_page() makes the just-opened tab active,
-            # so opening main next means Firefox lands on the Instagram tab
-            # for the user — the control tab is visible-but-inactive,
-            # labelled clearly enough to be obvious as the finish affordance.
-            control_page = context.new_page()
-            control_page.goto(_CONTROL_TAB_DATA_URL)
-
             page = context.new_page()
             frame_hashes_path = archive_dir / "frame_hashes.jsonl"
             recording_thread = threading.Thread(
@@ -749,17 +690,9 @@ def archive_instagram_content(profile: Profile, target_url: str):
                 # Navigate to the target URL
                 page.goto(target_url)
 
-                # Allow user to do whatever they want. The session ends when
-                # the control tab is closed (the safe path: Firefox is still
-                # alive, so context.close() can hand off cleanly to Playwright's
-                # HAR finalizer) — or when the user closes the entire browser
-                # (control tab gets a close event as Firefox tears down all
-                # pages, same as the legacy behaviour, with the same residual
-                # risk of racing the dying browser process).
+                # Allow user to do whatever they want
                 print(f"Archiving content from {target_url}")
-                print("Close the 'Close this tab to finish archiving' tab when done "
-                      "(recommended), or close the Firefox window.")
-                control_page.wait_for_event("close", timeout=0)
+                page.wait_for_event("close", timeout=0)
             except Exception as e:
                 if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
                     print("Browser shutdown detected, wrapping up archiving session...")
