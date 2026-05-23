@@ -122,57 +122,6 @@ def resolve_har_domains(har_path: Path) -> dict:
     return resolutions
 
 
-def _launch_finish_button_subprocess() -> Optional[subprocess.Popen]:
-    """Spawn the 'Finish Archiving' window as a separate process.
-
-    Tk has thread-affinity at the Tcl level: any Tk objects we create in a
-    worker thread can later crash the process during GC if their finalizers
-    run on a different thread (Tcl_AsyncDelete panic). Subprocess isolation
-    is the only reliable fix — the child's Tcl interpreter lives and dies
-    in a process where no other Tk ever runs, so no cross-thread finalization
-    is possible.
-
-    The child exits (code 0) when the user clicks 'Finish Archiving' or
-    closes the window. archive_instagram_content polls .poll() for that.
-    Returns None on launch failure; caller falls back to X-button-only.
-    """
-    try:
-        if getattr(sys, "frozen", False):
-            # PyInstaller frozen build: sys.executable IS the bundled exe.
-            # The __main__ block dispatches on --finish-button-mode before
-            # any heavy init runs.
-            cmd = [sys.executable, "--finish-button-mode"]
-        else:
-            cmd = [sys.executable, "-m", "archiver.finish_button"]
-        # No stdin so the child can't accidentally block on input; stdout/stderr
-        # inherited so a launch error from Tk is visible.
-        return subprocess.Popen(cmd, stdin=subprocess.DEVNULL)
-    except Exception as e:
-        print(f"Could not start Finish button window: {e}")
-        return None
-
-
-def _terminate_finish_button(proc: Optional[subprocess.Popen]) -> None:
-    """Best-effort tear-down of the Finish button subprocess.
-
-    Used on the X-button path (Firefox closed first → we don't need the button
-    anymore) and as a safety net in the outer finally. Terminate is a hard
-    kill on Windows (TerminateProcess); that's fine — the child has no state
-    we'd want to preserve.
-    """
-    if proc is None or proc.poll() is not None:
-        return
-    try:
-        proc.terminate()
-        proc.wait(timeout=2)
-    except Exception:
-        try:
-            proc.kill()
-            proc.wait(timeout=2)
-        except Exception:
-            pass
-
-
 def screen_record(output_path, stop_event, frame_hashes_path=None):
     # Screen recording using OpenCV, only capturing the Playwright browser window
     window_keywords = ("Nightly")
@@ -701,7 +650,6 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
     stop_event = threading.Event()
     recording_thread = None
-    finish_button_proc: Optional[subprocess.Popen] = None
     video_path = archive_dir / "screen_recording.mp4"
     metadata = ArchiveSessionMetadata(
         commit_id=commit_id,
@@ -738,51 +686,21 @@ def archive_instagram_content(profile: Profile, target_url: str):
             )
             recording_thread.start()
 
-            finish_button_proc = _launch_finish_button_subprocess()
-
             try:
                 # Navigate to the target URL
                 page.goto(target_url)
 
-                # Allow user to do whatever they want. The session ends when either:
-                #   (a) user clicks "Finish Archiving" on the floating window
-                #       → the subprocess exits, finish_button_proc.poll() returns 0.
-                #       This is the safe path: we call context.close() while the browser
-                #       is still alive, so Playwright's Node side gets a chance to flush
-                #       the HAR's temp file to the destination cleanly.
-                #   (b) user closes the Firefox window via the X button → page.is_closed()
-                #       Best-effort: works ~95% of the time, but can race with Playwright's
-                #       HAR finalization and leave us with no HAR (the temp file gets
-                #       cleaned before the copy). The "Finish Archiving" button is the
-                #       reliable alternative for this case.
+                # Allow user to do whatever they want
                 print(f"Archiving content from {target_url}")
-                if finish_button_proc is not None:
-                    print("Click 'Finish Archiving' on the floating window when done (recommended), "
-                          "or close the Firefox window.")
-                else:
-                    print("Close the Firefox window when done. "
-                          "(Finish-button window unavailable — falling back to X-button.)")
-                while True:
-                    if finish_button_proc is not None and finish_button_proc.poll() is not None:
-                        print("'Finish Archiving' clicked — closing browser cleanly...")
-                        break
-                    if page.is_closed() or not browser.is_connected():
-                        print("Browser/page closed by user, wrapping up archiving session...")
-                        break
-                    time.sleep(0.2)
+                page.wait_for_event("close", timeout=0)
             except Exception as e:
                 if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
                     print("Browser shutdown detected, wrapping up archiving session...")
                 else:
                     print(f"Error during archiving: {e}")
             finally:
-                # Tear down the Finish button subprocess if still alive (X-button path).
-                # On the Finish-button path it already exited; this is a no-op.
-                _terminate_finish_button(finish_button_proc)
-
                 # Close browser inside the sync_playwright context. Both calls may fail
                 # if the browser already disconnected — that's expected and safe.
-                # context.close() is the critical call: it's what flushes the HAR.
                 try:
                     context.close()
                 except Exception as e:
@@ -797,29 +715,11 @@ def archive_instagram_content(profile: Profile, target_url: str):
         # catch it here so that post-processing always runs.
         print(f"Playwright session ended with an error: {e}")
 
-    # Belt-and-suspenders: ensure the Finish button subprocess is gone before
-    # finish_recording opens its own Tk dialog. The inner finally above already
-    # called _terminate_finish_button, but if a path threw before that ran, do
-    # it here too. (Tk dialogs in the parent process are unaffected by the
-    # child's Tcl interpreter — that was the whole point of subprocess
-    # isolation — but a stray button window left visible would be confusing.)
-    _terminate_finish_button(finish_button_proc)
-
     finish_recording(recording_thread, archive_dir, metadata, stop_event)
 
 
 
 if __name__ == "__main__":
-    # Subprocess entry point for the Finish button window. In a PyInstaller
-    # frozen build, sys.executable IS this exe, so the only way to launch
-    # the child as "just the button window" is to re-invoke ourselves with
-    # this flag and short-circuit before any heavy init (which would, among
-    # other things, re-prompt the user for a profile and URL).
-    if "--finish-button-mode" in sys.argv:
-        from archiver.finish_button import main as _finish_button_main
-        _finish_button_main()
-        sys.exit(0)
-
     commit_id, branch = ensure_committed()
     ensure_ffmpeg_installed()
     ensure_par2_installed()
