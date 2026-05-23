@@ -47,6 +47,52 @@ branch = None
 load_dotenv()
 
 
+# Locking the recording dimensions deterministically so Playwright's per-page
+# MP4 (and the network video frames it embeds) isn't cropped by whatever the
+# context's default happens to be on a given Playwright/Firefox version.
+_VIEWPORT = {"width": 1618, "height": 1014}
+
+# Navigating the main frame to this URL is the "safe finish" signal. It tells
+# the archiver "I'm done; finalize the HAR now, while Firefox is still alive."
+# Closing the Firefox window still works as a fallback, but has the rare
+# (~5%) HAR-finalization race against the dying browser process — use the
+# safe-finish URL when the archive matters.
+#
+# This is the single source of truth — _is_safe_finish_url derives its host
+# and path check from this value, so changing the URL here is enough; nothing
+# else needs editing. Pick a URL the operator can type from memory under
+# pressure but that is unlikely to be hit accidentally by browser-internal
+# requests during the session.
+_SAFE_FINISH_URL = "https://www.google.com/"
+_SAFE_FINISH_URL_PARSED = urlparse(_SAFE_FINISH_URL)
+
+
+def _is_safe_finish_url(url: str) -> bool:
+    """True iff `url` matches the configured safe-finish URL exactly.
+
+    Anchoring on `(scheme, host, path)` equality — not prefix — stops two
+    real false-positives a naive startswith match would accept:
+      * lookalike hosts (anything ending in the configured host suffix);
+      * other paths under the same host that can be reached from
+        sponsored / wrapped / redirected links inside a recorded session
+        (e.g. open-redirect endpoints, on-site search results, etc.) — a
+        startswith match would treat any of these as a finish trigger and
+        end the session mid-archive.
+
+    An empty `parsed.path` (Firefox sometimes drops the trailing slash when
+    auto-completing a bare host in the URL bar) is treated as equivalent to
+    the configured path's "/" form.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != _SAFE_FINISH_URL_PARSED.scheme:
+        return False
+    if parsed.netloc != _SAFE_FINISH_URL_PARSED.netloc:
+        return False
+    configured_path = _SAFE_FINISH_URL_PARSED.path or "/"
+    actual_path = parsed.path or "/"
+    return actual_path == configured_path
+
+
 
 class TLSCertInfo(BaseModel):
     fingerprint_sha256: Optional[str] = None
@@ -335,6 +381,8 @@ def merge_har_attachments(har_path: Path) -> Path:
     # Stream entries one-by-one so neither reader nor writer needs the full
     # document in memory at once.
     attachment_count = 0
+    missing_count = 0
+    missing_by_mime: dict[str, int] = {}
     with open(har_path, 'rb') as har_f, \
          open(temp_path, 'w', encoding='utf-8') as out_f:
 
@@ -371,6 +419,18 @@ def merge_har_attachments(har_path: Path) -> Path:
                     else:
                         content['text'] = base64.b64encode(body_bytes).decode('ascii')
                         content['encoding'] = 'base64'
+                else:
+                    # Playwright recorded a `_file` reference but the attachment
+                    # was never written to disk — almost always means
+                    # context.close() ran with this response's body still
+                    # streaming. Tally it and surface a loud warning at the
+                    # end of the merge; the worst outcome is silent body loss
+                    # going unnoticed (see commit history for the post-mortem
+                    # where ~91% of bodies were dropped without a single
+                    # operator-visible signal).
+                    missing_count += 1
+                    mime_key = content.get('mimeType', '?').split(';')[0]
+                    missing_by_mime[mime_key] = missing_by_mime.get(mime_key, 0) + 1
 
             if not first:
                 out_f.write(',')
@@ -380,7 +440,19 @@ def merge_har_attachments(har_path: Path) -> Path:
         out_f.write(']}}')
 
     # Move the merged HAR to the archive root and delete the whole workspace.
-    print(f"Merging HAR attachments into self-contained HAR ({attachment_count} attachments)...")
+    if missing_count:
+        pct_lost = missing_count * 100 // max(attachment_count, 1)
+        print(f"⚠️  Merging HAR: {attachment_count} attachments referenced, "
+              f"{missing_count} MISSING ({pct_lost}% of bodies lost).")
+        print("    Missing by MIME type (top contributors):")
+        for mime, n in sorted(missing_by_mime.items(), key=lambda kv: -kv[1])[:8]:
+            print(f"      {n:>5}  {mime}")
+        print("    This means Playwright finalized the HAR with `_file` "
+              "references whose attachment files were never written — "
+              "typically because context.close() ran while requests were "
+              "still in flight (X-button close is the usual culprit).")
+    else:
+        print(f"Merging HAR attachments into self-contained HAR ({attachment_count} attachments)...")
     temp_path.rename(final_path)
     shutil.rmtree(workspace_dir)
     print("HAR merge complete.")
@@ -676,6 +748,8 @@ def archive_instagram_content(profile: Profile, target_url: str):
                 record_har_path=metadata.har_archive,
                 record_har_content="attach",
                 record_video_dir=archive_dir / "screen_recordings",
+                viewport=_VIEWPORT,
+                record_video_size=_VIEWPORT,
             )
 
             page = context.new_page()
@@ -690,11 +764,41 @@ def archive_instagram_content(profile: Profile, target_url: str):
                 # Navigate to the target URL
                 page.goto(target_url)
 
-                # Allow user to do whatever they want
+                # Allow user to do whatever they want. The session ends when
+                # the user either:
+                #   (a) navigates the main frame to the safe-finish URL
+                #       (configured via _SAFE_FINISH_URL above) →
+                #       wait_for_url returns cleanly. Firefox is still alive,
+                #       so context.close() below finalizes the HAR without
+                #       racing the dying browser process. Bonus: navigating
+                #       away from instagram.com aborts any in-flight IG
+                #       requests *before* context.close() runs, which makes
+                #       attachment loss strictly less likely than the
+                #       X-button path.
+                #   (b) closes the Firefox window → wait_for_url raises
+                #       "Target closed" / "Page closed", caught below. Same
+                #       behaviour as the legacy single-page approach with
+                #       the same residual ~5% HAR-finalization race.
+                #
+                # The whole session blocks inside one Playwright call, so the
+                # dispatcher fiber is pumped continuously — there's no risk
+                # of recreating the fiber-starvation body-loss bug we hit
+                # with the polling-loop GUI approach.
                 print(f"Archiving content from {target_url}")
-                page.wait_for_event("close", timeout=0)
+                print(f"To finish SAFELY (recommended for important archives): "
+                      f"navigate the browser to {_SAFE_FINISH_URL}")
+                print("Or close the Firefox window to finish (slightly less "
+                      "reliable — rare HAR-finalization race).")
+                page.wait_for_url(_is_safe_finish_url, timeout=0)
+                print(f"Safe-finish trigger detected ({_SAFE_FINISH_URL}); "
+                      f"closing context cleanly...")
             except Exception as e:
-                if "Target closed" in str(e) or "browser has disconnected" in str(e).lower():
+                # Playwright raises TargetClosedError on browser/page close
+                # with the message "Target page, context or browser has been
+                # closed" (see playwright._impl._errors.TargetClosedError).
+                # Match the substring that's actually present.
+                msg = str(e)
+                if "has been closed" in msg or "Target closed" in msg:
                     print("Browser shutdown detected, wrapping up archiving session...")
                 else:
                     print(f"Error during archiving: {e}")
