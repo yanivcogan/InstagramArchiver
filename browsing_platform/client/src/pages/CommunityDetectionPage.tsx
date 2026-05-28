@@ -1,4 +1,5 @@
 import React, {useMemo, useRef, useState} from 'react';
+import {useSearchParams} from 'react-router';
 import {
     Alert,
     Box,
@@ -58,6 +59,8 @@ import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
 const COMMUNITY_TAG_PLACEHOLDER = 'Assign Community Tag';
+const BASE_TITLE = 'Community Detection | Browsing Platform';
+const COMMUNITY_TAG_PARAM = 'communityTag';
 const stripThumbnails = <T extends { thumbnails?: Thumbnail[] }>(obj: T): T => ({...obj, thumbnails: []});
 
 // ── Serialisable state (export / import) ──────────────────────────────────────
@@ -412,9 +415,66 @@ export default function CommunityDetectionPage() {
     const [copyFeedback, setCopyFeedback] = useState<{ severity: 'success' | 'error'; message: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // URL state: the selected community tag id is reflected in the `communityTag`
+    // search param (absent when no tag is selected).
+    const [searchParams, setSearchParams] = useSearchParams();
+    const initializedFromUrl = useRef(false);
+
+    // Initialize the community tag from the URL on first load. With no param the
+    // tag stays null; with a valid id we resolve the full tag from the tag-kernel
+    // dropdown (which always contains the tag itself) and seed the kernel from it.
     React.useEffect(() => {
-        document.title = 'Community Detection | Browsing Platform';
+        const raw = searchParams.get(COMMUNITY_TAG_PARAM);
+        const tagId = raw !== null ? parseInt(raw, 10) : NaN;
+        if (Number.isNaN(tagId)) {
+            initializedFromUrl.current = true;
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            setTagTransitionLoading(true);
+            try {
+                const resp: TagKernelResponse = await fetchTagKernelAccounts(tagId);
+                if (cancelled) return;
+                const tag = resp.dropdown.tags.find(t => t.id === tagId) ?? null;
+                if (tag) {
+                    setCommunityTag(tag);
+                    setCommunityDropdown(resp.dropdown);
+                    setKernelEntries(resp.accounts.map(a => ({
+                        account: tagKernelAccountToSearchResult(a),
+                        manuallyAdded: false,
+                        tagSources: a.applied_tags,
+                    })));
+                }
+            } finally {
+                if (!cancelled) {
+                    setTagTransitionLoading(false);
+                    initializedFromUrl.current = true;
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Keep the URL search param and document title in sync with the selected tag.
+    // Guarded so it does not clobber the param before initialization has read it.
+    React.useEffect(() => {
+        document.title = communityTag ? `${communityTag.name} | ${BASE_TITLE}` : BASE_TITLE;
+        if (!initializedFromUrl.current) return;
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            if (communityTag?.id != null) {
+                next.set(COMMUNITY_TAG_PARAM, String(communityTag.id));
+            } else {
+                next.delete(COMMUNITY_TAG_PARAM);
+            }
+            return next;
+        }, {replace: true});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [communityTag]);
 
     // ── Derived ───────────────────────────────────────────────────────────────
 
