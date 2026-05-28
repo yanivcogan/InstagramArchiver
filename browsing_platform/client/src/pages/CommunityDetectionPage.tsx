@@ -106,7 +106,7 @@ function tagKernelAccountToSearchResult(a: TagKernelAccount): SearchResult {
         title: candidateTitle(a),
         details: a.bio ?? undefined,
         thumbnails: a.thumbnails,
-        metadata: {media_count: a.media_count},
+        metadata: {media_count: a.media_count, url_suffix: a.url_suffix, display_name: a.display_name},
     };
 }
 
@@ -659,7 +659,7 @@ export default function CommunityDetectionPage() {
                 title: candidateTitle(candidate),
                 details: candidate.bio ?? undefined,
                 thumbnails: candidate.thumbnails,
-                metadata: {media_count: candidate.media_count},
+                metadata: {media_count: candidate.media_count, url_suffix: candidate.url_suffix, display_name: candidate.display_name},
             },
             manuallyAdded: true,
             tagSources,
@@ -699,7 +699,7 @@ export default function CommunityDetectionPage() {
                                 title: candidateTitle(candidate),
                                 details: candidate.bio ?? undefined,
                                 thumbnails: candidate.thumbnails,
-                                metadata: {media_count: candidate.media_count},
+                                metadata: {media_count: candidate.media_count, url_suffix: candidate.url_suffix, display_name: candidate.display_name},
                             },
                             manuallyAdded: false,
                             tagSources,
