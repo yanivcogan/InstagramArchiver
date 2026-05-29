@@ -154,8 +154,8 @@ export default function SearchPanel(props: SearchPanelProps) {
     // ── Sync when parent query changes (URL back/forward navigation) ──────────
 
     const queryKey = useMemo(
-        () => `${query.search_term}||${query.search_mode}||${JSON.stringify(query.advanced_filters)}||${JSON.stringify(query.tag_ids)}`,
-        [query.search_term, query.search_mode, query.advanced_filters, query.tag_ids]
+        () => `${query.search_term}||${query.search_mode}||${JSON.stringify(query.advanced_filters)}||${JSON.stringify(query.tag_ids)}||${JSON.stringify(query.tag_scopes)}`,
+        [query.search_term, query.search_mode, query.advanced_filters, query.tag_ids, query.tag_scopes]
     );
     useEffect(() => {
         setTypedSearchTerm(query.search_term || '');
@@ -504,11 +504,14 @@ export default function SearchPanel(props: SearchPanelProps) {
                                             tagIds={query.tag_ids || []}
                                             tagFilterMode={query.tag_filter_mode || 'any'}
                                             selectedTagObjects={tagFilterObjects}
+                                            tagScopes={query.tag_scopes && query.tag_scopes.length
+                                                ? query.tag_scopes
+                                                : (SEARCH_MODE_TO_ENTITY[query.search_mode] ? [SEARCH_MODE_TO_ENTITY[query.search_mode]!] : [])}
                                             entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}
-                                            onChange={(tagIds, mode, tagObjects) => {
+                                            onChange={(tagIds, mode, tagObjects, scopes) => {
                                                 tagObjects.forEach(t => tagObjectCache.current.set(t.id, t));
                                                 setTagFilterObjects(tagObjects);
-                                                performSearch({tag_ids: tagIds, tag_filter_mode: mode});
+                                                performSearch({tag_ids: tagIds, tag_filter_mode: mode, tag_scopes: scopes});
                                             }}
                                         />
                                     </Box>
