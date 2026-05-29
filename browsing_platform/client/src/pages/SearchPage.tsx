@@ -1,6 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate, useSearchParams} from 'react-router';
-import {Box, Button, Stack} from '@mui/material';
+import {Box, Button, IconButton, Stack, Tooltip, useMediaQuery} from '@mui/material';
+import GridViewIcon from '@mui/icons-material/GridView';
+import ViewComfyIcon from '@mui/icons-material/ViewComfy';
 import {ITagWithType} from '../types/tags';
 import {
     ADVANCED_FILTERS_CONFIG,
@@ -61,8 +63,21 @@ export default function SearchPage() {
     const navigate = useNavigate();
     const location = useLocation();
     const [searchParams] = useSearchParams();
+    const isMobile = useMediaQuery('(max-width: 768px)');
 
     const query = extractQueryFromParams(searchParams);
+
+    const [largeIcons, setLargeIcons] = useState<boolean>(
+        () => localStorage.getItem('media_search_large_icons') === 'true'
+    );
+
+    const toggleLargeIcons = () => {
+        setLargeIcons(prev => {
+            const next = !prev;
+            localStorage.setItem('media_search_large_icons', String(next));
+            return next;
+        });
+    };
 
     const [results, setResults] = useState<SearchResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -146,7 +161,16 @@ export default function SearchPage() {
 
     return (
         <div className="page-wrap">
-            <TopNavBar>Search Archives</TopNavBar>
+            <TopNavBar>
+                Search Archives
+                {!isMobile && query.search_mode === 'media' && (
+                    <Tooltip title={largeIcons ? 'Small icons' : 'Large icons'} arrow>
+                        <IconButton color="inherit" onClick={toggleLargeIcons} sx={{ml: 'auto'}}>
+                            {largeIcons ? <ViewComfyIcon/> : <GridViewIcon/>}
+                        </IconButton>
+                    </Tooltip>
+                )}
+            </TopNavBar>
             <div className="page-content content-wrap">
                 <Stack gap={2} sx={{width: '100%'}}>
                     <SearchPanel
@@ -160,6 +184,7 @@ export default function SearchPage() {
                         showTaggingMode
                         searchHistory={{getSuggestions, addSearch, removeSearch}}
                         tagging={tagging}
+                        largeIcons={largeIcons}
                     />
                     {/* Pagination (stays in SearchPage, outside SearchPanel) */}
                     <Stack direction="row" spacing={2} justifyContent="center" alignItems="center">

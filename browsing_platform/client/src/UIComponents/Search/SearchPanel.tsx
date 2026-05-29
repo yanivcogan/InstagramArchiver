@@ -96,6 +96,8 @@ interface BaseProps {
     // Checked entries shown via checkboxes independent of tagging mode (community page uses for kernel membership)
     checkedIds?: Set<number>;
     onToggleChecked?: (result: SearchResult) => void;
+    // Desktop-only: render media results as large, auto-loading icons (SearchPage uses this)
+    largeIcons?: boolean;
 }
 
 // When autoSearch is set, the panel fetches results internally on each keystroke (debounced).
@@ -113,6 +115,7 @@ export default function SearchPanel(props: SearchPanelProps) {
         showTaggingMode = false,
         searchHistory, tagging, onResultClick,
         checkedIds, onToggleChecked,
+        largeIcons,
     } = props;
 
     const isAutoSearch = props.autoSearch !== undefined;
@@ -579,6 +582,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                                     : (checkedIds ? handleToggleChecked : undefined)
                             }
                             onPrimaryClick={onResultClick}
+                            largeIcons={largeIcons}
                         />
                     )}
                 </Box>
