@@ -833,9 +833,21 @@ export default function CommunityDetectionPage() {
             weights,
             excluded: excludedAccounts.map(stripThumbnails),
         };
+        const datePart = new Date().toISOString().slice(0, 10);
+        // Sanitize the tag name into a filesystem-safe slug (drop punctuation
+        // like . and , that would produce an illegal/misleading filename).
+        const tagSlug = communityTag
+            ? communityTag.name
+                .replace(/[^a-zA-Z0-9-_ ]/g, '')
+                .trim()
+                .replace(/\s+/g, '-')
+            : '';
+        const fileName = tagSlug
+            ? `community-${tagSlug}-${datePart}.json`
+            : `community-${datePart}.json`;
         downloadTextFile(
             JSON.stringify(state, null, 2),
-            `community-${new Date().toISOString().slice(0, 10)}.json`,
+            fileName,
             'application/json',
         );
     };
