@@ -44,6 +44,7 @@ import {
     CommunityCandidatesResponse,
     DEFAULT_TIE_WEIGHTS,
     fetchCommunityCandidates,
+    fetchRelatedTagStats,
     fetchTagKernelAccounts,
     fetchTagsForSearchResults,
     ISearchQuery,
@@ -54,7 +55,8 @@ import {
     Thumbnail,
     TieWeights,
 } from '../services/DataFetcher';
-import {IQuickAccessTypeDropdown, ITagWithType} from '../types/tags';
+import {IQuickAccessTypeDropdown, ITagStat, ITagWithType} from '../types/tags';
+import RelatedTagDistributionTable from '../UIComponents/Tags/RelatedTagDistributionTable';
 import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
@@ -227,6 +229,9 @@ interface CandidateCardProps {
     onAddToKernel: () => void;
     onExclude: () => void;
     onTagToggle: (tag: ITagWithType) => void;
+    tagDistribution?: ITagStat[];
+    tagDistributionLoading: boolean;
+    onTagDistributionOpen: () => void;
 }
 
 function CandidateCard({
@@ -235,7 +240,10 @@ function CandidateCard({
                            assignedCommunityTagIds,
                            onAddToKernel,
                            onExclude,
-                           onTagToggle
+                           onTagToggle,
+                           tagDistribution,
+                           tagDistributionLoading,
+                           onTagDistributionOpen,
                        }: CandidateCardProps) {
     const title = candidateTitle(candidate);
     const score = candidate.score % 1 === 0
@@ -244,25 +252,61 @@ function CandidateCard({
     return (
         <Stack direction="row" gap={2} alignItems="flex-start" sx={{py: 0.5}}>
             {/* Score column */}
-            <Box sx={{
-                flexShrink: 0, width: 56, textAlign: 'center',
-                pt: 0.5, borderRight: '1px solid', borderColor: 'divider', pr: 2,
-            }}>
-                <Typography variant="h5"
-                            sx={{fontWeight: 700, lineHeight: 1, color: 'primary.main', fontSize: '1.5rem'}}>
-                    {score}
-                </Typography>
-                <Typography variant="caption" sx={{
-                    color: 'text.disabled',
-                    display: 'block',
-                    mt: 0.25,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    fontSize: '0.6rem'
+            <Tooltip
+                arrow
+                placement="right"
+                enterDelay={100}
+                leaveDelay={100}
+                onOpen={onTagDistributionOpen}
+                slotProps={{
+                    tooltip: {
+                        sx: {
+                            bgcolor: 'background.paper',
+                            color: 'text.primary',
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            boxShadow: 3,
+                            maxWidth: 'none',
+                        },
+                    },
+                    arrow: {
+                        sx: {
+                            color: 'background.paper',
+                            '&::before': {
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                            },
+                        },
+                    },
+                }}
+                title={
+                    tagDistributionLoading
+                        ? <CircularProgress size={16}/>
+                        : <RelatedTagDistributionTable stats={tagDistribution ?? []}/>
+                }
+            >
+                <Box sx={{
+                    flexShrink: 0, width: 56, textAlign: 'center',
+                    pt: 0.5, borderRight: '1px solid', borderColor: 'divider', pr: 2,
+                    cursor: 'help',
                 }}>
-                    score
-                </Typography>
-            </Box>
+                    <Typography variant="h5"
+                                sx={{fontWeight: 700, lineHeight: 1, color: 'primary.main', fontSize: '1.5rem'}}>
+                        {score}
+                    </Typography>
+                    <Typography variant="caption" sx={{
+                        color: 'text.disabled',
+                        display: 'block',
+                        mt: 0.25,
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                        fontSize: '0.6rem'
+                    }}>
+                        score
+                    </Typography>
+                </Box>
+            </Tooltip>
 
             {/* Content */}
             <Box sx={{flex: 1, minWidth: 0}}>
@@ -405,6 +449,20 @@ export default function CommunityDetectionPage() {
     const [candidateAllTags, setCandidateAllTags] = useState<Record<number, ITagWithType[]>>({});
     const [isComputing, setIsComputing] = useState(false);
     const [hasRun, setHasRun] = useState(false);
+
+    // Lazy-loaded, cached tag distribution shown in each candidate's score tooltip.
+    // Cleared whenever a new analysis is run (see runAnalysis).
+    const [candidateTagDistributions, setCandidateTagDistributions] = useState<Record<number, ITagStat[]>>({});
+    const [loadingTagDistributions, setLoadingTagDistributions] = useState<Record<number, boolean>>({});
+
+    const loadCandidateTagDistribution = (candidateId: number) => {
+        if (candidateTagDistributions[candidateId] || loadingTagDistributions[candidateId]) return;
+        setLoadingTagDistributions(prev => ({...prev, [candidateId]: true}));
+        fetchRelatedTagStats(candidateId).then(stats => {
+            setCandidateTagDistributions(prev => ({...prev, [candidateId]: stats}));
+            setLoadingTagDistributions(prev => ({...prev, [candidateId]: false}));
+        });
+    };
 
     // Excluded accounts
     const [excludedAccounts, setExcludedAccounts] = useState<CandidateAccount[]>([]);
@@ -630,6 +688,10 @@ export default function CommunityDetectionPage() {
 
     const runAnalysis = async () => {
         setIsComputing(true);
+        // Invalidate cached tag distributions — scores (and thus the relevant
+        // candidates) may have changed for this new run.
+        setCandidateTagDistributions({});
+        setLoadingTagDistributions({});
         try {
             const resp: CommunityCandidatesResponse = await fetchCommunityCandidates(
                 kernelIds, excludedIds, weights
@@ -1259,6 +1321,9 @@ export default function CommunityDetectionPage() {
                                                 onAddToKernel={() => addCandidateToKernel(candidate)}
                                                 onExclude={() => excludeCandidate(candidate)}
                                                 onTagToggle={(tag) => handleCandidateTagToggle(candidate, tag)}
+                                                tagDistribution={candidateTagDistributions[candidate.id]}
+                                                tagDistributionLoading={!!loadingTagDistributions[candidate.id]}
+                                                onTagDistributionOpen={() => loadCandidateTagDistribution(candidate.id)}
                                             />
                                         ))}
                                     </Stack>
