@@ -150,7 +150,6 @@ export default function SearchPage() {
             <div className="page-content content-wrap">
                 <Stack gap={2} sx={{width: '100%'}}>
                     <SearchPanel
-                        key={searchParams.toString()}
                         query={query}
                         onSearch={encodeQueryToParams}
                         results={results}

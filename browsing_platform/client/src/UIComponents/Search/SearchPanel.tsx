@@ -131,6 +131,10 @@ export default function SearchPanel(props: SearchPanelProps) {
     );
     const [showFiltersPanel, setShowFiltersPanel] = useState(!!query.advanced_filters);
     const [tagFilterObjects, setTagFilterObjects] = useState<ITagWithType[]>([]);
+    // Cache of every tag object we've seen this session, keyed by id. The URL only carries
+    // tag ids, so this lets us re-derive the selected-tag chips from query.tag_ids without
+    // losing their display info (names/types) when the committed query changes.
+    const tagObjectCache = useRef(new Map<number, ITagWithType>());
     const isDropdownOpen = useRef(false);
 
     // ── Internal results state (auto-search mode only) ────────────────────────
@@ -152,7 +156,6 @@ export default function SearchPanel(props: SearchPanelProps) {
     );
     useEffect(() => {
         setTypedSearchTerm(query.search_term || '');
-        setTagFilterObjects([]);
         setAdvancedFiltersTree(
             query.advanced_filters
                 ? Utils.Import.loadFromJsonLogic(
@@ -161,7 +164,19 @@ export default function SearchPanel(props: SearchPanelProps) {
             ) || getEmptyTree()
                 : getEmptyTree()
         );
-        setShowFiltersPanel(!!query.advanced_filters);
+        // Re-derive the selected-tag chips from the committed query.tag_ids using cached
+        // objects, instead of clearing them — so picking a tag (which updates the URL) keeps
+        // the chips visible. Ids we've never seen this session (e.g. a shared URL) resolve to
+        // nothing and are simply dropped, matching prior behaviour.
+        const tagIds = query.tag_ids || [];
+        setTagFilterObjects(
+            tagIds
+                .map(id => tagObjectCache.current.get(id))
+                .filter((t): t is ITagWithType => !!t)
+        );
+        // Only ever open the panel here (e.g. when navigating to a URL that carries filters or
+        // tags) — never force it closed, so a user-opened panel doesn't collapse on each search.
+        setShowFiltersPanel(prev => prev || !!query.advanced_filters || tagIds.length > 0);
     }, [queryKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Cleanup on unmount ────────────────────────────────────────────────────
@@ -488,6 +503,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                                             selectedTagObjects={tagFilterObjects}
                                             entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}
                                             onChange={(tagIds, mode, tagObjects) => {
+                                                tagObjects.forEach(t => tagObjectCache.current.set(t.id, t));
                                                 setTagFilterObjects(tagObjects);
                                                 performSearch({tag_ids: tagIds, tag_filter_mode: mode});
                                             }}
