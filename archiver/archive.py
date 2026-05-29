@@ -743,8 +743,22 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
     try:
         with sync_playwright() as p:
-            # Launch browser with the saved state
-            browser = p.firefox.launch(headless=False)
+            # Launch browser with the saved state.
+            #
+            # Force 1 device-pixel per CSS-pixel via the Firefox-native
+            # layout.css.devPixelsPerPx pref. Without this, the operator's OS
+            # display scaling (e.g. Windows 125%) leaks into devicePixelRatio
+            # in headed mode, so the page renders into a 1600x900 backing
+            # surface while the built-in video recorder only captures the
+            # top-left 1280x720 device-px region -> cropped video. Playwright's
+            # device_scale_factor context option does NOT fix this: Firefox
+            # ignores it (microsoft/playwright#36628). Pinning the pref also
+            # makes rendering reproducible across operator machines regardless
+            # of their display scaling.
+            browser = p.firefox.launch(
+                headless=False,
+                firefox_user_prefs={"layout.css.devPixelsPerPx": "1.0"},
+            )
             browser_build_id = f"{browser.browser_type.name}_{browser.version}"
             metadata.browser_build_id = browser_build_id
             context = browser.new_context(
