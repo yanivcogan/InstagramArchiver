@@ -8,18 +8,10 @@ import {IQuickAccessData, ITagWithType} from "../../types/tags";
 import {lookupTags} from "../../services/DataFetcher";
 import {fetchQuickAccessData} from "../../services/TagManagementService";
 import {E_ENTITY_TYPES} from "../../types/entities";
+import {SCOPE_OPTIONS, resolveScopes} from "../../lib/tagScopes";
 import Autocomplete from "@mui/material/Autocomplete";
 import TextField from "@mui/material/TextField";
 import QuickAccessBar from "./QuickAccessBar";
-
-// Tag scopes selectable per searched entity. The first entry is the entity itself (the default,
-// always-on scope); the rest broaden the filter to tags on related entities. Mirrors the backend
-// _ALLOWED_SCOPES whitelist in services/search.py.
-const SCOPE_OPTIONS: Partial<Record<E_ENTITY_TYPES, E_ENTITY_TYPES[]>> = {
-    media:   ["media", "post", "account", "media_part"],
-    post:    ["post", "media", "account", "media_part"],
-    account: ["account", "post", "media", "media_part"],
-};
 
 // Human label for each scope, phrased relative to the searched entity.
 const SCOPE_LABELS: Partial<Record<E_ENTITY_TYPES, Partial<Record<E_ENTITY_TYPES, string>>>> = {
@@ -79,7 +71,7 @@ export default function TagFilterBar({tagIds, tagFilterMode, selectedTagObjects,
     const applicableScopes = (entity && SCOPE_OPTIONS[entity]) || [];
     const selfScope = entity;
     const selectedScopes = useMemo(
-        () => new Set(tagScopes && tagScopes.length ? tagScopes : (selfScope ? [selfScope] : [])),
+        () => new Set(resolveScopes(tagScopes, selfScope)),
         [tagScopes, selfScope]
     );
     const isBroadened = selfScope ? (selectedScopes.size > 1 || !selectedScopes.has(selfScope)) : false;
@@ -88,10 +80,11 @@ export default function TagFilterBar({tagIds, tagFilterMode, selectedTagObjects,
         if (scope === selfScope) return; // self scope is locked on
         const next = new Set(selectedScopes);
         if (next.has(scope)) next.delete(scope); else next.add(scope);
-        if (selfScope) next.add(selfScope);
-        // Emit in the canonical whitelist order for stable URLs.
+        // Emit in the canonical whitelist order for stable URLs, always keeping the self scope
+        // present (it can't be unchecked, and must survive even if it's not in applicableScopes).
         const ordered = applicableScopes.filter(s => next.has(s));
-        onChange(tagIds, tagFilterMode, selectedTagObjects, ordered);
+        const finalScopes = selfScope && !ordered.includes(selfScope) ? [selfScope, ...ordered] : ordered;
+        onChange(tagIds, tagFilterMode, selectedTagObjects, finalScopes);
     };
 
     const hasQuickAccess = quickAccessData.individual_tags.length > 0 || quickAccessData.type_dropdowns.length > 0;

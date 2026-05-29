@@ -206,8 +206,8 @@ _SCOPE_BRANCHES: dict[tuple[str, str], str] = {
     ("media", "account"):      "SELECT m.id AS matched_id, td.root_id FROM tag_desc td JOIN account_tag at ON at.tag_id = td.id JOIN media m ON m.account_id = at.account_id",
     ("media", "media_part"):   "SELECT mp.media_id AS matched_id, td.root_id FROM tag_desc td JOIN media_part_tag mpt ON mpt.tag_id = td.id JOIN media_part mp ON mp.id = mpt.media_part_id",
     ("post", "post"):          "SELECT pt.post_id AS matched_id, td.root_id FROM tag_desc td JOIN post_tag pt ON pt.tag_id = td.id",
-    ("post", "account"):       "SELECT p.id AS matched_id, td.root_id FROM tag_desc td JOIN account_tag at ON at.tag_id = td.id JOIN post p ON p.account_id = at.account_id",
     ("post", "media"):         "SELECT m.post_id AS matched_id, td.root_id FROM tag_desc td JOIN media_tag mt ON mt.tag_id = td.id JOIN media m ON m.id = mt.media_id WHERE m.post_id IS NOT NULL",
+    ("post", "account"):       "SELECT p.id AS matched_id, td.root_id FROM tag_desc td JOIN account_tag at ON at.tag_id = td.id JOIN post p ON p.account_id = at.account_id",
     ("post", "media_part"):    "SELECT m.post_id AS matched_id, td.root_id FROM tag_desc td JOIN media_part_tag mpt ON mpt.tag_id = td.id JOIN media_part mp ON mp.id = mpt.media_part_id JOIN media m ON m.id = mp.media_id WHERE m.post_id IS NOT NULL",
     ("account", "account"):    "SELECT at.account_id AS matched_id, td.root_id FROM tag_desc td JOIN account_tag at ON at.tag_id = td.id",
     ("account", "post"):       "SELECT p.account_id AS matched_id, td.root_id FROM tag_desc td JOIN post_tag pt ON pt.tag_id = td.id JOIN post p ON p.id = pt.post_id WHERE p.account_id IS NOT NULL",
@@ -215,12 +215,13 @@ _SCOPE_BRANCHES: dict[tuple[str, str], str] = {
     ("account", "media_part"): "SELECT m.account_id AS matched_id, td.root_id FROM tag_desc td JOIN media_part_tag mpt ON mpt.tag_id = td.id JOIN media_part mp ON mp.id = mpt.media_part_id JOIN media m ON m.id = mp.media_id WHERE m.account_id IS NOT NULL",
 }
 
-# Allowed tag scopes per searched entity (first entry is the default = the entity itself).
-_ALLOWED_SCOPES: dict[str, list[str]] = {
-    "media":   ["media", "post", "account", "media_part"],
-    "post":    ["post", "media", "account", "media_part"],
-    "account": ["account", "post", "media", "media_part"],
-}
+# Allowed tag scopes per searched entity, derived from _SCOPE_BRANCHES so the whitelist can never
+# reference a scope that has no branch (which would KeyError below). Insertion order is preserved,
+# so the first scope per entity is its own (the default). This is the single backend source of
+# truth; it mirrors SCOPE_OPTIONS in the client's lib/tagScopes.ts across the language boundary.
+_ALLOWED_SCOPES: dict[str, list[str]] = {}
+for _branch_entity, _branch_scope in _SCOPE_BRANCHES:
+    _ALLOWED_SCOPES.setdefault(_branch_entity, []).append(_branch_scope)
 
 
 def build_tag_filter_join(entity: str, tag_ids: list[int], tag_filter_mode: str,

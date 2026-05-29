@@ -50,6 +50,7 @@ import {
 } from '../../services/DataFetcher';
 import {ITagWithType} from '../../types/tags';
 import {E_ENTITY_TYPES} from '../../types/entities';
+import {resolveScopes} from '../../lib/tagScopes';
 import TagFilterBar from '../Tags/TagFilterBar';
 import TagSelector from '../Tags/TagSelector';
 import {SEARCH_SHORTCUTS} from '../SearchShortcuts';
@@ -504,9 +505,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                                             tagIds={query.tag_ids || []}
                                             tagFilterMode={query.tag_filter_mode || 'any'}
                                             selectedTagObjects={tagFilterObjects}
-                                            tagScopes={query.tag_scopes && query.tag_scopes.length
-                                                ? query.tag_scopes
-                                                : (SEARCH_MODE_TO_ENTITY[query.search_mode] ? [SEARCH_MODE_TO_ENTITY[query.search_mode]!] : [])}
+                                            tagScopes={resolveScopes(query.tag_scopes, SEARCH_MODE_TO_ENTITY[query.search_mode])}
                                             entity={SEARCH_MODE_TO_ENTITY[query.search_mode]}
                                             onChange={(tagIds, mode, tagObjects, scopes) => {
                                                 tagObjects.forEach(t => tagObjectCache.current.set(t.id, t));

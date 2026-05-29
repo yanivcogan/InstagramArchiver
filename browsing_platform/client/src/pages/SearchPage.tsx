@@ -5,6 +5,7 @@ import GridViewIcon from '@mui/icons-material/GridView';
 import ViewComfyIcon from '@mui/icons-material/ViewComfy';
 import {ITagWithType} from '../types/tags';
 import {E_ENTITY_TYPES} from '../types/entities';
+import {VALID_TAG_SCOPES, defaultScopesFor, isDefaultScopes} from '../lib/tagScopes';
 import {
     ADVANCED_FILTERS_CONFIG,
     batchAnnotate,
@@ -25,9 +26,6 @@ import rison from 'rison';
 import {removeUndefinedValues} from '../services/utils';
 
 const InitialConfig = MuiConfig;
-
-// Entity types accepted in the `ts` (tag scope) URL param; validated/intersected again server-side.
-const VALID_TAG_SCOPES: E_ENTITY_TYPES[] = ['account', 'post', 'media', 'media_part'];
 
 const emptyFiltersCache: Partial<Record<T_Search_Mode, unknown>> = {};
 const getEmptyFilters = (mode: T_Search_Mode) => {
@@ -59,11 +57,10 @@ const extractQueryFromParams = (searchParams: URLSearchParams): ISearchQuery => 
         tag_ids: (searchParams.get('t') || '').split(',').map(Number).filter(n => !isNaN(n) && n > 0),
         tag_filter_mode: searchParams.get('tm') === 'all' ? 'all' : 'any',
         tag_scopes: ((): ISearchQuery['tag_scopes'] => {
-            const entity = SEARCH_MODE_TO_ENTITY[search_mode];
             const raw = (searchParams.get('ts') || '')
                 .split(',')
                 .filter((s): s is E_ENTITY_TYPES => VALID_TAG_SCOPES.includes(s as E_ENTITY_TYPES));
-            return raw.length ? raw : (entity ? [entity] : undefined);
+            return raw.length ? raw : defaultScopesFor(SEARCH_MODE_TO_ENTITY[search_mode]);
         })(),
         sort_by: searchParams.get('sb') || null,
         sort_order: searchParams.get('so') === 'asc' ? 'asc' : searchParams.get('so') === 'desc' ? 'desc' : null,
@@ -136,10 +133,9 @@ export default function SearchPage() {
         if (q.tag_ids && q.tag_ids.length > 1 && q.tag_filter_mode && q.tag_filter_mode !== 'any') params.append('tm', q.tag_filter_mode);
         // Only persist tag scopes when broadened beyond the default (the searched entity itself),
         // matching how `tm` is only written when non-default — keeps shareable URLs clean.
-        if (q.tag_ids && q.tag_ids.length > 0 && q.tag_scopes && q.tag_scopes.length) {
-            const entity = SEARCH_MODE_TO_ENTITY[q.search_mode];
-            const isDefault = q.tag_scopes.length === 1 && q.tag_scopes[0] === entity;
-            if (!isDefault) params.append('ts', q.tag_scopes.join(','));
+        if (q.tag_ids && q.tag_ids.length > 0 && q.tag_scopes && q.tag_scopes.length
+            && !isDefaultScopes(q.tag_scopes, SEARCH_MODE_TO_ENTITY[q.search_mode])) {
+            params.append('ts', q.tag_scopes.join(','));
         }
         if (q.sort_by) {
             params.append('sb', q.sort_by);
