@@ -36,7 +36,7 @@ from root_anchor import ROOT_DIR
 from utils.commit_tracker.git_helper import ensure_committed
 from utils.ffmpeg_installer import ensure_ffmpeg_installed
 from utils.integrity import FileIntegrity, protect_file, seal_archive
-from utils.misc import get_my_public_ip, get_system_info
+from utils.misc import ensure_vpn_connection, get_my_public_ip, get_system_info
 from utils.par2_installer import ensure_par2_installed
 
 SCREEN_SIZE = tuple(pyautogui.size())
@@ -843,6 +843,7 @@ def archive_instagram_content(profile: Profile, target_url: str):
 
 if __name__ == "__main__":
     commit_id, branch = ensure_committed()
+    ensure_vpn_connection()
     ensure_ffmpeg_installed()
     ensure_par2_installed()
     selected_profile = select_profile()
