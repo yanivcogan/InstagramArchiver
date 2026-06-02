@@ -25,8 +25,6 @@ async def get_community_candidates(
 ) -> CommunityCandidatesResponse:
     if not req.kernel_ids:
         raise HTTPException(status_code=422, detail="kernel_ids must not be empty")
-    if len(req.kernel_ids) > 100:
-        raise HTTPException(status_code=422, detail="kernel_ids must not exceed 100")
     transform = extract_search_results_config(request)
     return compute_candidates(req, transform)
 
