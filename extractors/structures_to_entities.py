@@ -29,6 +29,23 @@ from extractors.structures_extraction_graphql import extract_graphql_from_respon
 from extractors.structures_extraction_html import PageResponse, extract_data_from_html_entry
 
 
+def account_url_suffix(username: Optional[str], user_id: Optional[str] = None) -> Optional[str]:
+    """Build an Account/relation url_suffix from a username, guarding against None.
+
+    A missing username must never be formatted into the literal string "None/"
+    (which normalize_url_suffix then stores as "None"): distinct usernameless
+    accounts would otherwise collide on that shared sentinel and be merged into a
+    single canonical (the original bug — see _is_valid_identifier in db_intake).
+    Fall back to an id-based suffix when the username is absent, or None when
+    neither identifier is known.
+    """
+    if username:
+        return f"{username}/"
+    if user_id:
+        return f"id:{user_id}"
+    return None
+
+
 class ExtractedHarData(BaseModel):
     structures: list[StructureType]
     videos: list[Video]
@@ -407,7 +424,7 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
         for item in highlight.items:
             account = Account(
                 id_on_platform=highlight.user.id,
-                url_suffix=f"{highlight.user.username}/",
+                url_suffix=account_url_suffix(highlight.user.username, highlight.user.id or highlight.user.user_id),
                 display_name=None,
                 bio=None,
                 data=highlight.user.model_dump(),
@@ -496,7 +513,7 @@ def graphql_profile_timeline_to_entities(structure: ProfileTimelineGraphQL) -> E
             continue
         account = Account(
             id_on_platform=item.user.id,
-            url_suffix=f"{item.user.username}/",
+            url_suffix=account_url_suffix(item.user.username, item.user.id),
             display_name=None,
             bio=None,
             data=item.user.model_dump(),
@@ -708,7 +725,7 @@ def graphql_clips_to_entities(structure: ClipsUserConnection) -> ExtractedEntiti
         item = edge.node.media
         account = Account(
             id_on_platform=item.user.id,
-            url_suffix=f"{item.user.username}/",
+            url_suffix=account_url_suffix(item.user.username, item.user.id),
             display_name=None,
             bio=None,
             data=item.user.model_dump(),
@@ -809,10 +826,10 @@ def api_v1_media_info_to_entities(media_info: MediaInfoApiV1) -> ExtractedEntiti
     extracted_media: list[Media] = []
     for item in media_info.items:
         _username = item.user.username or item.owner.username
+        _user_id = item.user.id or item.owner.id
         account = Account(
-            id_on_platform=item.user.id or item.owner.id,
-            url_suffix=f"{_username}/" if _username else (
-                f"id:{item.user.id or item.owner.id}" if (item.user.id or item.owner.id) else None),
+            id_on_platform=_user_id,
+            url_suffix=account_url_suffix(_username, _user_id),
             display_name=item.user.full_name or item.owner.full_name,
             bio=None,
             data=item.user.model_dump(),
@@ -1051,7 +1068,7 @@ def page_posts_to_entities(structure: MediaShortcode) -> ExtractedEntitiesFlatte
         _user_id = (item.user.id if item.user else None) or (item.owner.id if item.owner else None)
         account: Account = Account(
             id_on_platform=_user_id,
-            url_suffix=f"{_username}/" if _username else (f"id:{_user_id}" if _user_id else None),
+            url_suffix=account_url_suffix(_username, _user_id),
             display_name=_fullname,
             bio=None,
             data=item.user.model_dump() if item.user else None,
@@ -1167,7 +1184,7 @@ def page_timelines_to_entities(structure: ProfileTimeline) -> ExtractedEntitiesF
             continue
         account = Account(
             id_on_platform=item.user.id,
-            url_suffix=f"{item.user.username}/" if item.user.username else None,
+            url_suffix=account_url_suffix(item.user.username, item.user.id),
             display_name=None,
             bio=None,
             data=item.user.model_dump(),
@@ -1263,7 +1280,7 @@ def page_highlight_reels_to_entities(structure: HighlightsReelConnection) -> Ext
         highlight_id = highlight.id.split(":")[-1]
         account = Account(
             id_on_platform=highlight.user.id,
-            url_suffix=f"{highlight.user.username}/",
+            url_suffix=account_url_suffix(highlight.user.username, highlight.user.id),
             display_name=None,
             bio=None,
             data=highlight.user.model_dump(),
@@ -1375,7 +1392,7 @@ def page_stories_to_entities(structure: StoriesFeed) -> ExtractedEntitiesFlatten
         )
     account = Account(
         id_on_platform=reels_media.user.id,
-        url_suffix=f"{reels_media.user.username}/",
+        url_suffix=account_url_suffix(reels_media.user.username, reels_media.user.id),
         display_name=None,
         bio=None,
         data=reels_media.user.model_dump(),
