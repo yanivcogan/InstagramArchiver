@@ -415,8 +415,12 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
         highlight_id = highlight.id.split(":")[-1]
         user = highlight.user
         username = user.username
-        user_id = user.id or user.user_id
-        is_24_hours_story = username if highlight_id == user_id else highlight_id
+        user_id = user.pk or user.id or user.user_id
+        # 24h stories and highlights both arrive via the reels_media endpoint with a
+        # near-identical shape. A 24h story is the user's own reel (reel_type
+        # "user_reel"; node id == user pk), whereas a highlight is nested in a
+        # collection node (reel_type "highlight_reel"; node id "highlight:{coll_pk}").
+        is_highlight = highlight.reel_type == "highlight_reel" or highlight_id != user_id
         for item in highlight.items:
             account = Account(
                 id_on_platform=highlight.user.id,
@@ -427,7 +431,11 @@ def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> Extracte
                 platform="instagram"
             )
             extracted_accounts.append(account)
-            url_suffix = f"stories/{username}/{item.pk or item.id}/" if is_24_hours_story else f"s/{highlight_id}/?story_media_id={item.pk or item.id}"
+            url_suffix = (
+                f"s/{highlight_id}/?story_media_id={item.pk or item.id}"
+                if is_highlight
+                else f"stories/{username}/{item.pk or item.id}/"
+            )
             post = Post(
                 id_on_platform=item.pk or item.id,
                 url_suffix=url_suffix,
