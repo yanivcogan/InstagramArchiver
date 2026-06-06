@@ -20,12 +20,12 @@ from extractors.extract_videos import acquire_videos, VideoAcquisitionConfig, Vi
     accumulate_video_segment, reconcile_video_dicts
 from extractors.models import MediaShortcode, HighlightsReelConnection, StoriesFeed, CommentsConnection, ProfileTimeline
 from extractors.models_api_v1 import MediaInfoApiV1, CommentsApiV1, LikersApiV1, FriendshipsApiV1
-from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection, FriendsListGraphQL, ClipsUserConnection
+from extractors.models_graphql import ProfileTimelineGraphQL, ReelsMediaConnection, FriendsListGraphQL, ClipsUserConnection, ProfileInfoUserGraphQL
 from extractors.models_har import HarRequest
 from extractors.reconcile_entities import reconcile_accounts, reconcile_posts, reconcile_media
 from extractors.structures_extraction import StructureType
 from extractors.structures_extraction_api_v1 import ApiV1Response, ApiV1Context, extract_data_from_api_v1_entry
-from extractors.structures_extraction_graphql import extract_graphql_from_response, GraphQLResponse
+from extractors.structures_extraction_graphql import extract_graphql_from_response, GraphQLResponse, is_graphql_url
 from extractors.structures_extraction_html import PageResponse, extract_data_from_html_entry
 
 
@@ -71,7 +71,7 @@ def _scan_har_once(har_path: Path) -> tuple[list[StructureType], list[Video], li
 
             # --- Structures (GraphQL, API v1, HTML) ---
             try:
-                if 'graphql/query' in url:
+                if is_graphql_url(url):
                     res_json: Optional[str] = content.get('text')
                     if res_json:
                         req = HarRequest(**entry['request'])
@@ -402,7 +402,33 @@ def graphql_to_entities(structure: GraphQLResponse) -> ExtractedEntitiesFlattene
             extend_flattened_entities(entities, page_posts_to_entities(structure.post_shortcode))
         except Exception as e:
             print(f"[graphql_to_entities] Error processing post_shortcode: {e}")
+    if structure.profile_info:
+        try:
+            extend_flattened_entities(entities, graphql_profile_info_to_entities(structure.profile_info))
+        except Exception as e:
+            print(f"[graphql_to_entities] Error processing profile_info: {e}")
     return entities
+
+
+def graphql_profile_info_to_entities(user: ProfileInfoUserGraphQL) -> ExtractedEntitiesFlattened:
+    """Emit a single Account carrying the profile biography. Sourced from the
+    PolarisProfilePageContentQuery GraphQL response (data.user, served from the
+    /api/graphql endpoint) — the only place the viewed subject's bio appears. The
+    profile-page HTML carries only the logged-in viewer's PolarisViewer bootstrap
+    (the operator, not the subject), so the bio is taken from GraphQL alone."""
+    bio = user.biography or None
+    account = Account(
+        id_on_platform=user.id or user.pk,
+        url_suffix=account_url_suffix(user.username),
+        display_name=user.full_name or None,
+        bio=(bio[:200] if bio else None),  # account.bio is varchar(200) / Field(max_length=200)
+        data=user.model_dump(),
+        platform="instagram",
+    )
+    return ExtractedEntitiesFlattened(
+        accounts=[account], posts=[], media=[], comments=[], likes=[],
+        account_relations=[], tagged_accounts=[]
+    )
 
 
 def graphql_reels_media_to_entities(structure: ReelsMediaConnection) -> ExtractedEntitiesFlattened:
