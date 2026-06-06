@@ -1,43 +1,61 @@
 """
-V032 — Clean up the 'None' url_suffix accounts and archive rows that V020 missed
+V032 — Reset (in place) the canonical accounts contaminated by the 'None' merge bug
 
-V020 attempted to break up the accounts merged by the owner.username=None
-extraction bug, but its predicate matched only the exact literal 'None/'.
+A past bug formatted a missing username as "None/" — stored as "None" after
+normalize_url_suffix strips the trailing slash. Distinct usernameless accounts
+then collided on that shared sentinel and merged into one canonical. V020 tried
+to clean this but matched only the literal 'None/', so it missed the rows stored
+as "None".
 
-The Account.normalize_url_suffix validator, however, strips the trailing slash
-before storing (`v.strip().split('?')[0].rstrip('/')`), so an extracted "None/"
-is actually persisted as "None". V020 therefore caught only the rows written
-before that validator existed (notably the original giant pre-existing canonical,
-whose frozen url_suffix stayed "None/") and left every later bad row — stored as
-"None" — untouched.
+Two shapes of contamination survive in the DB:
 
-This migration repeats V020's cleanup using the string sentinels left by the bug
-('None', 'None/', and the empty string), and additionally re-queues sessions
-whose account_ARCHIVE rows carry the sentinel even when their canonical account
-is fine (a session whose buggy run contributed "None" while another run supplied
-the real username — the canonical is correct but its provenance row is wrong).
+  * "Pure" sentinel canonical — account.url_suffix is still '', 'None', or
+    'None/'. It is the merge magnet itself.
 
-  1. Identify canonical account rows whose url_suffix is a sentinel
-  2. Identify sessions that contributed a sentinel account_archive row
-  3. Remove / NULL all FK-dependent rows for the bad canonicals, then delete them
-  4. Reset every affected archive_session to 'parsed' so entity extraction
-     re-runs with the fixed extractors (account_url_suffix() in
-     structures_to_entities) AND the fixed validator (collapse_null_like_suffix
-     in entity_types), which together (a) stop emitting the sentinel and (b) let
-     the re-extracted suffix overwrite the stale "None" archive row.
+  * "Promoted" canonical — its url_suffix was later OVERWRITTEN with a real
+    username when a new archiving session re-observed one of the merged accounts
+    (joined on a shared id_on_platform) and reconciliation preferred the real
+    value. The canonical now LOOKS valid (real username, 'url_None' kept in the
+    identifiers history) but still holds dozens of OTHER accounts' posts, and its
+    per-session account_archive rows still carry the 'None' sentinel.
 
-SQL NULL is deliberately EXCLUDED from the sentinel test. A NULL url_suffix is
-the legitimate shape of an id-only account (known by id_on_platform, no
-username); deleting those would destroy valid canonical entities whose internal
-ids are referenced by the browsing platform. Genuinely unidentifiable accounts
-(no username AND no id) likewise keep their NULL suffix but no longer merge,
-because the ingestion guard refuses to match on a null-like identifier.
+Detecting contamination by the canonical's url_suffix alone would miss the
+promoted case. So we detect it by the per-session account_archive rows — those
+still say 'None' regardless of what happened to the canonical row.
+
+This migration RESETS each contaminated canonical IN PLACE and never deletes a
+canonical row (their internal ids are referenced by the browsing platform and
+external citations):
+
+  1. Identify contaminated canonicals: those that own a sentinel account_archive
+     row, plus any whose own url_suffix is a sentinel.
+  2. Detach every child FK (post / media / comment / post_like / tagged_account)
+     pointing at them, so re-extraction re-attaches each entity to its CORRECT
+     account and the post_count sync recomputes each canonical from scratch.
+  3. Delete the sentinel account_archive provenance rows (foreign-account data
+     wrongly attributed to these canonicals); legitimate rows are kept.
+  4. Clear a sentinel value off the canonical row itself (-> NULL). NULL is the
+     legitimate id-only shape and is never a merge key; a promoted canonical
+     already holds a real username and is left untouched.
+  5. Re-queue every contributing session to 'parsed'. On re-extraction: the
+     legitimately-owned account re-attaches its posts and re-synthesizes the
+     canonical's metadata from only its surviving (correct) archive rows, while
+     each wrongly-merged account is rebuilt as its own canonical.
+
+SQL NULL is never treated as a sentinel — a NULL url_suffix is the legitimate
+shape of an id-only account and must be preserved.
+
+NOTE: between this migration and the next extraction run, the detached posts are
+temporarily account-less (account_id = NULL), exactly as with V020. Run the
+extraction pipeline promptly afterwards. Sessions whose HAR is unavailable will
+not re-attach until they can be re-extracted.
 """
 
 
 def _sentinel(col: str) -> str:
     """Match the non-NULL null-like url_suffix values the bug produced: the empty
-    string, 'None', or 'None/' (trailing slash stripped to 'None')."""
+    string, 'None', or 'None/' (trailing slash stripped to 'None'). SQL NULL is
+    deliberately excluded — it is the legitimate shape of an id-only account."""
     return f"({col} = '' OR TRIM(TRAILING '/' FROM {col}) = 'None')"
 
 
@@ -45,111 +63,118 @@ def run(cnx):
     cur = cnx.cursor()
     try:
         # ------------------------------------------------------------------ #
-        # Step 1: Collect bad canonical account IDs (sentinel url_suffix)
+        # Step 1: Identify contaminated canonical accounts.
+        #   (a) any canonical that owns a sentinel account_archive row, and
+        #   (b) any canonical whose own url_suffix is still a sentinel.
         # ------------------------------------------------------------------ #
+        cur.execute(
+            f"""SELECT DISTINCT canonical_id FROM account_archive
+                WHERE {_sentinel('url_suffix')} AND canonical_id IS NOT NULL"""
+        )
+        contaminated = {row[0] for row in cur.fetchall()}
+
         cur.execute(f"SELECT id FROM account WHERE {_sentinel('url_suffix')}")
-        bad_account_ids = [row[0] for row in cur.fetchall()]
-        print(f"    V032: found {len(bad_account_ids)} canonical account(s) with a sentinel url_suffix")
+        contaminated.update(row[0] for row in cur.fetchall())
+
+        if not contaminated:
+            print("    V032: no contaminated canonical accounts found — nothing to do")
+            return
+
+        ids = list(contaminated)
+        ph = ','.join(['%s'] * len(ids))
+        print(f"    V032: {len(ids)} contaminated canonical account(s)")
 
         # ------------------------------------------------------------------ #
-        # Step 2: Collect affected archive session IDs BEFORE any deletion.
-        #   (a) sessions linked to a bad canonical, and
-        #   (b) sessions that contributed a sentinel account_archive row even
-        #       under an otherwise-correct canonical.
-        # Restricted to 'done' sessions — only those have already been extracted
-        # and so can carry stale entities worth re-deriving.
+        # Step 2: Collect every 'done' session that contributed ANY archive row
+        #         to a contaminated canonical (sentinel OR legit) — BEFORE we
+        #         delete any rows. Includes the session that supplied the real
+        #         username, so its re-extraction re-synthesizes clean metadata.
         # ------------------------------------------------------------------ #
-        affected_session_ids: set = set()
-
-        if bad_account_ids:
-            ph = ','.join(['%s'] * len(bad_account_ids))
-            cur.execute(
-                f"""SELECT DISTINCT aa.archive_session_id
-                    FROM account_archive aa
-                    JOIN archive_session s ON s.id = aa.archive_session_id
-                    WHERE aa.canonical_id IN ({ph})
-                      AND s.incorporation_status = 'done'""",
-                bad_account_ids,
-            )
-            affected_session_ids.update(row[0] for row in cur.fetchall())
-
         cur.execute(
             f"""SELECT DISTINCT aa.archive_session_id
                 FROM account_archive aa
                 JOIN archive_session s ON s.id = aa.archive_session_id
-                WHERE {_sentinel('aa.url_suffix')}
-                  AND s.incorporation_status = 'done'"""
+                WHERE aa.canonical_id IN ({ph})
+                  AND s.incorporation_status = 'done'""",
+            ids,
         )
-        affected_session_ids.update(row[0] for row in cur.fetchall())
-        print(f"    V032: {len(affected_session_ids)} archive session(s) will be reset to 'parsed'")
-
-        if not bad_account_ids and not affected_session_ids:
-            print("    V032: no sentinel accounts or archive rows found — nothing to do")
-            return
+        sessions = [row[0] for row in cur.fetchall()]
+        print(f"    V032: {len(sessions)} contributing session(s) will be reset to 'parsed'")
 
         # ------------------------------------------------------------------ #
-        # Step 3: Break up the bad canonicals (only if any were found)
+        # Step 3: Detach all child FK references to the contaminated canonicals.
+        #         Re-extraction re-attaches each entity to its correct account;
+        #         nulling first guarantees the post_count sync recomputes these
+        #         canonicals from scratch (no carry-over of mis-merged counts).
+        #         account_tag.account_id is NOT NULL but the canonical row
+        #         survives, so its tags stay FK-valid and are left in place.
         # ------------------------------------------------------------------ #
-        if bad_account_ids:
-            ph = ','.join(['%s'] * len(bad_account_ids))
-
-            # 3a: account_relation_archive rows must go before account_relation
-            #     (account_relation_archive.canonical_id → account_relation.id is
-            #     NOT NULL constrained).
+        for table, col in [
+            ('post', 'account_id'),
+            ('media', 'account_id'),
+            ('comment', 'account_id'),
+            ('post_like', 'account_id'),
+            ('tagged_account', 'tagged_account_id'),
+        ]:
             cur.execute(
-                f"""SELECT id FROM account_relation
-                    WHERE followed_account_id IN ({ph})
-                       OR follower_account_id IN ({ph})""",
-                bad_account_ids + bad_account_ids,
+                f"UPDATE `{table}` SET `{col}` = NULL WHERE `{col}` IN ({ph})",
+                ids,
             )
-            bad_relation_ids = [row[0] for row in cur.fetchall()]
-            if bad_relation_ids:
-                ph_rel = ','.join(['%s'] * len(bad_relation_ids))
-                cur.execute(
-                    f"DELETE FROM account_relation_archive WHERE canonical_id IN ({ph_rel})",
-                    bad_relation_ids,
-                )
-                cur.execute(
-                    f"DELETE FROM account_relation WHERE id IN ({ph_rel})",
-                    bad_relation_ids,
-                )
-                print(f"    V032: deleted {len(bad_relation_ids)} account_relation row(s) and their archives")
 
-            # 3b: account_tag.account_id is NOT NULL — delete those rows.
-            cur.execute(f"DELETE FROM account_tag WHERE account_id IN ({ph})", bad_account_ids)
-
-            # 3c: NULL out nullable FK references to the bad accounts.
-            for table, col in [
-                ('post', 'account_id'),
-                ('media', 'account_id'),
-                ('comment', 'account_id'),
-                ('post_like', 'account_id'),
-                ('tagged_account', 'tagged_account_id'),
-            ]:
-                cur.execute(
-                    f"UPDATE `{table}` SET `{col}` = NULL WHERE `{col}` IN ({ph})",
-                    bad_account_ids,
-                )
-
-            # 3d: account_archive rows for the bad canonicals, then the canonicals.
-            cur.execute(f"DELETE FROM account_archive WHERE canonical_id IN ({ph})", bad_account_ids)
-            cur.execute(f"DELETE FROM account WHERE id IN ({ph})", bad_account_ids)
-            print(f"    V032: deleted {len(bad_account_ids)} bad canonical account(s)")
+        # The detach above leaves every contaminated canonical with zero posts,
+        # so reset the denormalized post_count to match. Re-extraction's
+        # per-session sync re-inflates it as the legitimately-owned posts
+        # re-attach; a pure shell that nothing re-attaches to correctly stays at
+        # 0. (Without this the sync — which only touches accounts whose posts are
+        # re-observed — would never revisit such a shell, leaving its old
+        # inflated count, which drives the post_count search filters, forever.)
+        cur.execute(f"UPDATE account SET post_count = 0 WHERE id IN ({ph})", ids)
 
         # ------------------------------------------------------------------ #
-        # Step 4: Reset affected archive sessions to 'parsed'
+        # Step 4: Delete the sentinel account_archive rows (the 'None'/'' rows
+        #         carrying foreign-account data). Legit non-sentinel rows stay,
+        #         so a promoted canonical retains the row it re-synthesizes from.
         # ------------------------------------------------------------------ #
-        if affected_session_ids:
-            ids = list(affected_session_ids)
-            ph_s = ','.join(['%s'] * len(ids))
+        cur.execute(f"DELETE FROM account_archive WHERE {_sentinel('url_suffix')}")
+        print(f"    V032: deleted {cur.rowcount} sentinel account_archive row(s)")
+
+        # ------------------------------------------------------------------ #
+        # Step 5: Clear the sentinel value off the canonical row itself (-> NULL).
+        #         Promoted canonicals hold a real username and are not matched.
+        # ------------------------------------------------------------------ #
+        cur.execute(f"UPDATE account SET url_suffix = NULL WHERE {_sentinel('url_suffix')}")
+        print(f"    V032: nulled url_suffix on {cur.rowcount} canonical account(s)")
+
+        # ------------------------------------------------------------------ #
+        # Step 6: Re-queue the contributing sessions for re-extraction.
+        # ------------------------------------------------------------------ #
+        if sessions:
+            ph_s = ','.join(['%s'] * len(sessions))
             cur.execute(
                 f"""UPDATE archive_session
                     SET incorporation_status = 'parsed'
                     WHERE id IN ({ph_s})
                       AND incorporation_status = 'done'""",
-                ids,
+                sessions,
             )
-            print(f"    V032: reset {cur.rowcount} archive session(s) to 'parsed'")
+            print(f"    V032: reset {cur.rowcount} session(s) to 'parsed'")
+
+        # ------------------------------------------------------------------ #
+        # Step 7: Report (do NOT delete) canonicals left as empty shells — no
+        #         id_on_platform to re-attach to and no surviving archive rows.
+        #         These are pure garbage magnets; prune separately if desired.
+        # ------------------------------------------------------------------ #
+        cur.execute(
+            f"""SELECT COUNT(*) FROM account a
+                WHERE a.id IN ({ph})
+                  AND a.id_on_platform IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM account_archive aa WHERE aa.canonical_id = a.id)""",
+            ids,
+        )
+        shells = cur.fetchone()[0]
+        if shells:
+            print(f"    V032: {shells} canonical(s) will remain as empty shells "
+                  f"(NULL id_on_platform, no archive rows) — prune separately if desired")
 
         cnx.commit()
         print("    V032: done")
