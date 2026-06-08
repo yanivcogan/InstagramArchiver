@@ -684,11 +684,23 @@ export default function CommunityDetectionPage() {
 
     // ── Community tag selection ───────────────────────────────────────────────
 
+    // Discard the current suggestions list (and everything derived from the last
+    // run). Called whenever the tag binding changes, since a suggestions list
+    // computed for the previous binding would be stale and confusing.
+    const resetSuggestions = () => {
+        setCandidates([]);
+        setCandidateAllTags({});
+        setCandidateTagDistributions({});
+        setLoadingTagDistributions({});
+        setHasRun(false);
+    };
+
     const handleCommunityTagChange = async (tag: ITagWithType | null) => {
         if (!tag) {
             // Clear tag mode: keep kernel entries but clear tagSources indicators
             setCommunityTag(null);
             setCommunityDropdown(null);
+            resetSuggestions();
             return;
         }
 
@@ -713,6 +725,7 @@ export default function CommunityDetectionPage() {
                 }));
                 setKernelEntries(newEntries);
                 setExcludedAccounts(resp.dismissals.map(dismissedToCandidate));
+                resetSuggestions();
             } else {
                 // Ad-hoc kernel populated — ask for confirmation
                 setTagTransitionPending({
@@ -985,6 +998,35 @@ export default function CommunityDetectionPage() {
             setCopyFeedback({
                 severity: 'success',
                 message: `Copied ${copied} row${copied === 1 ? '' : 's'} to clipboard${hiddenNote}${skippedNote}`,
+            });
+        } catch (err) {
+            setCopyFeedback({
+                severity: 'error',
+                message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}`,
+            });
+        }
+    };
+
+    // Copy the candidate URLs (after display filters) as a newline-delimited
+    // list. Unlike the kernel copy there is no tags column — by definition a
+    // suggestion is not tagged with the community tag (or a subtag) — so a
+    // single-column, header-less list of URLs is enough.
+    const copyCandidatesAsUrls = async () => {
+        const urls: string[] = [];
+        let skipped = 0;
+        for (const candidate of shownCandidates) {
+            if (!candidate.url_suffix) {
+                skipped++;
+                continue;
+            }
+            urls.push(`https://www.instagram.com/${candidate.url_suffix}/`);
+        }
+        try {
+            await navigator.clipboard.writeText(urls.join('\n'));
+            const skippedNote = skipped > 0 ? ` (${skipped} skipped — no url_suffix)` : '';
+            setCopyFeedback({
+                severity: 'success',
+                message: `Copied ${urls.length} URL${urls.length === 1 ? '' : 's'} to clipboard${skippedNote}`,
             });
         } catch (err) {
             setCopyFeedback({
@@ -1582,6 +1624,19 @@ export default function CommunityDetectionPage() {
                                                         disabled={!hasVerifiedVisible || displayFiltersActive}
                                                         onClick={autoRemoveVerified} sx={{flexShrink: 0}}>
                                                     Remove Verified
+                                                </Button>
+                                            </span>
+                                        </Tooltip>
+                                        <Tooltip title="Copy candidate URLs (one per line) to clipboard">
+                                            <span>
+                                                <Button
+                                                    variant="outlined" size="small"
+                                                    startIcon={<ContentCopyIcon/>}
+                                                    disabled={shownCandidates.length === 0}
+                                                    onClick={copyCandidatesAsUrls}
+                                                    sx={{flexShrink: 0}}
+                                                >
+                                                    Copy to clipboard
                                                 </Button>
                                             </span>
                                         </Tooltip>
