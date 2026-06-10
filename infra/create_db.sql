@@ -187,7 +187,7 @@ create index archive_session_archiving_date
 create index archive_session_archiving_timestamp_index
     on archive_session (archiving_timestamp);
 
-create index archive_session_external_id_index
+create unique index uq_archive_session_external_id
     on archive_session (external_id);
 
 create index idx_incorporation_queue
