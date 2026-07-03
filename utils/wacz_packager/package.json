@@ -1,0 +1,9 @@
+{
+  "name": "instagram-archiver-wacz-packager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node helper for har_to_wacz.py: packages a WARC into a WACZ via js-wacz (warcio.js). Uses the SAME toolchain replayweb.page/wabac uses at replay, so CDX keys (SURT trailing slash, POST __wb_method + decodeURI-encoded body) match at lookup time. py-wacz (Python surt + cdxj_indexer) canonicalizes differently and its POST keys never match wabac, breaking POST/GraphQL replay.",
+  "dependencies": {
+    "@harvard-lil/js-wacz": "^0.1.6"
+  }
+}
