@@ -44,6 +44,7 @@ dependencies = [
     "qrcode[pil]>=8.0",
     "slowapi>=0.1.9",
     "imagehash>=4.3.2",
+    "toga>=0.5.5",
 ]
 
 [tool.hatch.build.targets.wheel]
