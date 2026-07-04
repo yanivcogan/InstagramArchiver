@@ -302,9 +302,12 @@ def search_accounts(query: ISearchQuery, search_results_transform: SearchResultT
         else:
             handle = extract_account_handle(query.search_term)
             if handle:
-                # Bare handle / @handle → identifier lookup + fulltext on handle token
+                # Bare handle / @handle → identifier lookup + fulltext on handle token.
+                # identifiers are stored slash-free (f"url_{url_suffix}"), and JSON_CONTAINS
+                # is exact element-equality, so the term must match that format exactly —
+                # same as the full-URL path above (f"url_{parsed_url.suffix}").
                 query_args["search_term"]         = default_fulltext_query(handle)
-                query_args["account_search_term"] = f"url_{handle}/"
+                query_args["account_search_term"] = f"url_{handle}"
                 where_clauses.append(
                     "JSON_CONTAINS(`identifiers`, JSON_QUOTE(%(account_search_term)s)) "
                     "OR MATCH(`url_suffix`, `url_parts`, `bio`, `display_name`) AGAINST (%(search_term)s IN BOOLEAN MODE)"
