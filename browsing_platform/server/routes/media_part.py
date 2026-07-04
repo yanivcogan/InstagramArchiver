@@ -47,6 +47,7 @@ async def post_media_part(item: MediaPart, background_tasks: BackgroundTasks) ->
 
 
 @router.delete("/{item_id}/", dependencies=[Depends(auth_user_access)])
+@router.delete("/{item_id}", dependencies=[Depends(auth_user_access)])
 async def drop_media_part(item_id:int) -> None:
     media_part = get_media_part_by_id(item_id)
     if not media_part:
