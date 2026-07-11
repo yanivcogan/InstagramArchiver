@@ -25,7 +25,8 @@ from db_loaders.archives_db_loader import (
     extract_entities,
     set_archives_dir,
 )
-from db_loaders.thumbnail_generator import generate_missing_thumbnails
+from db_loaders.thumbnail_generator import generate_missing_thumbnails, generate_missing_part_thumbnails
+from db_loaders.phash_generator import generate_missing_hashes
 from utils import db
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,17 @@ def _run_incorporation(job_id: int, limit: Optional[int] = None, name_filter: Op
         _loop = asyncio.new_event_loop()
         try:
             _loop.run_until_complete(generate_missing_thumbnails(cancel_check=cancel, emit=emit))
+            _loop.run_until_complete(generate_missing_part_thumbnails(cancel_check=cancel, emit=emit))
+        finally:
+            _loop.close()
+
+        emit("Part E — generating perceptual hashes")
+        # Same manually managed loop rationale as Part D: avoid asyncio.run()
+        # blocking on shutdown_default_executor() if any cv2 executor threads
+        # survived a wait_for timeout.
+        _loop = asyncio.new_event_loop()
+        try:
+            _loop.run_until_complete(generate_missing_hashes(cancel_check=cancel, emit=emit))
         finally:
             _loop.close()
 
