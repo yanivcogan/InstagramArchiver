@@ -5,7 +5,9 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import dayjs from 'dayjs';
 import {SearchResult} from '../../services/DataFetcher';
 import {ITagWithType} from '../../types/tags';
+import {IMedia} from '../../types/entities';
 import {anchor_local_static_files} from '../../services/server';
+import CroppedMediaView from '../Entities/CroppedMediaView';
 import {SearchResultsProps} from './types';
 
 const MediaHoverOverlay = React.forwardRef<HTMLDivElement, {
@@ -79,11 +81,24 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected, largeI
     const fullRes = result.thumbnails?.[1];
     const isVideo = result.metadata?.media_type === 'video';
     // A media-part result links back to its parent media page with ?part_id=…, which opens the
-    // focus modal. Its thumbnail is already cropped, so show it whole (contain) rather than re-cropping.
+    // focus modal. Its low-res thumbnail is already cropped to the segment; the full-res hover
+    // preview re-applies the part's crop+trim to the parent media (fullRes) via CroppedMediaView.
     const partId = result.metadata?.part_id as number | undefined;
+    const cropArea = result.metadata?.crop_area as number[] | undefined;
+    const timestampStart = result.metadata?.timestamp_range_start as number | undefined;
+    const timestampEnd = result.metadata?.timestamp_range_end as number | undefined;
     const href = partId != null
         ? `/media/${result.id}?part_id=${partId}`
         : `/${result.page}/${result.id}`;
+
+    // Synthetic media for the segment preview: CroppedMediaView only reads local_url/media_type/
+    // aspect_ratio and anchors the URL itself (idempotent on the already-signed fullRes src).
+    const partMedia = {
+        url: '', url_suffix: '',
+        media_type: result.metadata?.media_type,
+        local_url: fullRes?.src,
+        aspect_ratio: fullRes?.aspect_ratio ?? thumbnail?.aspect_ratio ?? undefined,
+    } as IMedia;
 
     const pubDate = result.metadata?.publication_date
         ? dayjs(result.metadata.publication_date).format('YYYY-MM-DD')
@@ -171,11 +186,24 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected, largeI
                         <img
                             src={anchor_local_static_files(thumbnail.src) || undefined}
                             alt=""
-                            style={{width: '100%', height: '100%', objectFit: partId != null ? 'contain' : 'cover', display: 'block'}}
+                            style={{width: '100%', height: '100%', objectFit: 'cover', display: 'block'}}
                         />
                     )}
                     {everHovered && fullResSrc && (
-                        isVideo ? (
+                        partId != null ? (
+                            // Segment: re-apply the part's crop+trim to the parent full-res and
+                            // center-crop it to cover the square tile (fit="cover"). Non-interactive
+                            // preview: hover drives muted playback and the video loops the segment.
+                            <CroppedMediaView
+                                media={partMedia}
+                                cropArea={cropArea}
+                                timestampStart={timestampStart}
+                                timestampEnd={timestampEnd}
+                                fit="cover"
+                                interactive={false}
+                                autoPlay={isVideo && hovered}
+                            />
+                        ) : isVideo ? (
                             <video
                                 ref={videoRef}
                                 src={fullResSrc}

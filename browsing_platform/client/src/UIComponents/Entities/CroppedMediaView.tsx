@@ -17,9 +17,12 @@ interface IProps {
     timestampStart?: number;
     timestampEnd?: number;
     // "container": fill the parent's width (caller bounds it via sx). "viewport": size to fit the
-    // viewport (used by the focus modal).
-    fit?: "container" | "viewport";
-    // Video only: render playback controls (and optionally start playing).
+    // viewport (used by the focus modal). "cover": center-crop to cover a square parent (grid tile
+    // preview) — the parent must be square with overflow:hidden.
+    fit?: "container" | "viewport" | "cover";
+    // Video only: render playback controls (and optionally start playing). When false, the
+    // component is a passive preview: no controls, `autoPlay` reactively drives play/pause on
+    // change, and video loops within the segment (used by the search-results grid tiles).
     interactive?: boolean;
     autoPlay?: boolean;
     sx?: SxProps<Theme>;
@@ -115,11 +118,26 @@ export default function CroppedMediaView({
     const pause = () => videoRef.current?.pause();
     const togglePlay = () => (videoRef.current?.paused ? play() : pause());
 
+    // Preview mode (non-interactive, e.g. a search-results grid tile): there are no controls, so
+    // the parent drives playback through `autoPlay` (hover on / off). Re-run on every change.
+    useEffect(() => {
+        if (interactive || !isVideo) return;
+        if (autoPlay) play(); else pause();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoPlay, interactive, isVideo]);
+
     const onTimeUpdate = () => {
         const v = videoRef.current;
         if (!v) return;
-        // Stop at the segment boundary; leave the head at the end so the next play resets to start.
+        // Preview mode loops within the segment (parity with the full-media grid tile's looping
+        // <video>); the interactive editor/focus views stop at the boundary and park the head.
         if (endTime && v.currentTime >= endTime) {
+            if (!interactive) {
+                v.currentTime = startTime;
+                setCurrentTime(startTime);
+                v.play().catch(() => {});
+                return;
+            }
             v.pause();
             setCurrentTime(endTime);
             return;
@@ -170,13 +188,24 @@ export default function CroppedMediaView({
             onMouseEnter={() => { clearHide(); setControlsVisible(true); }}
             onMouseLeave={() => { if (playing) scheduleHide(1400); }}
             sx={{
-                position: "relative",
                 overflow: "hidden",
                 bgcolor: INK,
-                borderRadius: 1.5,
-                border: `1px solid ${HAIRLINE}`,
                 aspectRatio: `${boxAspect}`,
-                width: fit === "viewport" ? `min(92vw, calc(82vh * ${boxAspect}))` : "100%",
+                // "cover": absolutely fill+overflow a square parent (grid tile), centered, so the
+                // crop is center-cropped to the cell; no chrome. Otherwise a positioned block that
+                // fills the parent width ("container") or fits the viewport ("viewport").
+                ...(fit === "cover"
+                    ? {
+                        position: "absolute",
+                        top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+                        ...(boxAspect >= 1 ? {height: "100%", width: "auto"} : {width: "100%", height: "auto"}),
+                    }
+                    : {
+                        position: "relative",
+                        borderRadius: 1.5,
+                        border: `1px solid ${HAIRLINE}`,
+                        width: fit === "viewport" ? `min(92vw, calc(82vh * ${boxAspect}))` : "100%",
+                    }),
                 ...sx,
             }}
         >
