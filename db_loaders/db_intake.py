@@ -347,9 +347,10 @@ def batch_store_new_media(new_media: list, archive_location) -> list:
         if m.post_id is None:
             raise ValueError(f"Cannot store media {m.id_on_platform!r}: post not found "
                              f"(url={m.post_url_suffix!r}, id_on_platform={m.post_id_on_platform!r})")
-    columns = ['url_suffix', 'platform', 'id_on_platform', 'post_id', 'local_url', 'media_type', 'data', 'thumbnail_status']
+    columns = ['url_suffix', 'platform', 'id_on_platform', 'post_id', 'local_url', 'media_type', 'data',
+               'thumbnail_status', 'phash_status']
     rows = [[m.url_suffix, m.platform, m.id_on_platform, m.post_id, m.local_url, m.media_type,
-             json.dumps(m.data) if m.data else None, initial_thumbnail_status(m)]
+             json.dumps(m.data) if m.data else None, initial_thumbnail_status(m), initial_phash_status(m)]
             for m in new_media]
     return db.batch_insert('media', columns, rows)
 
@@ -969,6 +970,17 @@ def initial_thumbnail_status(media: Media) -> str:
     return 'pending'
 
 
+def initial_phash_status(media: Media) -> str:
+    """Determine the phash_status to assign when first inserting a media record.
+
+    Mirrors initial_thumbnail_status: without a local asset (or for audio) there is
+    nothing to perceptually hash, so the record is not_needed; otherwise pending.
+    """
+    if media.local_url is None or media.media_type == 'audio':
+        return 'not_needed'
+    return 'pending'
+
+
 def store_media(media: Media, existing_media: Optional[Media], archive_location: Path) -> int:
     if media.post_id is None:
         stored_post = get_canonical_post(
@@ -979,6 +991,15 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                              f"(url={media.post_url!r}, id_on_platform={media.post_id_on_platform!r})")
         media.post_id = stored_post.id
     if existing_media is not None:
+        # Reset the derived-asset statuses when the underlying local asset changes.
+        # In particular, a record whose local_url was NULL (thumbnail_status/phash_status
+        # marked not_needed for lack of a source file) that now gains an asset must flip
+        # back to pending so the thumbnail/phash generators pick it up. We decide this in
+        # Python from the pre-update canonical (existing_media) rather than referencing the
+        # local_url column inside the SET clause: MySQL evaluates SET assignments left to
+        # right using already-updated values, so an `IF(local_url <=> ...)` guard placed
+        # after `local_url = ...` always compares the new value to itself and never fires.
+        local_asset_changed = 1 if existing_media.local_url != media.local_url else 0
         db.execute_query(
             """UPDATE media
                SET url_suffix        = %(url_suffix)s,
@@ -988,7 +1009,8 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                    local_url        = %(local_url)s,
                    media_type       = %(media_type)s,
                    data             = %(data)s,
-                   thumbnail_status = IF(local_url <=> %(local_url)s, thumbnail_status, %(thumbnail_status)s)
+                   thumbnail_status = IF(%(reset_asset_status)s, %(thumbnail_status)s, thumbnail_status),
+                   phash_status     = IF(%(reset_asset_status)s, %(phash_status)s, phash_status)
                WHERE id = %(id)s""",
             {
                 "id": media.id,
@@ -999,15 +1021,17 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                 "local_url": media.local_url,
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
+                "reset_asset_status": local_asset_changed,  # 1/0 for the IF() guard
                 "thumbnail_status": initial_thumbnail_status(media),
+                "phash_status": initial_phash_status(media),
             },
             return_type="none"
         )
         return media.id
     else:
         return db.execute_query(
-            """INSERT INTO media (url_suffix, platform, id_on_platform, post_id, local_url, media_type, data, thumbnail_status)
-               VALUES (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s, %(thumbnail_status)s)""",
+            """INSERT INTO media (url_suffix, platform, id_on_platform, post_id, local_url, media_type, data, thumbnail_status, phash_status)
+               VALUES (%(url_suffix)s, %(platform)s, %(id_on_platform)s, %(post_id)s, %(local_url)s, %(media_type)s, %(data)s, %(thumbnail_status)s, %(phash_status)s)""",
             {
                 "url_suffix": media.url_suffix,
                 "platform": media.platform,
@@ -1017,6 +1041,7 @@ def store_media(media: Media, existing_media: Optional[Media], archive_location:
                 "media_type": media.media_type,
                 "data": json.dumps(media.data) if media.data else None,
                 "thumbnail_status": initial_thumbnail_status(media),
+                "phash_status": initial_phash_status(media),
             },
             return_type="id"
         )

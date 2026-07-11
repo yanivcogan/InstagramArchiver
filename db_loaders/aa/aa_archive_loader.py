@@ -397,14 +397,16 @@ def extract_aa_entities(limit: Optional[int] = None) -> None:
 
             incorporate_structures_into_db(entities, session_id, archive_location=None)
 
-            # CDN-URL media cannot be thumbnailed locally — mark as not_needed.
+            # CDN-URL media cannot be thumbnailed or perceptually hashed locally (there is no
+            # downloaded file — local_url is a remote CDN URL) — mark both as not_needed.
             # The conditions guard against accidentally resetting 'generated' status on media
-            # that was already thumbnailed from a HAR/WACZ archive of the same post.
+            # that was already processed from a HAR/WACZ archive of the same post.
             db.execute_query(
                 """UPDATE media
-                   SET thumbnail_status = 'not_needed'
+                   SET thumbnail_status = IF(thumbnail_status = 'pending', 'not_needed', thumbnail_status),
+                       phash_status     = IF(phash_status = 'pending', 'not_needed', phash_status)
                    WHERE local_url LIKE 'https://%'
-                     AND thumbnail_status = 'pending'
+                     AND (thumbnail_status = 'pending' OR phash_status = 'pending')
                      AND id IN (
                          SELECT canonical_id FROM media_archive WHERE archive_session_id = %(id)s
                      )""",
