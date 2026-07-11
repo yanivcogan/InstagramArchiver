@@ -160,14 +160,34 @@ export const SEARCH_MODE_TO_ENTITY: Partial<Record<T_Search_Mode, E_ENTITY_TYPES
     media: 'media',
 };
 
+export const fetchTagsByEntity = async (
+    entity: E_ENTITY_TYPES,
+    ids: number[]
+): Promise<Record<number, ITagWithType[]>> => {
+    if (ids.length === 0) return {};
+    const result = await server.get(`tags/by-entities/?entity=${entity}&ids=${ids.join(',')}`);
+    return Object.fromEntries(Object.entries(result).map(([k, v]) => [Number(k), v as ITagWithType[]]));
+};
+
 export const fetchTagsForSearchResults = async (
     mode: T_Search_Mode,
     ids: number[]
 ): Promise<Record<number, ITagWithType[]>> => {
     const entity = SEARCH_MODE_TO_ENTITY[mode];
-    if (!entity || ids.length === 0) return {};
-    const result = await server.get(`tags/by-entities/?entity=${entity}&ids=${ids.join(',')}`);
-    return Object.fromEntries(Object.entries(result).map(([k, v]) => [Number(k), v as ITagWithType[]]));
+    if (!entity) return {};
+    return fetchTagsByEntity(entity, ids);
+};
+
+// A media-part search result's `id` is its parent media id, so its own tags can't be keyed by
+// `result.id` like a full-media result's. Fetch them separately via the same endpoint, keyed by the
+// part id (metadata.part_id), so segment tiles resolve their own tags through one uniform mechanism.
+export const fetchPartTagsForSearchResults = async (
+    results: SearchResult[]
+): Promise<Record<number, ITagWithType[]>> => {
+    const partIds = results
+        .map(r => r.metadata?.part_id)
+        .filter((id): id is number => id != null);
+    return fetchTagsByEntity('media_part', partIds);
 };
 
 export const batchAnnotate = async (

@@ -39,6 +39,7 @@ import '@react-awesome-query-builder/mui/css/styles.css';
 import {
     ADVANCED_FILTERS_CONFIG,
     defaultPageSize,
+    fetchPartTagsForSearchResults,
     fetchTagsForSearchResults,
     ISearchQuery,
     SEARCH_MODE_TO_ENTITY,
@@ -106,8 +107,8 @@ interface BaseProps {
 // When autoSearch is set, the panel fetches results internally on each keystroke (debounced).
 // When autoSearch is not set, the parent provides results and isLoading.
 export type SearchPanelProps = BaseProps & (
-    | { autoSearch: number; results?: never; isLoading?: never; tagsMap?: never }
-    | { autoSearch?: never; results: SearchResult[]; isLoading: boolean; tagsMap?: Record<number, ITagWithType[]> }
+    | { autoSearch: number; results?: never; isLoading?: never; tagsMap?: never; partTagsMap?: never }
+    | { autoSearch?: never; results: SearchResult[]; isLoading: boolean; tagsMap?: Record<number, ITagWithType[]>; partTagsMap?: Record<number, ITagWithType[]> }
     );
 
 export default function SearchPanel(props: SearchPanelProps) {
@@ -152,6 +153,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     const [internalResults, setInternalResults] = useState<SearchResult[]>([]);
     const [internalIsLoading, setInternalIsLoading] = useState(false);
     const [internalTagsMap, setInternalTagsMap] = useState<Record<number, ITagWithType[]>>({});
+    const [internalPartTagsMap, setInternalPartTagsMap] = useState<Record<number, ITagWithType[]>>({});
     const abortRef = useRef<AbortController | null>(null);
 
     // ── Image-search state (mode === 'image') ─────────────────────────────────
@@ -212,6 +214,7 @@ export default function SearchPanel(props: SearchPanelProps) {
     const results = isImageMode ? imageResults : (isAutoSearch ? internalResults : props.results!);
     const isLoading = isImageMode ? imageLoading : (isAutoSearch ? internalIsLoading : props.isLoading!);
     const tagsMap = isAutoSearch && !isImageMode ? internalTagsMap : (props.tagsMap ?? {});
+    const partTagsMap = isAutoSearch && !isImageMode ? internalPartTagsMap : (props.partTagsMap ?? {});
 
     // ── Sync when parent query changes (URL back/forward navigation) ──────────
 
@@ -264,6 +267,7 @@ export default function SearchPanel(props: SearchPanelProps) {
         abortRef.current = ctrl;
         setInternalIsLoading(true);
         setInternalTagsMap({});
+        setInternalPartTagsMap({});
         searchData(searchQuery, {signal: ctrl.signal}).then(r => {
             setInternalResults(r);
             setInternalIsLoading(false);
@@ -272,6 +276,7 @@ export default function SearchPanel(props: SearchPanelProps) {
             if (ids.length > 0) {
                 fetchTagsForSearchResults(searchQuery.search_mode, ids).then(setInternalTagsMap);
             }
+            fetchPartTagsForSearchResults(r).then(setInternalPartTagsMap);
         }).catch((e: any) => {
             if (e.name !== 'AbortError') setInternalIsLoading(false);
         });
@@ -755,6 +760,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                         <ResultsComponent
                             results={results}
                             tagsMap={tagsMap}
+                            partTagsMap={partTagsMap}
                             selectedIds={tagging?.isActive ? tagging.selectedIds : checkedIds}
                             onToggleSelected={
                                 tagging?.isActive ? tagging.onToggleSelected

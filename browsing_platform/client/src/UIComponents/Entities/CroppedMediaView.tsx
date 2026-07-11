@@ -129,15 +129,21 @@ export default function CroppedMediaView({
     const onTimeUpdate = () => {
         const v = videoRef.current;
         if (!v) return;
-        // Preview mode loops within the segment (parity with the full-media grid tile's looping
-        // <video>); the interactive editor/focus views stop at the boundary and park the head.
-        if (endTime && v.currentTime >= endTime) {
-            if (!interactive) {
-                v.currentTime = startTime;
-                setCurrentTime(startTime);
-                v.play().catch(() => {});
-                return;
+        // Preview tiles render no time UI (the control bar needs `interactive`), so skip the
+        // per-frame setCurrentTime re-render entirely and just loop within the segment. Re-loop only
+        // while still meant to be playing: on a very short segment `timeupdate` fires many times/sec,
+        // so a stray event arriving just after an unhover-driven pause() would otherwise restart
+        // playback and leave the tile looping with the cursor gone.
+        if (!interactive) {
+            if (endTime && v.currentTime >= endTime) {
+                v.currentTime = startTime; // park at the segment start (to re-loop, or for the next hover)
+                if (autoPlay) v.play().catch(() => {}); else v.pause();
             }
+            return;
+        }
+        // Interactive editor/focus view: stop at the segment boundary and leave the head there so the
+        // next play resets to the start.
+        if (endTime && v.currentTime >= endTime) {
             v.pause();
             setCurrentTime(endTime);
             return;
@@ -190,7 +196,6 @@ export default function CroppedMediaView({
             sx={{
                 overflow: "hidden",
                 bgcolor: INK,
-                aspectRatio: `${boxAspect}`,
                 // "cover": absolutely fill+overflow a square parent (grid tile), centered, so the
                 // crop is center-cropped to the cell; no chrome. Otherwise a positioned block that
                 // fills the parent width ("container") or fits the viewport ("viewport").
@@ -198,10 +203,19 @@ export default function CroppedMediaView({
                     ? {
                         position: "absolute",
                         top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-                        ...(boxAspect >= 1 ? {height: "100%", width: "auto"} : {width: "100%", height: "auto"}),
+                        // Size the box with EXPLICIT width+height percentages of the square parent
+                        // (never aspect-ratio + auto): the inner media positions the crop with
+                        // percentages, which need a definite containing block. An aspect-ratio-derived
+                        // auto dimension resolved intermittently, occasionally collapsing those offsets
+                        // so the untransformed full frame showed instead of the crop. The ratio still
+                        // equals boxAspect, and the larger dimension overflows the square (clipped).
+                        ...(boxAspect >= 1
+                            ? {height: "100%", width: `${boxAspect * 100}%`}
+                            : {width: "100%", height: `${100 / boxAspect}%`}),
                     }
                     : {
                         position: "relative",
+                        aspectRatio: `${boxAspect}`,
                         borderRadius: 1.5,
                         border: `1px solid ${HAIRLINE}`,
                         width: fit === "viewport" ? `min(92vw, calc(82vh * ${boxAspect}))` : "100%",
@@ -214,7 +228,9 @@ export default function CroppedMediaView({
                     ref={videoRef}
                     src={localUrl}
                     style={innerStyle}
-                    muted={muted}
+                    // Preview tiles (non-interactive) are always muted — there are no volume controls,
+                    // and it guarantees no audio even if a stray hover leaves one briefly playing.
+                    muted={!interactive || muted}
                     playsInline
                     onLoadedMetadata={(e) => {
                         const v = e.currentTarget;

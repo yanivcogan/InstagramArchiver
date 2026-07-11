@@ -242,7 +242,7 @@ function MediaSearchResultCell({result, tags, selected, onToggleSelected, largeI
 // collapsed under an expander so it doesn't bury the strong hits.
 const GOOD_MATCH_MAX_DISTANCE = 15;
 
-function MediaResultsGrid({results, tagsMap, selectedIds, onToggleSelected, largeIcons}: SearchResultsProps) {
+function MediaResultsGrid({results, tagsMap, partTagsMap, selectedIds, onToggleSelected, largeIcons}: SearchResultsProps) {
     return (
         <Box
             sx={{
@@ -255,9 +255,12 @@ function MediaResultsGrid({results, tagsMap, selectedIds, onToggleSelected, larg
                 <MediaSearchResultCell
                     key={`${result.id}-${result.metadata?.part_id ?? 'm'}`}
                     result={result}
-                    // tagsMap is keyed by parent media id; a segment's own tags aren't here, so don't
-                    // mislabel the parent media's tags as the segment's (the focus modal shows them).
-                    tags={result.metadata?.part_id != null ? [] : (tagsMap?.[result.id] ?? [])}
+                    // tagsMap is keyed by parent media id, so it can't hold a segment's own tags;
+                    // segments resolve their tags from partTagsMap (keyed by part id), full media
+                    // from tagsMap — both fetched via the same /tags endpoint.
+                    tags={result.metadata?.part_id != null
+                        ? (partTagsMap?.[result.metadata.part_id] ?? [])
+                        : (tagsMap?.[result.id] ?? [])}
                     selected={selectedIds?.has(result.id) ?? false}
                     onToggleSelected={onToggleSelected}
                     largeIcons={largeIcons}

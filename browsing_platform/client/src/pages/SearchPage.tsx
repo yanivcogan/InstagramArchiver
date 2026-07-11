@@ -10,6 +10,7 @@ import {
     ADVANCED_FILTERS_CONFIG,
     batchAnnotate,
     defaultPageSize,
+    fetchPartTagsForSearchResults,
     fetchTagsForSearchResults,
     ISearchQuery,
     SEARCH_MODE_TO_ENTITY,
@@ -90,6 +91,8 @@ export default function SearchPage() {
     const [results, setResults] = useState<SearchResult[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [tagsMap, setTagsMap] = useState<Record<number, ITagWithType[]>>({});
+    // Segment tiles resolve their tags here (keyed by part id); see fetchPartTagsForSearchResults.
+    const [partTagsMap, setPartTagsMap] = useState<Record<number, ITagWithType[]>>({});
     const [taggingMode, setTaggingMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [bulkTags, setBulkTags] = useState<ITagWithType[]>([]);
@@ -108,12 +111,14 @@ export default function SearchPage() {
         abortControllerRef.current = controller;
         setIsLoading(true);
         setTagsMap({});
+        setPartTagsMap({});
         searchData(query, {signal: controller.signal}).then(r => {
             setResults(r);
             setIsLoading(false);
             abortControllerRef.current = null;
             const ids = r.map(x => x.id).filter((id): id is number => id != null);
             if (ids.length > 0) fetchTagsForSearchResults(query.search_mode, ids).then(setTagsMap);
+            fetchPartTagsForSearchResults(r).then(setPartTagsMap);
         }).catch((e: any) => {
             if (e.name !== 'AbortError') { setIsLoading(false); abortControllerRef.current = null; }
         });
@@ -167,6 +172,7 @@ export default function SearchPage() {
             await batchAnnotate(entity, [...selectedIds], bulkTags.map(t => ({id: t.id})));
             const ids = results.map(r => r.id).filter((id): id is number => id != null);
             fetchTagsForSearchResults(query.search_mode, ids).then(setTagsMap);
+            fetchPartTagsForSearchResults(results).then(setPartTagsMap);
             setBulkTags([]);
         },
         onClearSelection: () => { setSelectedIds(new Set()); setBulkTags([]); },
@@ -193,6 +199,7 @@ export default function SearchPage() {
                         results={results}
                         isLoading={isLoading}
                         tagsMap={tagsMap}
+                        partTagsMap={partTagsMap}
                         showModeSelector
                         showAdvancedFilters
                         showTaggingMode
