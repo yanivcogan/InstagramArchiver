@@ -585,7 +585,10 @@ def search_media(query: ISearchQuery, search_results_transform: SearchResultTran
                 "timestamp_range_start": row.get("timestamp_range_start"),
                 "timestamp_range_end": row.get("timestamp_range_end"),
             })
-            thumbnails = [Thumbnail(src=s, aspect_ratio=row.get("aspect_ratio")) for s in [thumb_src] if s]
+            # thumbnails[0] = the part's own pre-cropped low-res thumbnail; thumbnails[1] = the
+            # parent media's full-res asset, which the client applies the part's crop+trim to for
+            # a full-resolution hover preview (mirrors the full-media branch below).
+            thumbnails = [Thumbnail(src=s, aspect_ratio=row.get("aspect_ratio")) for s in [thumb_src, row["local_url"]] if s]
         else:
             thumbnails = [Thumbnail(src=src, aspect_ratio=row.get("aspect_ratio")) for src in [
                 get_media_thumbnail_path(row["thumbnail_path"], row["local_url"]),

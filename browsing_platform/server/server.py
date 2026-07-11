@@ -4,7 +4,7 @@ import os
 import re
 import time
 from contextlib import asynccontextmanager
-from logging.handlers import RotatingFileHandler
+from concurrent_log_handler import ConcurrentRotatingFileHandler
 
 import uvicorn
 from dotenv import load_dotenv
@@ -80,8 +80,13 @@ if is_production and not os.getenv("SERVER_HOST"):
 # Create logs directory if it doesn't exist
 os.makedirs("logs", exist_ok=True)
 
-# Configure logging to file (and console only in dev)
-log_handler = RotatingFileHandler(
+# Configure logging to file (and console only in dev).
+# ConcurrentRotatingFileHandler (not stdlib RotatingFileHandler) because uvicorn's
+# reload/worker model runs multiple processes that each open this file; on Windows a
+# plain RotatingFileHandler can't rename a file another process still holds open,
+# raising PermissionError [WinError 32] on rollover. This handler uses cross-process
+# file locking so rotation is safe regardless of worker count.
+log_handler = ConcurrentRotatingFileHandler(
     "logs/1debug.log",
     maxBytes=10_000_000,  # 10MB
     backupCount=5
