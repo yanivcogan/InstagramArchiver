@@ -49,6 +49,14 @@ class Video(BaseModel):
     xpv_asset_id: str
     fetched_tracks: Optional[dict[str, MediaTrack]]
     full_asset: Optional[str] = None
+    # Every directly-downloadable URL for this asset, highest-quality first:
+    # all video_versions plus every DASH manifest <BaseURL> representation.
+    # download_full_asset tries them in order (validating each) so a single
+    # transient CDN failure doesn't force a fall back to lossy HAR reassembly,
+    # and so DASH-delivered videos (whose video_versions[0] may fail while a
+    # manifest BaseURL succeeds) still get a full-quality file. full_asset stays
+    # the canonical URL used for entity linking; candidates only drive download.
+    full_asset_candidates: Optional[list[str]] = None
     cover_photo_url: Optional[str] = None
     local_files: Optional[list[Path]] = None
     # True when a .mp4 request for this asset appears in the HAR, even if the
@@ -103,6 +111,81 @@ def extract_xpv_asset_id_from_dash_manifest(manifest_xml: str) -> Optional[str]:
         if result:
             return result
     return None
+
+
+def dash_manifest_base_urls(manifest_xml: str) -> list[str]:
+    """Return the video <BaseURL>s of a DASH manifest, highest-bandwidth first.
+
+    These are directly-downloadable per-representation URLs. Instagram serves the
+    same carousel video either as a progressive file (video_versions with
+    stp=dst-mp4) or as DASH (video_versions are t2 streaming renditions plus a
+    manifest); in the DASH case the manifest BaseURLs are the reliable full-asset
+    download sources.
+
+    Only video/mp4 Representations are returned — a DASH manifest also carries an
+    audio-only AdaptationSet, and an audio BaseURL would pass ffprobe validation
+    and be wrongly accepted as the "full asset" instead of falling through to
+    HAR-segment reassembly. If no Representation declares a mimeType (unusual),
+    fall back to every BaseURL so a malformed manifest doesn't drop all candidates.
+    """
+    video: list[tuple[int, str]] = []
+    saw_mime = False
+    for rep in re.findall(r'<Representation\b[^>]*>.*?</Representation>', manifest_xml, re.DOTALL):
+        head = rep[:rep.find('>') + 1]
+        mime_m = re.search(r'mimeType=["\']([^"\']+)["\']', head)
+        if mime_m:
+            saw_mime = True
+            if not mime_m.group(1).startswith('video'):
+                continue
+        bw_m = re.search(r'bandwidth=["\'](\d+)["\']', head)
+        bandwidth = int(bw_m.group(1)) if bw_m else 0
+        for raw in re.findall(r'<BaseURL>([^<]+)</BaseURL>', rep):
+            url = html.unescape(raw).strip()
+            if url:
+                video.append((bandwidth, url))
+    if video:
+        video.sort(key=lambda bw_url: -bw_url[0])
+        return [url for _, url in video]
+    if saw_mime:
+        # mimeType was present but no video representation matched — nothing to add.
+        return []
+    # No mimeType info at all: best-effort, return every BaseURL (legacy behaviour).
+    return [html.unescape(b).strip() for b in re.findall(r'<BaseURL>([^<]+)</BaseURL>', manifest_xml) if b.strip()]
+
+
+def dedup_urls_by_filename(urls: list[Optional[str]]) -> list[str]:
+    """Deduplicate a URL list by content-addressed filename, preserving first-seen order.
+
+    The filename (path segment before ".mp4") is stable across the query params/CDN
+    hosts that differ between a video_versions URL and the DASH BaseURL for the same
+    representation, so it is the right dedup key for the same physical rendition.
+    """
+    ordered: list[str] = []
+    seen_filenames: set[str] = set()
+    for url in urls:
+        if not url:
+            continue
+        filename = url.split('.mp4')[0].split('/')[-1]
+        if not filename or filename in seen_filenames:
+            continue
+        seen_filenames.add(filename)
+        ordered.append(url)
+    return ordered
+
+
+def full_asset_candidate_urls(
+        versions: Optional[list[VideoVersion]],
+        manifest: Optional[str],
+) -> list[str]:
+    """Ordered, filename-deduplicated list of every full-asset URL for a video.
+
+    video_versions come first (Instagram orders them highest-quality-first), then
+    any DASH manifest BaseURL not already represented.
+    """
+    urls: list[Optional[str]] = [vv.url for vv in (versions or [])]
+    if manifest and isinstance(manifest, str):
+        urls.extend(dash_manifest_base_urls(manifest))
+    return dedup_urls_by_filename(urls)
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +640,35 @@ def clean_corrupted_files(path_to_check: Path) -> bool:
             return False
         return True
 
+
+def downloaded_full_asset_is_acceptable(path: Path) -> bool:
+    """Whether a freshly-downloaded full-asset file should be accepted.
+
+    Returns False only on POSITIVE evidence the file is unusable: missing, absurdly
+    small (< 1000 bytes, i.e. an error page), or ffprobe definitively rejecting it.
+    When ffprobe cannot run at all (not installed / spawn error), returns True —
+    before candidate validation existed, download_full_asset trusted any HTTP-200
+    body, so an unavailable ffprobe must not turn a working full-asset fetch into a
+    dropped video. Unlike clean_corrupted_files this never deletes the file (the
+    caller owns cleanup) and never deletes on a can't-run error.
+    """
+    try:
+        if not path.exists() or path.stat().st_size < 1000:
+            return False
+    except OSError:
+        return False
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration,format_name',
+             '-select_streams', 'v:0', '-show_entries', 'stream=codec_name', '-of',
+             'default=noprint_wrappers=1:nokey=1', str(path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+    except Exception as e:
+        print(f"ffprobe unavailable, accepting full-asset download without validation: {e}")
+        return True
+    return result.returncode == 0 and bool(result.stdout.strip())
+
 def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path: Path) -> bool:
     """Merge video and audio tracks into a single file."""
     try:
@@ -579,17 +691,20 @@ def merge_video_and_audio_tracks(video_path: Path, audio_path: Path, output_path
         print(f"Error merging video and audio: {e}")
         return False
 
-def download_file(url: str) -> Optional[bytes]:
-    try:
-        print("Downloading file from:", url)
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            return resp.content
-        else:
+def download_file(url: str, attempts: int = 1) -> Optional[bytes]:
+    # attempts > 1 retries transient failures (timeouts, 5xx, connection resets).
+    # Instagram CDN GETs occasionally fail transiently; a single miss must not be
+    # enough to abandon a full-asset URL and drop to lossy reassembly.
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            print("Downloading file from:", url, f"(attempt {attempt}/{max(1, attempts)})" if attempts > 1 else "")
+            resp = requests.get(url)
+            if resp.status_code == 200:
+                return resp.content
             raise Exception(f"Failed to download file, status code: {resp.status_code}")
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
+        except Exception as e:
+            print(f"Error: {e}")
+    return None
 
 class AssetSaveResult(BaseModel):
     success: bool = True
@@ -745,6 +860,14 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
     # item_pk is always the specific item's own pk (carousel_item.pk for carousels),
     # used as a last-resort fallback when no canonical xpv_asset_id can be extracted.
     pk_video_versions_dict: dict[str, tuple[list[VideoVersion], Optional[str], str, Optional[str]]] = dict()
+    # Every downloadable full-asset URL seen for an item pk, accumulated across ALL
+    # structures it appears in (a carousel item can show up in a GraphQL response
+    # carrying a DASH manifest AND an API-v1/HTML response carrying only one URL).
+    # Kept separate from pk_video_versions_dict so accumulating extra candidates does
+    # NOT change which structure wins the canonical xpv_asset_id / full_asset (those
+    # stay last-write-wins, exactly as before) — it only widens what
+    # download_full_asset may try before falling back to reassembly.
+    pk_candidate_urls: dict[str, list[str]] = dict()
 
     def _store(pk: Optional[str], versions: Optional[list[VideoVersion]], src: object) -> None:
         if not pk:
@@ -764,6 +887,12 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
         if iv2 and getattr(iv2, 'candidates', None):
             cover_photo_url = iv2.candidates[0].url
         pk_video_versions_dict[pk] = (effective_versions, manifest, pk, cover_photo_url)
+        # Accumulate download candidates across every structure for this item (does
+        # not affect the canonical key/full_asset chosen above).
+        acc = pk_candidate_urls.setdefault(pk, [])
+        acc.extend(vv.url for vv in effective_versions if vv.url)
+        if manifest and isinstance(manifest, str):
+            acc.extend(dash_manifest_base_urls(manifest))
 
     for s in structures:
         if isinstance(s, GraphQLResponse):
@@ -860,9 +989,17 @@ def extract_videos_from_structures(structures: list[StructureType]) -> list[Vide
             # Last resort: use the item's own pk (unique per carousel item).
             if not xpv_asset_id:
                 xpv_asset_id = fallback_pk
+            # Candidates: this structure's own URLs first (so full_asset == first_url
+            # leads and stays candidates[0] for both quality order and entity linking),
+            # then any extra URLs accumulated from other structures for the same item.
+            candidates = dedup_urls_by_filename(
+                full_asset_candidate_urls(video_versions, dash_manifest)
+                + pk_candidate_urls.get(fallback_pk, [])
+            )
             video = Video(
                 xpv_asset_id=xpv_asset_id,
                 full_asset=first_url,
+                full_asset_candidates=candidates,
                 cover_photo_url=cover_photo_url,
                 fetched_tracks=None
             )
@@ -885,15 +1022,43 @@ def get_existing_videos(working_dir: Path) -> dict[str, Path]:
 
 
 def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
-    if not video.full_asset:
+    """Download the full asset, trying every known URL until one yields a valid file.
+
+    Candidates are all video_versions plus every DASH manifest BaseURL (highest
+    quality first). Each downloaded candidate is validated with ffprobe before it
+    is accepted, so a truncated/garbage 200 response (or a video_versions URL that
+    fails while a DASH BaseURL succeeds) transparently advances to the next URL
+    instead of being kept — or forcing a fall back to lossy HAR reassembly.
+    """
+    # Prefer the explicit candidate list; fall back to the single canonical URL
+    # for Videos built without candidates (e.g. HAR-only entries).
+    candidates = list(video.full_asset_candidates or [])
+    if video.full_asset and video.full_asset not in candidates:
+        candidates.insert(0, video.full_asset)
+    if not candidates:
         return AssetSaveResult(success=False)
-    try:
-        download_result = download_file(video.full_asset)
-        if download_result is not None:
-            file_name = f"xpv_{_safe_id(video.xpv_asset_id)}_full.mp4"
-            file_path = output_dir / file_name
+
+    file_name = f"xpv_{_safe_id(video.xpv_asset_id)}_full.mp4"
+    file_path = output_dir / file_name
+
+    for url in candidates:
+        try:
+            download_result = download_file(url, attempts=3)
+            if download_result is None:
+                continue
             with open(file_path, 'wb') as f:
                 f.write(download_result)
+            # Validate before accepting so a truncated/garbage 200 advances to the next
+            # candidate. Tolerant by design: only a definitive ffprobe rejection (or a
+            # tiny file) is treated as invalid — if ffprobe can't run we accept, to
+            # preserve the pre-validation behaviour of trusting a 200 response.
+            if not downloaded_full_asset_is_acceptable(file_path):
+                print(f"Full-asset candidate rejected (invalid/corrupt), trying next: {url}")
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+                continue
             protection = protect_file(file_path)
             if video.cover_photo_url:
                 try:
@@ -911,11 +1076,12 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
                 location=file_path,
                 integrity=protection.to_integrity(base_dir=output_dir),
             )
-        else:
-            raise Exception(f"Failed to download full asset")
-    except Exception as e:
-        print(f"Error downloading full asset {video.full_asset}: {e}")
-        return AssetSaveResult(success=False)
+        except Exception as e:
+            print(f"Error downloading full asset candidate {url}: {e}")
+            continue
+
+    print(f"All {len(candidates)} full-asset candidate(s) failed for {video.xpv_asset_id}.")
+    return AssetSaveResult(success=False)
 
 
 class VideoAcquisitionConfig(BaseModel):
@@ -1011,7 +1177,14 @@ def acquire_videos(
 
     for video in structures_videos:
         if video.xpv_asset_id in combined_videos_dict:
-            combined_videos_dict[video.xpv_asset_id].full_asset = video.full_asset
+            existing = combined_videos_dict[video.xpv_asset_id]
+            existing.full_asset = video.full_asset
+            # Carry the full-asset download candidates (and cover) from the
+            # structure onto the HAR-derived entry so download_full_asset can
+            # try every video_versions/DASH-BaseURL URL before reassembly.
+            existing.full_asset_candidates = video.full_asset_candidates
+            if video.cover_photo_url and not existing.cover_photo_url:
+                existing.cover_photo_url = video.cover_photo_url
         else:
             combined_videos_dict[video.xpv_asset_id] = video
 
