@@ -10,7 +10,7 @@ The manifest's SHA-256 commits to the whole-file SHA-256, every chunk hash, and
 the PAR2 index hash, so a single OTS proof anchors all of them at archive time.
 """
 
-import traceback
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +24,8 @@ from utils.integrity.chunk_manifest import (
 )
 from utils.integrity import par2 as par2_mod
 from utils.opentimestamps.timestamper_opentimestamps import timestamp_file
+
+logger = logging.getLogger(__name__)
 
 
 class FileIntegrity(BaseModel):
@@ -108,8 +110,11 @@ def protect_file(
                 "files": sorted(p.name for p in par2_paths),
             }
     except Exception as e:
-        traceback.print_exc()
-        print(f"⚠️  PAR2 recovery generation failed for {path.name}: {e}")
+        # Best-effort: logged, never raised (a raw print of a non-ASCII glyph
+        # here can itself throw UnicodeEncodeError on a non-UTF-8 stdout, which
+        # would defeat the "does not raise" contract above). logging swallows
+        # handler-side encoding errors, so this cannot propagate.
+        logger.warning("PAR2 recovery generation failed for %s: %s", path.name, e, exc_info=True)
 
     manifest = build_manifest(path, chunk_size=chunk_size, par2=par2_record)
     manifest_path = path.with_suffix(path.suffix + ".manifest.json")
@@ -120,8 +125,7 @@ def protect_file(
         try:
             ots_path = timestamp_file(manifest_path)
         except Exception as e:
-            traceback.print_exc()
-            print(f"⚠️  OpenTimestamps stamping failed for {manifest_path.name}: {e}")
+            logger.warning("OpenTimestamps stamping failed for %s: %s", manifest_path.name, e, exc_info=True)
 
     return ProtectionResult(
         asset_path=path,
@@ -131,3 +135,19 @@ def protect_file(
         ots_path=ots_path,
         par2_paths=par2_paths,
     )
+
+
+def protect_file_best_effort(path: Path, base_dir: Path) -> Optional[FileIntegrity]:
+    """Protect `path` and return its FileIntegrity, or None if protection failed.
+
+    Never raises. Protection (PAR2 + hash manifest) is a secondary integrity
+    layer; its failure must NOT discard an already-written, validated asset —
+    doing so would leave the media entity with a null local_url even though the
+    file was captured (e.g. par2 not installed on the host). Callers keep the
+    file and simply record no integrity metadata.
+    """
+    try:
+        return protect_file(path).to_integrity(base_dir=base_dir)
+    except Exception as e:
+        logger.warning("Protection failed for %s: %s", Path(path).name, e, exc_info=True)
+        return None

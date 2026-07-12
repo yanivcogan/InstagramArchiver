@@ -18,7 +18,7 @@ from extractors.instagram.structures_extraction_api_v1 import ApiV1Response
 from extractors.instagram.structures_extraction_graphql import GraphQLResponse
 from extractors.instagram.structures_extraction_html import PageResponse
 from extractors.threads.structures_extraction import ThreadsResponse
-from utils.integrity import FileIntegrity, protect_file, prune_orphan_sidecars
+from utils.integrity import FileIntegrity, protect_file_best_effort, prune_orphan_sidecars
 
 OnLoggedMissingPhoto = Literal["use_har_bytes_only", "skip", "redownload"]
 
@@ -280,14 +280,14 @@ def save_fetched_photo(photo: Photo, output_dir: Path) -> AssetSaveResult:
     try:
         with open(out_path, 'wb') as f:
             f.write(best_bytes)
-        protection = protect_file(out_path)
-        return AssetSaveResult(
-            success=True,
-            location=out_path,
-            integrity=protection.to_integrity(base_dir=output_dir),
-        )
     except Exception:
         return AssetSaveResult(success=False)
+    # Best-effort protection: a PAR2/manifest failure must not discard the
+    # already-written photo (see protect_file_best_effort).
+    return AssetSaveResult(
+        success=True, location=out_path,
+        integrity=protect_file_best_effort(out_path, output_dir),
+    )
 
 
 def download_full_asset(photo: Photo, output_dir: Path) -> AssetSaveResult:
@@ -301,14 +301,14 @@ def download_full_asset(photo: Photo, output_dir: Path) -> AssetSaveResult:
     try:
         with open(out_path, 'wb') as f:
             f.write(data)
-        protection = protect_file(out_path)
-        return AssetSaveResult(
-            success=True,
-            location=out_path,
-            integrity=protection.to_integrity(base_dir=output_dir),
-        )
     except Exception:
         return AssetSaveResult(success=False)
+    # Best-effort protection: a PAR2/manifest failure must not discard the
+    # already-downloaded photo (see protect_file_best_effort).
+    return AssetSaveResult(
+        success=True, location=out_path,
+        integrity=protect_file_best_effort(out_path, output_dir),
+    )
 
 
 # ---------- Orchestration ----------

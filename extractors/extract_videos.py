@@ -28,7 +28,7 @@ from extractors.instagram.structures_extraction_api_v1 import ApiV1Response
 from extractors.instagram.structures_extraction_graphql import GraphQLResponse
 from extractors.instagram.structures_extraction_html import PageResponse
 from extractors.threads.structures_extraction import ThreadsResponse
-from utils.integrity import FileIntegrity, protect_file, prune_orphan_sidecars
+from utils.integrity import FileIntegrity, protect_file, protect_file_best_effort, prune_orphan_sidecars
 
 OnLoggedMissingVideo = Literal["reassemble_from_har_only", "skip", "redownload"]
 
@@ -629,16 +629,18 @@ def clean_corrupted_files(path_to_check: Path) -> bool:
              '-show_entries', 'stream=codec_name', '-of', 'default=noprint_wrappers=1:nokey=1', path_to_check],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        if result.returncode != 0 or not result.stdout.strip():
-            os.remove(path_to_check)  # Delete if ffprobe indicates corruption
-            return False
-        return True
     except Exception as e:
-        print(f"Error checking file {path_to_check}: {e}")
-        if os.path.exists(path_to_check):
-            os.remove(path_to_check)
-            return False
+        # ffprobe could not be run at all (e.g. not installed / not on PATH for
+        # this process — the incorporation pipeline does not run
+        # ensure_ffmpeg_installed()). "Cannot validate" is NOT evidence of
+        # corruption, so keep the reassembled file rather than deleting a good
+        # asset. Mirrors downloaded_full_asset_is_acceptable's tolerance.
+        print(f"ffprobe unavailable, keeping file without validation: {path_to_check}: {e}")
         return True
+    if result.returncode != 0 or not result.stdout.strip():
+        os.remove(path_to_check)  # ffprobe ran and found the file corrupt
+        return False
+    return True
 
 
 def downloaded_full_asset_is_acceptable(path: Path) -> bool:
@@ -798,13 +800,21 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
 
         if valid_file:
             # determine whether the file is audio or video using ffprobe
-            result = subprocess.run(
-                ['ffprobe', '-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_type', '-of',
-                 'default=noprint_wrappers=1:nokey=1',
-                 str(output_dir / single_track_file)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            if 'audio' in result.stdout:
+            try:
+                result = subprocess.run(
+                    ['ffprobe', '-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=codec_type', '-of',
+                     'default=noprint_wrappers=1:nokey=1',
+                     str(output_dir / single_track_file)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                )
+                probe_stdout = result.stdout
+            except Exception as e:
+                # ffprobe not runnable — can't tell audio from video. Default to
+                # treating the track as video (the common case) so the file is
+                # still kept and linked rather than crashing the pipeline.
+                print(f"ffprobe unavailable for audio/video detection, assuming video: {e}")
+                probe_stdout = ""
+            if 'audio' in probe_stdout:
                 # keep track of the largest audio file
                 new_file = output_dir / single_track_file
                 if temp_audio_file is not None:
@@ -843,16 +853,15 @@ def save_fetched_asset(video: Video, output_dir: Path, download_full_track: bool
         print(f"No valid video segments found for xpv_asset_id {video.xpv_asset_id}.")
         return AssetSaveResult(success=False)
 
-    try:
-        protection = protect_file(most_complete_version)
-        return AssetSaveResult(
-            success=True,
-            location=most_complete_version,
-            integrity=protection.to_integrity(base_dir=output_dir),
-        )
-    except Exception as e:
-        print(f"Error protecting file {most_complete_version}: {e}")
-        return AssetSaveResult(success=False)
+    # Best-effort protection: a PAR2/manifest failure must not discard a
+    # successfully reassembled and ffprobe-validated media file (dropping it
+    # would leave the media entity with a null local_url even though the asset
+    # was captured). See protect_file_best_effort.
+    return AssetSaveResult(
+        success=True,
+        location=most_complete_version,
+        integrity=protect_file_best_effort(most_complete_version, output_dir),
+    )
 
 
 def extract_videos_from_structures(structures: list[StructureType]) -> list[Video]:
@@ -1059,7 +1068,9 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
                 except OSError:
                     pass
                 continue
-            protection = protect_file(file_path)
+            # Best-effort protection: a PAR2/manifest failure must not throw away
+            # an accepted, on-disk full asset (see save_fetched_asset).
+            integrity = protect_file_best_effort(file_path, output_dir)
             if video.cover_photo_url:
                 try:
                     cover_data = download_file(video.cover_photo_url)
@@ -1074,7 +1085,7 @@ def download_full_asset(video: Video, output_dir: Path) -> AssetSaveResult:
             return AssetSaveResult(
                 success=True,
                 location=file_path,
-                integrity=protection.to_integrity(base_dir=output_dir),
+                integrity=integrity,
             )
         except Exception as e:
             print(f"Error downloading full asset candidate {url}: {e}")
