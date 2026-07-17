@@ -38,6 +38,7 @@ load_dotenv()
 class SessionConfig(BaseModel):
     scrape_followers: bool
     scrape_following: bool
+    max_accounts_to_scrape_per_relation_type: Optional[int] = None
     storage_config: StorageConfig
 
 
@@ -122,6 +123,7 @@ def get_session_config() -> Optional[SessionConfig]:
         return SessionConfig(
             scrape_followers=True,
             scrape_following=True,
+            max_accounts_to_scrape_per_relation_type=None,
             storage_config=StorageConfig(
                 signature=default_signature,
                 notes="",
@@ -152,6 +154,11 @@ def get_session_config() -> Optional[SessionConfig]:
                             title="Scrape following",
                             key="scrape_following",
                             default_value=True,
+                        ),
+                        FormFieldText(
+                            title="Max accounts to scrape per relation type (blank = no limit)",
+                            key="max_accounts_to_scrape_per_relation_type",
+                            default_value="",
                         ),
                     ],
                 ),
@@ -222,9 +229,25 @@ def get_session_config() -> Optional[SessionConfig]:
     if raw is None:
         return None
 
+    def _parse_max_accounts(value: str) -> Optional[int]:
+        value = (value or "").strip()
+        if not value:
+            return None
+        try:
+            parsed = int(value)
+        except ValueError:
+            print(f"Invalid 'Max accounts to scrape per relation type' value {value!r} — treating as no limit.")
+            return None
+        if parsed <= 0:
+            return None
+        return parsed
+
     return SessionConfig(
         scrape_followers=raw["scrape_followers"],
         scrape_following=raw["scrape_following"],
+        max_accounts_to_scrape_per_relation_type=_parse_max_accounts(
+            raw["max_accounts_to_scrape_per_relation_type"]
+        ),
         storage_config=StorageConfig(
             signature=raw["signature"],
             notes=raw["notes"],
@@ -324,6 +347,7 @@ def archive_followers_session(
                     username,
                     config.scrape_followers,
                     config.scrape_following,
+                    config.max_accounts_to_scrape_per_relation_type,
                 )
                 print(f"Automation complete for @{username}")
             except Exception as e:

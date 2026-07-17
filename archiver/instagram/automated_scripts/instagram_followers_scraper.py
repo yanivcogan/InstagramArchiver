@@ -1,7 +1,7 @@
 import random
 import re
 import time
-from typing import Literal
+from typing import Literal, Optional
 
 from playwright.sync_api import Page
 
@@ -9,6 +9,7 @@ from playwright.sync_api import Page
 def scroll_relation_to_bottom(
     page: Page,
     relation: Literal["followers", "following"],
+    max_accounts: Optional[int] = None,
     scroll_delay: float = 0.8,
     max_stagnant: int = 5,
 ) -> None:
@@ -40,11 +41,33 @@ def scroll_relation_to_bottom(
     if scroll_container is None:
         raise RuntimeError("Could not find scrollable container for followers list.")
 
+    # Accumulate the set of unique profile links seen across scrolls rather than
+    # counting rendered rows: Instagram virtualizes the modal list and drops
+    # off-screen rows from the DOM, so a point-in-time count would plateau below
+    # the cap. Unioning hrefs each iteration survives that.
+    seen_accounts: set[str] = set()
     last_height = 0
     stagnant = 0
     while stagnant < max_stagnant:
         scroll_container.evaluate("el => el.scrollBy(0, el.scrollHeight)")
         time.sleep(random.uniform(scroll_delay * 0.6, scroll_delay * 1.6))
+
+        if max_accounts is not None:
+            hrefs = page.evaluate("""() => {
+                const dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+                if (!dialog) return [];
+                const out = [];
+                for (const a of dialog.querySelectorAll('a[href]')) {
+                    const h = a.getAttribute('href');
+                    if (h && /^\\/[^/]+\\/$/.test(h)) out.push(h);
+                }
+                return out;
+            }""")
+            seen_accounts.update(hrefs)
+            if len(seen_accounts) >= max_accounts:
+                print(f"Reached account cap ({max_accounts}) for {relation} — stopping scroll.")
+                break
+
         new_height = scroll_container.evaluate("el => el.scrollHeight")
         if new_height == last_height:
             is_loading = page.locator("[data-visualcompletion='loading-state']").count() > 0
@@ -70,6 +93,7 @@ def run_followers_automation(
     username: str,
     scrape_followers: bool,
     scrape_following: bool,
+    max_accounts_per_relation_type: Optional[int] = None,
 ) -> None:
     page.goto(f"https://www.instagram.com/{username}/")
     page.wait_for_load_state("domcontentloaded")
@@ -77,11 +101,11 @@ def run_followers_automation(
 
     if scrape_followers:
         print(f"Scrolling followers list for @{username}...")
-        scroll_relation_to_bottom(page, "followers")
+        scroll_relation_to_bottom(page, "followers", max_accounts=max_accounts_per_relation_type)
         print(f"Finished scrolling followers for @{username}.")
         time.sleep(2)
 
     if scrape_following:
         print(f"Scrolling following list for @{username}...")
-        scroll_relation_to_bottom(page, "following")
+        scroll_relation_to_bottom(page, "following", max_accounts=max_accounts_per_relation_type)
         print(f"Finished scrolling following for @{username}.")
