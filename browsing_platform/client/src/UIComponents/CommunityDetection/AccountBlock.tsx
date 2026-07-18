@@ -126,10 +126,10 @@ export default function AccountBlock({
                 {/* Scraping-state indicator: scraped relations (real follows only) and post count */}
                 <Tooltip
                     arrow
-                    placement="top-start"
+                    disableInteractive
                     title="Scraped followers / following (excludes suggested) · posts"
                 >
-                    <Stack direction="row" gap={1.5} alignItems="center" sx={{mt: 0.5, cursor: 'help'}}>
+                    <Stack direction="row" gap={1.5} alignItems="center" sx={{mt: 0.5, cursor: 'help', width: 'fit-content'}}>
                         <Stack direction="row" gap={0.5} alignItems="center" sx={{color: 'text.secondary'}}>
                             <PeopleAltOutlinedIcon sx={{fontSize: '0.95rem'}}/>
                             <Typography variant="caption" sx={{fontSize: '0.7rem', lineHeight: 1}}>

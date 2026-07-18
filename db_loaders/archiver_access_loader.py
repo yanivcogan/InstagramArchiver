@@ -133,6 +133,24 @@ def parse_label_values_array(data) -> list[tuple[str, Optional[int]]]:
     return out
 
 
+def find_relation_dir(root: Path) -> Optional[Path]:
+    """Locate the connections/followers_and_following directory under `root`.
+
+    The CLI passes an export folder with the relation subdir directly beneath it;
+    the GUI-upload path stages the folder the admin picked, so the tree is nested
+    one level deeper (`<root>/<picked-folder-name>/connections/...`). Try the
+    direct location first, then search recursively for a `followers_and_following`
+    directory whose parent is `connections`.
+    """
+    direct = root / RELATION_SUBDIR
+    if direct.is_dir():
+        return direct
+    for candidate in root.rglob("followers_and_following"):
+        if candidate.is_dir() and candidate.parent.name == "connections":
+            return candidate
+    return None
+
+
 def collect_access_rows(relation_dir: Path) -> dict[str, dict[str, Optional[int]]]:
     """Parse all four relationship files under relation_dir.
     Returns {status: {lowercased_username: observed_ts}} — deduped within each
@@ -206,6 +224,30 @@ def rebuild_archiver_access(archiver_account_id: int,
     return {status: len(bucket) for status, bucket in access.items()}
 
 
+def ingest_into_account(archiver_account_id: int, export_root: Path) -> dict[str, int]:
+    """Parse the export under `export_root` and rebuild `archiver_account_id`'s
+    access rows from it (full snapshot). Refreshes last_import_at. Returns per-status
+    counts. Raises FileNotFoundError if no connections/followers_and_following dir
+    is found.
+
+    Used by both the CLI (`load_export_root`) and the browsing-platform admin
+    upload endpoint, which passes a freshly-staged upload directory.
+    """
+    relation_dir = find_relation_dir(export_root)
+    if relation_dir is None:
+        raise FileNotFoundError(
+            f"No '{RELATION_SUBDIR}' directory found under {export_root}"
+        )
+    access = collect_access_rows(relation_dir)
+    counts = rebuild_archiver_access(archiver_account_id, access)
+    db.execute_query(
+        "UPDATE archiver_account SET last_import_at = NOW() WHERE id = %(id)s",
+        {"id": archiver_account_id},
+        return_type="none",
+    )
+    return counts
+
+
 def load_export_root(export_root: Path, only_dir: Optional[str] = None) -> None:
     manifest_path = export_root / "manifest.json"
     manifest = _load_json(manifest_path)
@@ -222,14 +264,12 @@ def load_export_root(export_root: Path, only_dir: Optional[str] = None) -> None:
         if only_dir and dir_name != only_dir:
             continue
 
-        relation_dir = export_root / dir_name / RELATION_SUBDIR
-        if not relation_dir.is_dir():
+        archiver_account_id = upsert_archiver_account(label)
+        try:
+            counts = ingest_into_account(archiver_account_id, export_root / dir_name)
+        except FileNotFoundError:
             logger.warning("Skipping '%s' (%s): no %s directory", label, dir_name, RELATION_SUBDIR)
             continue
-
-        access = collect_access_rows(relation_dir)
-        archiver_account_id = upsert_archiver_account(label)
-        counts = rebuild_archiver_access(archiver_account_id, access)
         processed += 1
         logger.info(
             "Imported '%s' (id=%s): following=%d requested=%d followed_by=%d follow_requests_from=%d",

@@ -19,7 +19,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from browsing_platform.server.rate_limiter import limiter
 from browsing_platform.server.routes import account, post, media, media_part, archiving_session, login, search, \
     permissions, tags, annotate, share, upload, incorporate, tag_management, tag_import, annotation_import, \
-    twofa, user as user_route, admin_users, community
+    twofa, user as user_route, admin_users, community, archiver_accounts
 from browsing_platform.server.routes.share import public_router as share_public_router
 from browsing_platform.server.services.file_tokens import decrypt_file_token, FileTokenError
 from browsing_platform.server.services.sharing_manager import get_link_permissions
@@ -235,6 +235,7 @@ for r in [
     user_route.router,
     admin_users.router,
     community.router,
+    archiver_accounts.router,
 ]:
     app.include_router(r, prefix="/api")
 

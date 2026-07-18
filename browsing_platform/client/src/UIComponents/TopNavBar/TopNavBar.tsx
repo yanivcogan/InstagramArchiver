@@ -24,6 +24,7 @@ import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import HubIcon from '@mui/icons-material/Hub';
 import SecurityIcon from '@mui/icons-material/Security';
 import PeopleIcon from '@mui/icons-material/People';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 
 interface IProps {
     children: ReactNode;
@@ -114,6 +115,12 @@ export default function TopNavBar({children, hideMenuButton}: IProps) {
                         <ListItemButton onClick={() => goToPage("admin/users")} href={"/admin/users"}>
                             <ListItemIcon><PeopleIcon/></ListItemIcon>
                             <ListItemText primary="User Management"/>
+                        </ListItemButton>
+                    )}
+                    {isAdmin && (
+                        <ListItemButton onClick={() => goToPage("admin/archiver-accounts")} href={"/admin/archiver-accounts"}>
+                            <ListItemIcon><VpnKeyIcon/></ListItemIcon>
+                            <ListItemText primary="Archiver Accounts"/>
                         </ListItemButton>
                     )}
                     <Divider/>

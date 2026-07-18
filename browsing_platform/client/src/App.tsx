@@ -34,6 +34,7 @@ const TagManagementPage = lazy(() => import("./pages/TagManagementPage"));
 const EditTagPage = lazy(() => import("./pages/EditTagPage"));
 const SecuritySettings = lazy(() => import("./pages/SecuritySettings"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
+const ArchiverAccountsPage = lazy(() => import("./pages/ArchiverAccountsPage"));
 const CommunityDetectionPage = lazy(() => import("./pages/CommunityDetectionPage"));
 
 export default function App() {
@@ -93,6 +94,7 @@ export default function App() {
                     <Route path="/tags/:tag_id" element={<EditTagPage/>}/>
                     <Route path="/settings/security" element={<SecuritySettings/>}/>
                     <Route path="/admin/users" element={<AdminUsersPage/>}/>
+                    <Route path="/admin/archiver-accounts" element={<ArchiverAccountsPage/>}/>
                     <Route path="/*" element={<NoMatch/>}/>
                 </Routes>
                 </Suspense>

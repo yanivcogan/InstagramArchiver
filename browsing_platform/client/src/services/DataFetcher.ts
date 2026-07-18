@@ -6,6 +6,8 @@ import {
     IArchiveSession,
     IArchiveSessionWithEntities,
     IArchiverAccessEntry,
+    IArchiverAccountCounts,
+    IArchiverAccountSummary,
     IAttributionReport,
     ICommentsResponse,
     IExtractedEntitiesNested,
@@ -137,6 +139,30 @@ export const fetchArchiverAccess = async (accountId: number): Promise<IArchiverA
     } catch {
         return null;
     }
+}
+
+// --- Archiver-account admin management (admin-only, server-gated) ---
+
+export const fetchArchiverAccounts = async (): Promise<IArchiverAccountSummary[]> => {
+    return await server.get("admin/archiver-accounts/");
+}
+
+export const createArchiverAccount = async (label: string): Promise<{ id: number; label: string }> => {
+    return await server.post("admin/archiver-accounts/", {label});
+}
+
+export const renameArchiverAccount = async (id: number, label: string): Promise<void> => {
+    await server.post(`admin/archiver-accounts/${id}`, {label}, HTTP_METHODS.patch);
+}
+
+export const deleteArchiverAccount = async (id: number): Promise<void> => {
+    await server.post(`admin/archiver-accounts/${id}`, {}, HTTP_METHODS.delete);
+}
+
+// Parse a freshly-uploaded export staged under `stagingName`, rebuild the
+// archiver's access rows, and delete the staged files. Returns per-status counts.
+export const ingestStagedExport = async (id: number, stagingName: string): Promise<IArchiverAccountCounts> => {
+    return await server.post(`admin/archiver-accounts/${id}/ingest-staged`, {staging_name: stagingName});
 }
 
 export const fetchPostAuxiliaryCounts = async (postId: number): Promise<IPostAuxiliaryCounts | null> => {

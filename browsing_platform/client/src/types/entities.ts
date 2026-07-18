@@ -28,6 +28,15 @@ export interface IArchiverAccessEntry {
     statuses: { status: ArchiverAccessStatus; observed_at?: number | string }[];
 }
 
+export type IArchiverAccountCounts = Record<ArchiverAccessStatus, number>;
+
+export interface IArchiverAccountSummary {
+    id: number;
+    label: string;
+    last_import_at?: string | null;
+    counts: IArchiverAccountCounts;
+}
+
 interface IPost extends IEntityBase {
     id_on_platform: string;
     url?: string;

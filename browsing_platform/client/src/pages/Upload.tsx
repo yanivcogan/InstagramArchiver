@@ -1,6 +1,5 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {Upload as TusUpload} from 'tus-js-client';
-import cookie from 'js-cookie';
 import {
     Accordion,
     AccordionDetails,
@@ -36,6 +35,7 @@ import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import config from '../services/config';
+import {authHeaders, computeSha256, formatBytes, formatDuration, runConcurrently} from '../lib/folderUpload';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -133,34 +133,6 @@ async function processDroppedDirs(dirEntries: FileSystemDirectoryEntry[]): Promi
         hasConflict: !!conflicts[a.name],
         resolution: (conflicts[a.name] ? 'skip' : 'overwrite') as ArchiveState['resolution'],
     }));
-}
-
-/** Compute SHA-256 of a file using the browser's native Web Crypto API. */
-async function computeSha256(file: File): Promise<string> {
-    const buffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    return Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-}
-
-function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatDuration(s: number): string {
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60);
-    if (m < 60) return `${m}m ${s % 60}s`;
-    return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-function authHeaders(): Record<string, string> {
-    const token = cookie.get('token');
-    return token ? { Authorization: `token:${token}` } : {};
 }
 
 async function apiPost(path: string, body?: object): Promise<any> {
@@ -299,22 +271,6 @@ function buildTarBlob(
 const ITEMS_PER_PAGE = 10;
 const MAX_CONCURRENT_UPLOADS = 10;
 const HASH_CONCURRENCY = Math.min(navigator.hardwareConcurrency || 4, 8);
-
-async function runConcurrently<T>(
-    tasks: (() => Promise<T>)[],
-    limit: number,
-): Promise<PromiseSettledResult<T>[]> {
-    const results: Promise<T>[] = [];
-    const executing = new Set<Promise<T>>();
-    for (const task of tasks) {
-        const p = Promise.resolve().then(task);
-        results.push(p);
-        executing.add(p);
-        p.finally(() => executing.delete(p));
-        while (executing.size >= limit) await Promise.race(executing).catch(() => {});
-    }
-    return Promise.allSettled(results);
-}
 
 // ---------------------------------------------------------------------------
 // Component
