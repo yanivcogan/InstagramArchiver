@@ -874,9 +874,28 @@ def archive_content(profile: Profile, target_url: str):
                 record_video_dir=archive_dir / "screen_recordings",
                 viewport=_VIEWPORT,
                 record_video_size=_VIEWPORT,
+                accept_downloads=True,
             )
 
             page = context.new_page()
+
+            # Preserve any file the operator downloads during the session as
+            # part of the archived record. A download that begins via a
+            # main-frame navigation also aborts that navigation, which is what
+            # interrupts the wait_for_url waiter below (see the retry loop).
+            downloads_dir = archive_dir / "downloads"
+
+            def _handle_download(download):
+                try:
+                    downloads_dir.mkdir(parents=True, exist_ok=True)
+                    dest = downloads_dir / download.suggested_filename
+                    download.save_as(dest)
+                    print(f"Saved operator-initiated download to {dest}")
+                except Exception as e:
+                    print(f"Warning: failed to save download "
+                          f"'{getattr(download, 'suggested_filename', '?')}': {e}")
+
+            page.on("download", _handle_download)
             frame_hashes_path = archive_dir / "frame_hashes.jsonl"
             recording_thread = threading.Thread(
                 target=screen_record,
@@ -913,7 +932,21 @@ def archive_content(profile: Profile, target_url: str):
                       f"navigate the browser to {_SAFE_FINISH_URL}")
                 print("Or close the Firefox window to finish (slightly less "
                       "reliable — rare HAR-finalization race).")
-                page.wait_for_url(_is_safe_finish_url, timeout=0)
+                # A file download that starts via a main-frame navigation
+                # aborts that navigation, which makes the waiter reject with
+                # "Download is starting". That is NOT a session-ending error —
+                # the download is saved separately by _handle_download and the
+                # page is still alive — so swallow it and re-enter the wait.
+                while True:
+                    try:
+                        page.wait_for_url(_is_safe_finish_url, timeout=0)
+                        break
+                    except Exception as e:
+                        if "Download is starting" in str(e):
+                            print("Download detected; archiving session "
+                                  "continues...")
+                            continue
+                        raise
                 print(f"Safe-finish trigger detected ({_SAFE_FINISH_URL}); "
                       f"closing context cleanly...")
             except Exception as e:
