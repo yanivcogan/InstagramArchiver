@@ -11,7 +11,7 @@ from browsing_platform.server.services.community import (
     get_tag_kernel_accounts,
     set_tag_dismissals,
 )
-from browsing_platform.server.services.permissions import auth_user_access
+from browsing_platform.server.services.permissions import auth_user_access, has_archiver_access
 
 router = APIRouter(
     prefix="/community",
@@ -29,7 +29,8 @@ async def get_community_candidates(
     if not req.kernel_ids:
         raise HTTPException(status_code=422, detail="kernel_ids must not be empty")
     transform = extract_search_results_config(request)
-    return compute_candidates(req, transform)
+    include_access = await has_archiver_access(request)
+    return compute_candidates(req, transform, include_archiver_access=include_access)
 
 
 @router.post("/kernel-details/")
@@ -40,7 +41,8 @@ async def get_kernel_details(
     if not req.kernel_ids:
         return CommunityCandidatesResponse(candidates=[])
     transform = extract_search_results_config(request)
-    return compute_kernel_scores(req, transform)
+    include_access = await has_archiver_access(request)
+    return compute_kernel_scores(req, transform, include_archiver_access=include_access)
 
 
 @router.get("/tag-kernel/{tag_id}")

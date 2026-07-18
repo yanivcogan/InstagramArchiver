@@ -479,6 +479,9 @@ export interface CandidateAccount {
     follower_count: number;
     following_count: number;
     post_count: number;
+    // Archiver-access roster (full roster per account) — present only for
+    // archiver/admin callers; null/absent otherwise.
+    archiver_access?: IArchiverAccessEntry[] | null;
 }
 
 export interface CommunityCandidatesResponse {

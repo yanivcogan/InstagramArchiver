@@ -37,45 +37,68 @@ class ArchiverAccessEntry(BaseModel):
     statuses: list[ArchiverAccessStatus]
 
 
-def get_archiver_access_for_account(account: Account) -> list[ArchiverAccessEntry]:
-    """Return one entry per registered archiver account, each carrying the set of
-    relationship directions that archiver holds toward the given target account
-    (empty when there is no known relationship)."""
-    url_suffix = (account.url_suffix or "").strip().lower()
-    platform = account.platform or "instagram"
+def get_archiver_access_for_url_suffixes(
+        url_suffixes: list[str],
+        platform: str = "instagram",
+) -> dict[str, list[ArchiverAccessEntry]]:
+    """Return, for every requested (lowercased) url_suffix, the full roster of
+    registered archiver accounts, each carrying its relationship directions
+    toward that target (empty statuses when there is no known relationship).
 
-    rows = db.execute_query(
-        """SELECT aa.id          AS archiver_account_id,
-                  aa.label        AS label,
-                  acc.status      AS status,
-                  acc.observed_at AS observed_at
-           FROM archiver_account aa
-           LEFT JOIN archiver_account_access acc
-                  ON acc.archiver_account_id = aa.id
-                 AND acc.target_url_suffix = %(suffix)s
-                 AND acc.platform = %(platform)s
-           ORDER BY aa.label, aa.id""",
-        {"suffix": url_suffix, "platform": platform},
+    One query, keyed on url_suffix (IN clause) with a LEFT JOIN from
+    archiver_account so every registered archiver appears at least once; the
+    distinct archivers in the result are therefore the full roster. Suffixes
+    with no match get the roster with all-empty statuses.
+    """
+    suffixes = sorted({(s or "").strip().lower() for s in url_suffixes})
+    if not suffixes:
+        return {}
+
+    suffix_args = {f"s_{i}": s for i, s in enumerate(suffixes)}
+    in_clause = ", ".join(f"%(s_{i})s" for i in range(len(suffixes)))
+
+    rows = db.execute_query(  # nosec B608 - in_clause contains only %(key)s placeholders
+        f"""SELECT aa.label        AS label,
+                   acc.target_url_suffix AS suffix,
+                   acc.status      AS status,
+                   acc.observed_at AS observed_at
+            FROM archiver_account aa
+            LEFT JOIN archiver_account_access acc
+                   ON acc.archiver_account_id = aa.id
+                  AND acc.platform = %(platform)s
+                  AND acc.target_url_suffix IN ({in_clause})
+            ORDER BY aa.label, aa.id""",
+        {**suffix_args, "platform": platform},
         return_type="rows",
     ) or []
 
-    # Dict preserves insertion order, which matches the SQL ORDER BY, so no
-    # separate ordering list is needed.
-    entries: dict[int, ArchiverAccessEntry] = {}
+    # label is UNIQUE (uq_archiver_account_label), so the ordered-distinct labels
+    # are the full roster; relationship statuses are keyed on (suffix, label).
+    roster = list(dict.fromkeys(row["label"] for row in rows))
+    matches: dict[tuple[str, str], list[ArchiverAccessStatus]] = {}
     for row in rows:
-        aid = row["archiver_account_id"]
-        entry = entries.get(aid)
-        if entry is None:
-            entry = entries[aid] = ArchiverAccessEntry(
-                label=row["label"],
-                statuses=[],
-            )
-        if row["status"] is not None:
-            entry.statuses.append(
+        if row["suffix"] is not None and row["status"] is not None:
+            matches.setdefault((row["suffix"], row["label"]), []).append(
                 ArchiverAccessStatus(status=row["status"], observed_at=row["observed_at"])
             )
 
-    return list(entries.values())
+    return {
+        suffix: [
+            ArchiverAccessEntry(label=label, statuses=matches.get((suffix, label), []))
+            for label in roster
+        ]
+        for suffix in suffixes
+    }
+
+
+def get_archiver_access_for_account(account: Account) -> list[ArchiverAccessEntry]:
+    """Return one entry per registered archiver account, each carrying the set of
+    relationship directions that archiver holds toward the given target account
+    (empty when there is no known relationship). Thin single-target wrapper over
+    get_archiver_access_for_url_suffixes."""
+    url_suffix = (account.url_suffix or "").strip().lower()
+    platform = account.platform or "instagram"
+    return get_archiver_access_for_url_suffixes([url_suffix], platform).get(url_suffix, [])
 
 
 # ---------------------------------------------------------------------------

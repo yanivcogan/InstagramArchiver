@@ -150,10 +150,30 @@ def _require_role(predicate: Callable[[TokenPermissions], bool], error_detail: s
     return dependency
 
 
+# Who counts as an "archiver" (may see archiver-account data): admin or the
+# dedicated archiver role. Single source of truth for both the raising
+# dependency and the non-raising check below.
+def _is_archiver(p: TokenPermissions) -> bool:
+    return p.admin or p.archiver
+
+
 # Admin session required.
 auth_admin_access = _require_role(lambda p: p.admin, "Admin access required")
 # Archiver-account data: admin or the dedicated archiver role.
-auth_archiver_access = _require_role(lambda p: p.admin or p.archiver, "Archiver access required")
+auth_archiver_access = _require_role(_is_archiver, "Archiver access required")
+
+
+async def has_archiver_access(request: Request) -> bool:
+    """Non-raising counterpart to auth_archiver_access.
+
+    Used to *conditionally* enrich responses on routes that are gated only at
+    auth_user_access (e.g. community detection): the endpoint stays open to any
+    logged-in user, but archiver-only data is included only when this returns
+    True."""
+    if os.getenv("BROWSING_PLATFORM_DEV") == "1":
+        return True
+    perms = await get_auth_permissions(request)
+    return bool(perms and perms.valid and _is_archiver(perms))
 
 
 def get_user_id(request: Request):

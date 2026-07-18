@@ -3,6 +3,10 @@ from typing import Callable, Optional
 
 from pydantic import BaseModel
 
+from browsing_platform.server.services.archiver_access import (
+    ArchiverAccessEntry,
+    get_archiver_access_for_url_suffixes,
+)
 from browsing_platform.server.services.media import get_media_thumbnail_path
 from browsing_platform.server.services.search import SearchResultTransform, Thumbnail, sign_thumbnail_path
 from browsing_platform.server.services.tag import ITagWithType
@@ -47,6 +51,10 @@ class CandidateAccount(BaseModel):
     follower_count: int = 0
     following_count: int = 0
     post_count: int = 0
+    # Which registered archiver accounts follow / requested / etc. this account.
+    # None when the caller lacks archiver/admin rights (never included for them);
+    # an empty list means "included, but no archivers registered".
+    archiver_access: Optional[list[ArchiverAccessEntry]] = None
 
 
 class CommunityCandidatesResponse(BaseModel):
@@ -269,6 +277,7 @@ def _hydrate_accounts(
         score_map: dict[int, float],
         connections_map: dict[int, int],
         transform: Optional[SearchResultTransform] = None,
+        include_archiver_access: bool = False,
 ) -> list[CandidateAccount]:
     """Build ``CandidateAccount`` objects for every id, preserving the given order.
 
@@ -362,12 +371,24 @@ def _hydrate_accounts(
             post_count=acct.get("post_count") or 0,
         ))
 
+    # Archiver-access enrichment (archiver/admin callers only). One batched
+    # query keyed on the hydrated accounts' url_suffixes; each account gets the
+    # full archiver roster with its relationship statuses (empty list = no
+    # relationships), leaving archiver_access None for everyone else.
+    if include_archiver_access:
+        suffix_map = get_archiver_access_for_url_suffixes(
+            [c.url_suffix for c in candidates]
+        )
+        for c in candidates:
+            c.archiver_access = suffix_map.get((c.url_suffix or "").strip().lower(), [])
+
     return candidates
 
 
 def compute_candidates(
         req: CommunityCandidatesRequest,
         transform: Optional[SearchResultTransform] = None,
+        include_archiver_access: bool = False,
 ) -> CommunityCandidatesResponse:
     if not req.kernel_ids:
         return CommunityCandidatesResponse(candidates=[])
@@ -393,13 +414,17 @@ def compute_candidates(
 
     top_ids, score_map, connections_map = _parse_score_rows(score_rows)
     return CommunityCandidatesResponse(
-        candidates=_hydrate_accounts(top_ids, score_map, connections_map, transform),
+        candidates=_hydrate_accounts(
+            top_ids, score_map, connections_map, transform,
+            include_archiver_access=include_archiver_access,
+        ),
     )
 
 
 def compute_kernel_scores(
         req: CommunityCandidatesRequest,
         transform: Optional[SearchResultTransform] = None,
+        include_archiver_access: bool = False,
 ) -> CommunityCandidatesResponse:
     """Score each kernel member by its tie strength to the *other* kernel members.
 
@@ -426,7 +451,10 @@ def compute_kernel_scores(
 
     _, score_map, connections_map = _parse_score_rows(score_rows)
     return CommunityCandidatesResponse(
-        candidates=_hydrate_accounts(kernel_ids, score_map, connections_map, transform),
+        candidates=_hydrate_accounts(
+            kernel_ids, score_map, connections_map, transform,
+            include_archiver_access=include_archiver_access,
+        ),
     )
 
 

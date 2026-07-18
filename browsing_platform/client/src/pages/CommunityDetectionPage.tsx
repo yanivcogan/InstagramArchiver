@@ -70,6 +70,8 @@ import {
     TieWeights,
 } from '../services/DataFetcher';
 import {IQuickAccessTypeDropdown, ITagStat, ITagWithType} from '../types/tags';
+import {outboundStatus} from '../UIComponents/Entities/ArchiverAccessList';
+import {useCanViewArchiverAccess} from '../services/archiverAccessPermission';
 import {downloadTextFile} from '../services/utils';
 
 const EMPTY_ID_SET = new Set<number>();
@@ -77,7 +79,12 @@ const COMMUNITY_TAG_PLACEHOLDER = 'Assign Community Tag';
 const BASE_TITLE = 'Community Detection | Browsing Platform';
 const COMMUNITY_TAG_PARAM = 'communityTag';
 const KERNEL_PAGE_SIZE = 20;
-const stripThumbnails = <T extends { thumbnails?: Thumbnail[] }>(obj: T): T => ({...obj, thumbnails: []});
+// Redacts fields that must not go into an exported/downloadable state file:
+// thumbnails (bulk) and archiver_access (archiver identities are sensitive).
+// This is the serialization boundary — route every exported account row through
+// it. undefined keys are omitted by JSON.stringify.
+const sanitizeForExport = <T extends { thumbnails?: Thumbnail[] }>(obj: T): T =>
+    ({...obj, thumbnails: [], archiver_access: undefined} as T);
 
 // ── Serialisable state (export / import) ──────────────────────────────────────
 
@@ -295,6 +302,7 @@ function CandidateCard({
             followingCount={candidate.following_count}
             postCount={candidate.post_count}
             score={candidate.score}
+            archiverAccess={candidate.archiver_access}
             tagDistribution={tagDistribution}
             tagDistributionLoading={tagDistributionLoading}
             onTagDistributionOpen={onTagDistributionOpen}
@@ -398,6 +406,7 @@ function KernelAccountCard({
             followingCount={detail?.following_count ?? 0}
             postCount={detail?.post_count ?? 0}
             score={detail?.score ?? 0}
+            archiverAccess={detail?.archiver_access}
             tagDistribution={tagDistribution}
             tagDistributionLoading={tagDistributionLoading}
             onTagDistributionOpen={onTagDistributionOpen}
@@ -461,6 +470,10 @@ export default function CommunityDetectionPage() {
     // Display filters: visually hide entries by scraping state. Shared by the
     // kernel (expanded view only) and the candidates list; never exported.
     const [displayFilters, setDisplayFilters] = useState<DisplayFilters>(DEFAULT_DISPLAY_FILTERS);
+
+    // Whether this viewer may see archiver-access data (drives the access chips
+    // and the archiver filter section). The server independently gates the data.
+    const canViewArchiver = useCanViewArchiverAccess();
 
     // Community tag / tag mode
     const [communityTag, setCommunityTag] = useState<ITagWithType | null>(null);
@@ -597,12 +610,34 @@ export default function CommunityDetectionPage() {
     // Display-filter predicate (true => hidden). Operates on per-account scraped
     // relation / post counts. Used for candidates (always) and kernel members
     // (expanded view only).
-    const isHiddenByFilters = React.useCallback((c: Pick<CandidateAccount, 'follower_count' | 'following_count' | 'post_count'>): boolean => {
+    const isHiddenByFilters = React.useCallback((c: Pick<CandidateAccount, 'follower_count' | 'following_count' | 'post_count' | 'archiver_access'>): boolean => {
         const relations = c.follower_count + c.following_count;
         if (displayFilters.relationsMode === 'over' && !(relations > displayFilters.relationsThreshold)) return true;
         if (displayFilters.relationsMode === 'under' && !(relations < displayFilters.relationsThreshold)) return true;
         if (displayFilters.postsMode === 'has' && !(c.post_count >= 1)) return true;
         if (displayFilters.postsMode === 'none' && !(c.post_count === 0)) return true;
+        if (displayFilters.archiverMode !== 'all') {
+            const access = c.archiver_access ?? [];
+            const isFollowed = access.some(e => outboundStatus(e) === 'following');
+            switch (displayFilters.archiverMode) {
+                case 'followed_by_any':
+                    if (!isFollowed) return true;
+                    break;
+                case 'followed_by':
+                    // A null label means no archiver has been picked yet — treat as
+                    // no constraint (show all) rather than hiding everything.
+                    if (displayFilters.archiverLabel &&
+                        !access.some(e => e.label === displayFilters.archiverLabel && outboundStatus(e) === 'following'))
+                        return true;
+                    break;
+                case 'not_followed':
+                    if (isFollowed) return true;
+                    break;
+                case 'not_followed_or_requested':
+                    if (isFollowed || access.some(e => outboundStatus(e) === 'requested')) return true;
+                    break;
+            }
+        }
         return false;
     }, [displayFilters]);
 
@@ -612,6 +647,16 @@ export default function CommunityDetectionPage() {
         () => visibleCandidates.filter(c => !isHiddenByFilters(c)),
         [visibleCandidates, isHiddenByFilters],
     );
+
+    // Archiver labels available for the "Followed by…" filter. Every enriched
+    // account carries the full archiver roster, so the union across the
+    // candidates and loaded kernel details is that roster (sorted).
+    const archiverLabels = useMemo(() => {
+        const labels = new Set<string>();
+        for (const c of visibleCandidates) for (const e of c.archiver_access ?? []) labels.add(e.label);
+        for (const d of Object.values(kernelDetails)) for (const e of d.archiver_access ?? []) labels.add(e.label);
+        return Array.from(labels).sort((a, b) => a.localeCompare(b));
+    }, [visibleCandidates, kernelDetails]);
 
     const communityTagIds = useMemo(
         () => communityDropdown ? new Set(communityDropdown.tags.map(t => t.id!)) : new Set<number>(),
@@ -1042,12 +1087,12 @@ export default function CommunityDetectionPage() {
             community_tag: communityTag,
             community_dropdown: communityDropdown,
             kernel: kernelEntries.map(({account, manuallyAdded, tagSources}) => ({
-                account: stripThumbnails(account),
+                account: sanitizeForExport(account),
                 manuallyAdded,
                 tagSources,
             })),
             weights,
-            excluded: excludedAccounts.map(stripThumbnails),
+            excluded: excludedAccounts.map(sanitizeForExport),
         };
         const datePart = new Date().toISOString().slice(0, 10);
         // Sanitize the tag name into a filesystem-safe slug (drop punctuation
@@ -1083,12 +1128,12 @@ export default function CommunityDetectionPage() {
                 setCommunityTag(parsed.community_tag);
                 setCommunityDropdown(parsed.community_dropdown);
                 setKernelEntries(parsed.kernel.map(e => ({
-                    account: stripThumbnails(e.account),
+                    account: sanitizeForExport(e.account),
                     manuallyAdded: e.manuallyAdded,
                     tagSources: e.tagSources,
                 })));
                 setWeights({...DEFAULT_TIE_WEIGHTS, ...parsed.weights});
-                setExcludedAccounts(parsed.excluded.map(stripThumbnails));
+                setExcludedAccounts(parsed.excluded.map(sanitizeForExport));
                 setCandidates([]);
                 setCandidateAllTags({});
                 setHasRun(false);
@@ -1406,7 +1451,9 @@ export default function CommunityDetectionPage() {
                             action={
                                 <Stack direction="row" spacing={1} alignItems="center">
                                     {kernelEntries.length > 0 && kernelExpandedView && (
-                                        <AccountDisplayFilters value={displayFilters} onChange={setDisplayFilters}/>
+                                        <AccountDisplayFilters value={displayFilters} onChange={setDisplayFilters}
+                                                              showArchiverSection={canViewArchiver}
+                                                              archiverLabels={archiverLabels}/>
                                     )}
                                     {kernelEntries.length > 0 && (
                                         <ToggleButtonGroup
@@ -1614,7 +1661,9 @@ export default function CommunityDetectionPage() {
                                         )}
                                     </Typography>
                                     <Stack direction="row" spacing={1} alignItems="center">
-                                        <AccountDisplayFilters value={displayFilters} onChange={setDisplayFilters}/>
+                                        <AccountDisplayFilters value={displayFilters} onChange={setDisplayFilters}
+                                                              showArchiverSection={canViewArchiver}
+                                                              archiverLabels={archiverLabels}/>
                                         <Tooltip
                                             title={displayFiltersActive
                                                 ? 'Clear the display filters to remove verified accounts — otherwise it would also remove verified accounts hidden by the current filters'

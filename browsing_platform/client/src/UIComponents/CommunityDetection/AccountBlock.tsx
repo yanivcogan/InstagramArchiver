@@ -4,8 +4,10 @@ import PeopleAltOutlinedIcon from '@mui/icons-material/PeopleAltOutlined';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import {SearchResultThumbnails} from '../SearchResults/SearchResultParts';
 import RelatedTagDistributionTable from '../Tags/RelatedTagDistributionTable';
+import ArchiverAccessChip from './ArchiverAccessChip';
 import {Thumbnail} from '../../services/DataFetcher';
 import {ITagStat} from '../../types/tags';
+import {IArchiverAccessEntry} from '../../types/entities';
 
 // Rich rectangular account block shared by the Community Detection page's
 // candidates list and the kernel "expanded view". It renders a score column
@@ -27,6 +29,9 @@ export interface AccountBlockProps {
     tagDistributionLoading: boolean;
     onTagDistributionOpen: () => void;
     actions: React.ReactNode;
+    // Archiver-access roster for this account (archiver/admin viewers only);
+    // null/undefined hides the indicator.
+    archiverAccess?: IArchiverAccessEntry[] | null;
 }
 
 export default function AccountBlock({
@@ -44,6 +49,7 @@ export default function AccountBlock({
                                          tagDistributionLoading,
                                          onTagDistributionOpen,
                                          actions,
+                                         archiverAccess,
                                      }: AccountBlockProps) {
     const scoreLabel = score % 1 === 0 ? score.toString() : score.toFixed(2);
     return (
@@ -122,6 +128,7 @@ export default function AccountBlock({
                         <Chip label="Verified" size="small" color="info" variant="outlined"
                               sx={{height: 18, '& .MuiChip-label': {px: 0.75, fontSize: '0.6rem'}}}/>
                     )}
+                    <ArchiverAccessChip entries={archiverAccess}/>
                 </Stack>
                 {/* Scraping-state indicator: scraped relations (real follows only) and post count */}
                 <Tooltip
