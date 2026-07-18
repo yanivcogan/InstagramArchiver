@@ -5,6 +5,7 @@ import {
     IAccountRelationsResponse,
     IArchiveSession,
     IArchiveSessionWithEntities,
+    IArchiverAccessEntry,
     IAttributionReport,
     ICommentsResponse,
     IExtractedEntitiesNested,
@@ -123,6 +124,16 @@ export const fetchAccountInteractions = async (accountId: number): Promise<IAcco
 export const fetchAccountAuxiliaryCounts = async (accountId: number): Promise<IAccountAuxiliaryCounts | null> => {
     try {
         return await server.get(`account/${accountId}/auxiliary-counts/`, {ignoreErrors: true});
+    } catch {
+        return null;
+    }
+}
+
+// Sensitive: only admin/archiver users are authorized (server-side gate). Returns
+// null on any error (e.g. 403 for unauthorized viewers) so the caller can hide the UI.
+export const fetchArchiverAccess = async (accountId: number): Promise<IArchiverAccessEntry[] | null> => {
+    try {
+        return await server.get(`account/${accountId}/archiver-access/`, {ignoreErrors: true});
     } catch {
         return null;
     }

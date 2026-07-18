@@ -21,6 +21,13 @@ interface IAccount extends IEntityBase {
     identifiers?: string[]
 }
 
+export type ArchiverAccessStatus = 'following' | 'requested' | 'followed_by' | 'follow_requests_from';
+
+export interface IArchiverAccessEntry {
+    label: string;
+    statuses: { status: ArchiverAccessStatus; observed_at?: number | string }[];
+}
+
 interface IPost extends IEntityBase {
     id_on_platform: string;
     url?: string;

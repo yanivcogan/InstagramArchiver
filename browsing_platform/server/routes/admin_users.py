@@ -24,12 +24,14 @@ router = APIRouter(
 class CreateUserRequest(BaseModel):
     email: str
     admin: bool = False
+    archiver: bool = False
     temp_password: str
 
 
 class UpdateUserRequest(BaseModel):
     email: Optional[str] = None
     admin: Optional[bool] = None
+    archiver: Optional[bool] = None
     locked: Optional[bool] = None
     force_pwd_reset: Optional[bool] = None
     temp_password: Optional[str] = None
@@ -39,6 +41,7 @@ class AdminUserRow(BaseModel):
     id: int
     email: str
     admin: bool
+    archiver: bool
     locked: bool
     totp_configured: bool
     force_pwd_reset: bool
@@ -55,7 +58,7 @@ class CreatedUserResponse(BaseModel):
 @router.get("/")
 async def list_users() -> list[AdminUserRow]:
     rows = db.execute_query(
-        """SELECT id, email, admin, locked, last_login, login_attempts,
+        """SELECT id, email, admin, archiver, locked, last_login, login_attempts,
                   totp_configured, force_pwd_reset, create_date
            FROM user ORDER BY id""",
         {}, "rows"
@@ -72,8 +75,8 @@ async def create_user(data: CreateUserRequest) -> CreatedUserResponse:
         raise HTTPException(status_code=409, detail="Email already in use")
 
     new_id = db.execute_query(
-        "INSERT INTO user (email, admin, locked, force_pwd_reset) VALUES (%(e)s, %(a)s, 0, 1)",
-        {"e": data.email, "a": int(data.admin)}, "id"
+        "INSERT INTO user (email, admin, archiver, locked, force_pwd_reset) VALUES (%(e)s, %(a)s, %(ar)s, 0, 1)",
+        {"e": data.email, "a": int(data.admin), "ar": int(data.archiver)}, "id"
     )
     try:
         set_user_password(new_id, data.temp_password)
@@ -97,6 +100,8 @@ async def update_user(user_id: int, data: UpdateUserRequest) -> Any:
         updates["email"] = data.email
     if data.admin is not None:
         updates["admin"] = int(data.admin)
+    if data.archiver is not None:
+        updates["archiver"] = int(data.archiver)
     if data.locked is not None:
         updates["locked"] = int(data.locked)
     if data.force_pwd_reset is not None:

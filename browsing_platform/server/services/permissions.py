@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from fastapi import HTTPException
 from starlette.requests import Request
@@ -133,17 +133,27 @@ async def auth_entity_view_access(request: Request, entity: T_Entities, entity_i
         return await raise_auth_user_error(request, token_permissions)
 
 
-async def auth_admin_access(request: Request):
-    """Verify that the user has a valid admin session."""
-    if os.getenv("BROWSING_PLATFORM_DEV") == "1":
-        logger.debug("Admin auth bypassed - dev mode enabled")
-        return True
-    token_permissions = await get_auth_permissions(request)
-    await raise_auth_user_error(request, token_permissions)
-    if not token_permissions.admin:
-        logger.warning(f"Forbidden - non-admin access attempt: {request.scope['route'].path}")
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return token_permissions
+def _require_role(predicate: Callable[[TokenPermissions], bool], error_detail: str):
+    """Build a FastAPI dependency that grants access when `predicate` holds for
+    the request's TokenPermissions (with the shared dev-mode bypass and
+    valid-session check). Used to derive the per-role auth dependencies below."""
+    async def dependency(request: Request):
+        if os.getenv("BROWSING_PLATFORM_DEV") == "1":
+            logger.debug("Role auth bypassed - dev mode enabled")
+            return True
+        token_permissions = await get_auth_permissions(request)
+        await raise_auth_user_error(request, token_permissions)
+        if not predicate(token_permissions):
+            logger.warning(f"Forbidden - insufficient role: {request.scope['route'].path}")
+            raise HTTPException(status_code=403, detail=error_detail)
+        return token_permissions
+    return dependency
+
+
+# Admin session required.
+auth_admin_access = _require_role(lambda p: p.admin, "Admin access required")
+# Archiver-account data: admin or the dedicated archiver role.
+auth_archiver_access = _require_role(lambda p: p.admin or p.archiver, "Archiver access required")
 
 
 def get_user_id(request: Request):

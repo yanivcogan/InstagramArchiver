@@ -841,6 +841,7 @@ create table user
     last_login          datetime                              null,
     login_attempts      int         default 0                 not null,
     admin               tinyint     default 0                 not null,
+    archiver            tinyint     default 0                 not null,
     totp_configured     tinyint(1)  default 0                 not null,
     totp_secret         varchar(64)                           null,
     totp_method         varchar(20) default 'totp'            null,
@@ -850,6 +851,40 @@ create table user
         unique (email)
 )
     engine = InnoDB;
+
+create table archiver_account
+(
+    id             int auto_increment
+        primary key,
+    create_date    timestamp default CURRENT_TIMESTAMP not null,
+    update_date    timestamp default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP,
+    label          varchar(200)                        not null,
+    last_import_at datetime                            null,
+    constraint uq_archiver_account_label
+        unique (label)
+)
+    engine = InnoDB;
+
+create table archiver_account_access
+(
+    id                  int auto_increment
+        primary key,
+    create_date         timestamp default CURRENT_TIMESTAMP                                          not null,
+    archiver_account_id int                                                                          not null,
+    target_url_suffix   varchar(200)                                                                 not null comment 'target username, stored lowercased',
+    platform            enum ('instagram', 'facebook', 'telegram', 'youtube', 'twitter', 'threads') default 'instagram' not null,
+    status              enum ('following', 'requested', 'followed_by', 'follow_requests_from')        not null,
+    observed_at         datetime                                                                     null comment 'timestamp from the export entry',
+    constraint archiver_account_access_account_fk
+        foreign key (archiver_account_id) references archiver_account (id)
+            on delete cascade,
+    constraint uq_archiver_account_access
+        unique (archiver_account_id, target_url_suffix, platform, status)
+)
+    engine = InnoDB;
+
+create index archiver_account_access_target_index
+    on archiver_account_access (target_url_suffix, platform);
 
 create table entity_share_link
 (

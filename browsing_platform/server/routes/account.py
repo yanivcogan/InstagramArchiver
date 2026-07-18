@@ -4,14 +4,17 @@ from fastapi import APIRouter, Depends, Request
 from fastapi import HTTPException
 
 from browsing_platform.server.routes.fast_api_request_processor import extract_entities_transform_config
-from browsing_platform.server.services.account import account_exists, get_account_data_by_id, \
-    get_account_by_platform_id, get_account_by_url
+from browsing_platform.server.services.account import account_exists, get_account_by_id, \
+    get_account_data_by_id, get_account_by_platform_id, get_account_by_url
 from browsing_platform.server.services.account_attribution import get_attribution_report
 from browsing_platform.server.services.enriched_entities import get_enriched_account_by_id, \
     get_account_relations_by_account_id, get_interactions_by_account_id, AccountInteractions, \
     get_account_auxiliary_counts, AccountAuxiliaryCounts, AccountRelationsResponse, \
     get_account_tags_for_account_relations
-from browsing_platform.server.services.permissions import auth_entity_view_access, require_any_auth
+from browsing_platform.server.services.archiver_access import ArchiverAccessEntry, \
+    get_archiver_access_for_account
+from browsing_platform.server.services.permissions import auth_archiver_access, \
+    auth_entity_view_access, require_any_auth
 from browsing_platform.server.services.tag_management import get_related_account_tag_stats, ITagStat
 from db_loaders.account_merge import resolve_account_redirect
 from extractors.entity_types import ExtractedEntitiesNested
@@ -104,6 +107,15 @@ async def get_account_attribution_report(item_id: int = Depends(_resolved_accoun
     if report is None:
         raise HTTPException(status_code=404, detail="Account Not Found")
     return report
+
+
+@router.get("/{item_id}/archiver-access/", dependencies=[Depends(_auth_account_view), Depends(auth_archiver_access)])
+@router.get("/{item_id}/archiver-access", dependencies=[Depends(_auth_account_view), Depends(auth_archiver_access)])
+async def get_archiver_access(item_id: int = Depends(_resolved_account_id)) -> list[ArchiverAccessEntry]:
+    account = get_account_by_id(item_id, include_data=False)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account Not Found")
+    return get_archiver_access_for_account(account)
 
 
 @router.get("/{item_id}/", dependencies=[Depends(_auth_account_view)])

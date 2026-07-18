@@ -45,6 +45,7 @@ import AccountComment from "./AccountComment";
 import AccountLike from "./AccountLike";
 import AccountTaggedInPost from "./AccountTaggedInPost";
 import RelatedTagDistributionTable from "../Tags/RelatedTagDistributionTable";
+import ArchiverAccessMenu from "./ArchiverAccessMenu";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 import {AddReaction, DataObject, LocalOffer, People} from "@mui/icons-material";
@@ -520,16 +521,17 @@ export default function Account({
                     </Tooltip> : null
                 }
             </Stack>
-            {disableAccountLink
-                ? <Typography variant="h5" sx={{alignSelf: 'flex-start'}}>
-                    {account.display_name ? account.display_name : usernameFromUrl(account.url) || account.url}
-                </Typography>
-                : <Link href={accountHref} color={"primary"} sx={{alignSelf: 'flex-start'}}>
-                    <Typography variant="h5">
-                        {account.display_name ? account.display_name : usernameFromUrl(account.url) || account.url}
-                    </Typography>
-                </Link>
-            }
+            <Stack direction="row" alignItems="center" gap={0.5} sx={{alignSelf: 'flex-start'}}>
+                {(() => {
+                    const nameText = account.display_name || usernameFromUrl(account.url) || account.url;
+                    return disableAccountLink
+                        ? <Typography variant="h5">{nameText}</Typography>
+                        : <Link href={accountHref} color={"primary"}>
+                            <Typography variant="h5">{nameText}</Typography>
+                        </Link>;
+                })()}
+                {account.id != null && !disableAccountLink && <ArchiverAccessMenu accountId={account.id}/>}
+            </Stack>
             <Typography variant="caption">{account.bio}</Typography>
             {
                 viewerConfig?.account?.annotator !== "hide" && <Stack gap={1}>

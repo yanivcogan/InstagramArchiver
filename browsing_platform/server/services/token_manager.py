@@ -15,6 +15,7 @@ class Token(BaseModel):
     user_id: int
     token: str
     admin: Optional[int]
+    archiver: Optional[int]
     create_date: datetime
     last_use: datetime
 
@@ -27,6 +28,7 @@ def generate_token(length: int = TOKEN_LENGTH) -> str:
 class TokenPermissions(BaseModel):
     valid: bool
     admin: bool
+    archiver: bool
     user_id: Optional[int]
 
 
@@ -38,14 +40,14 @@ class AuthTokenResponse(BaseModel):
 def check_token(token: Optional[str]) -> TokenPermissions:
     try:
         if not token:
-            return TokenPermissions(valid=False, admin=False, user_id=None)
+            return TokenPermissions(valid=False, admin=False, archiver=False, user_id=None)
         token_check = db.execute_query(
-            '''SELECT token.*, u.admin, u.id as user_id FROM token JOIN user AS u ON token.user_id = u.id
+            '''SELECT token.*, u.admin, u.archiver, u.id as user_id FROM token JOIN user AS u ON token.user_id = u.id
             WHERE token = %(token)s'''
             , {"token": token}, "single_row"
         )
         if token_check is None:
-            return TokenPermissions(valid=False, admin=False, user_id=None)
+            return TokenPermissions(valid=False, admin=False, archiver=False, user_id=None)
         else:
             token = Token(**token_check)
             if token.last_use > datetime.now() - TOKEN_EXPIRY:
@@ -53,10 +55,10 @@ def check_token(token: Optional[str]) -> TokenPermissions:
                     "UPDATE token SET last_use = NOW() WHERE token = %(token)s",
                     {"token": token.token}, "none"
                 )
-                return TokenPermissions(valid=True, admin=(token.admin ==1), user_id=token.user_id)
-            return TokenPermissions(valid=False, admin=False, user_id=None)
+                return TokenPermissions(valid=True, admin=(token.admin == 1), archiver=(token.archiver == 1), user_id=token.user_id)
+            return TokenPermissions(valid=False, admin=False, archiver=False, user_id=None)
     except Exception:
-        return TokenPermissions(valid=False, admin=False, user_id=None)
+        return TokenPermissions(valid=False, admin=False, archiver=False, user_id=None)
 
 
 def remove_token(token: str):

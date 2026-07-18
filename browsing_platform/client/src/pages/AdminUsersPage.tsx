@@ -28,6 +28,7 @@ interface UserRow {
     id: number;
     email: string;
     admin: boolean;
+    archiver: boolean;
     locked: boolean;
     totp_configured: boolean;
     force_pwd_reset: boolean;
@@ -38,6 +39,7 @@ interface UserRow {
 interface EditUserData {
     email: string;
     admin: boolean;
+    archiver: boolean;
     locked: boolean;
     force_pwd_reset: boolean;
     temp_password: string;
@@ -58,13 +60,14 @@ export default function AdminUsersPage() {
     const [addEmail, setAddEmail] = useState("");
     const [addTempPwd, setAddTempPwd] = useState("");
     const [addAdmin, setAddAdmin] = useState(false);
+    const [addArchiver, setAddArchiver] = useState(false);
     const [addBusy, setAddBusy] = useState(false);
     const [addError, setAddError] = useState<string | null>(null);
     const [showAddPwd, setShowAddPwd] = useState(false);
 
     // Edit user dialog
     const [editUser, setEditUser] = useState<UserRow | null>(null);
-    const [editData, setEditData] = useState<EditUserData>({email: "", admin: false, locked: false, force_pwd_reset: false, temp_password: ""});
+    const [editData, setEditData] = useState<EditUserData>({email: "", admin: false, archiver: false, locked: false, force_pwd_reset: false, temp_password: ""});
     const [editBusy, setEditBusy] = useState(false);
     const [editError, setEditError] = useState<string | null>(null);
     const [showEditPwd, setShowEditPwd] = useState(false);
@@ -93,9 +96,9 @@ export default function AdminUsersPage() {
         setAddBusy(true);
         setAddError(null);
         try {
-            await server.post("admin/users/", {email: addEmail, admin: addAdmin, temp_password: addTempPwd});
+            await server.post("admin/users/", {email: addEmail, admin: addAdmin, archiver: addArchiver, temp_password: addTempPwd});
             setAddOpen(false);
-            setAddEmail(""); setAddTempPwd(""); setAddAdmin(false);
+            setAddEmail(""); setAddTempPwd(""); setAddAdmin(false); setAddArchiver(false);
             loadUsers();
         } catch (e: any) {
             setAddError(e?.message || "Failed to create user");
@@ -106,7 +109,7 @@ export default function AdminUsersPage() {
 
     const openEdit = (user: UserRow) => {
         setEditUser(user);
-        setEditData({email: user.email, admin: user.admin, locked: user.locked, force_pwd_reset: user.force_pwd_reset, temp_password: ""});
+        setEditData({email: user.email, admin: user.admin, archiver: user.archiver, locked: user.locked, force_pwd_reset: user.force_pwd_reset, temp_password: ""});
         setEditError(null);
     };
 
@@ -117,6 +120,7 @@ export default function AdminUsersPage() {
         const payload: any = {
             email: editData.email,
             admin: editData.admin,
+            archiver: editData.archiver,
             locked: editData.locked,
             force_pwd_reset: editData.force_pwd_reset,
         };
@@ -163,8 +167,14 @@ export default function AdminUsersPage() {
     const columns: GridColDef[] = [
         {field: "email", headerName: "Email", flex: 2, minWidth: 200},
         {
-            field: "admin", headerName: "Role", width: 90,
-            renderCell: (p) => p.value ? <Chip label="Admin" color="warning" size="small"/> : <Chip label="User" size="small"/>
+            field: "admin", headerName: "Role", width: 150,
+            renderCell: (p) => (
+                <Stack direction="row" gap={0.5} alignItems="center" sx={{height: "100%"}}>
+                    {p.row.admin && <Chip label="Admin" color="warning" size="small"/>}
+                    {p.row.archiver && <Chip label="Archiver" color="info" size="small"/>}
+                    {!p.row.admin && !p.row.archiver && <Chip label="User" size="small"/>}
+                </Stack>
+            )
         },
         {
             field: "locked", headerName: "Status", width: 100,
@@ -249,6 +259,10 @@ export default function AdminUsersPage() {
                             control={<Switch checked={addAdmin} onChange={(e) => setAddAdmin(e.target.checked)}/>}
                             label="Admin"
                         />
+                        <FormControlLabel
+                            control={<Switch checked={addArchiver} onChange={(e) => setAddArchiver(e.target.checked)}/>}
+                            label="Archiver (may view archiver-account access)"
+                        />
                     </Stack>
                 </DialogContent>
                 <DialogActions>
@@ -291,6 +305,10 @@ export default function AdminUsersPage() {
                         <FormControlLabel
                             control={<Switch checked={editData.admin} onChange={(e) => setEditData(d => ({...d, admin: e.target.checked}))}/>}
                             label="Admin"
+                        />
+                        <FormControlLabel
+                            control={<Switch checked={editData.archiver} onChange={(e) => setEditData(d => ({...d, archiver: e.target.checked}))}/>}
+                            label="Archiver (may view archiver-account access)"
                         />
                         <FormControlLabel
                             control={<Switch checked={editData.locked} onChange={(e) => setEditData(d => ({...d, locked: e.target.checked}))}/>}

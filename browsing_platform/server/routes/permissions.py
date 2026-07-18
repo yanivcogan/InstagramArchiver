@@ -14,6 +14,6 @@ router = APIRouter(
 async def get_permissions(request: Request):
     token = parse_token_from_header(request.headers.get("Authorization"))
     if not token:
-        return TokenPermissions(valid=False, admin=False, user_id=None)
+        return TokenPermissions(valid=False, admin=False, archiver=False, user_id=None)
     token_permissions = check_token(token)
     return token_permissions
