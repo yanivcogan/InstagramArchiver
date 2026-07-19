@@ -16,8 +16,8 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import NumberField from '../MUINumberField/NumberField';
 
 // Display-only filters for the community-detection account lists. These visually
-// hide non-matching entries (they never remove items). A single value drives the
-// controls shown in both the kernel and candidates section headers.
+// hide non-matching entries (they never remove items). The seeds and candidates
+// section headers each hold their own independent filter value.
 
 export type ArchiverFilterMode =
     'all' | 'followed_by_any' | 'followed_by' | 'not_followed' | 'not_followed_or_requested';
@@ -110,11 +110,11 @@ export default function AccountDisplayFilters({
                                 }}
                             >
                                 <ToggleButton value="all">All</ToggleButton>
-                                <ToggleButton value="over">&gt; N</ToggleButton>
-                                <ToggleButton value="under">&lt; N</ToggleButton>
+                                <ToggleButton value="over">More than</ToggleButton>
+                                <ToggleButton value="under">Fewer than</ToggleButton>
                             </ToggleButtonGroup>
                             <NumberField
-                                label="N"
+                                label="Count"
                                 size="small"
                                 min={0}
                                 step={1}

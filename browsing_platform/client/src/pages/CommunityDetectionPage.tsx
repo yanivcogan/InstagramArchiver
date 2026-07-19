@@ -157,6 +157,43 @@ function tagKernelAccountToSearchResult(a: TagKernelAccount): SearchResult {
     };
 }
 
+// Display-filter predicate (true => hidden). Operates on per-account scraped
+// relation / post counts. The candidates list and the seeds expanded view each
+// pass their own independent filter state.
+function isHiddenByFilters(
+    c: Pick<CandidateAccount, 'follower_count' | 'following_count' | 'post_count' | 'archiver_access'>,
+    filters: DisplayFilters,
+): boolean {
+    const relations = c.follower_count + c.following_count;
+    if (filters.relationsMode === 'over' && !(relations > filters.relationsThreshold)) return true;
+    if (filters.relationsMode === 'under' && !(relations < filters.relationsThreshold)) return true;
+    if (filters.postsMode === 'has' && !(c.post_count >= 1)) return true;
+    if (filters.postsMode === 'none' && !(c.post_count === 0)) return true;
+    if (filters.archiverMode !== 'all') {
+        const access = c.archiver_access ?? [];
+        const isFollowed = access.some(e => outboundStatus(e) === 'following');
+        switch (filters.archiverMode) {
+            case 'followed_by_any':
+                if (!isFollowed) return true;
+                break;
+            case 'followed_by':
+                // A null label means no archiver has been picked yet — treat as
+                // no constraint (show all) rather than hiding everything.
+                if (filters.archiverLabel &&
+                    !access.some(e => e.label === filters.archiverLabel && outboundStatus(e) === 'following'))
+                    return true;
+                break;
+            case 'not_followed':
+                if (isFollowed) return true;
+                break;
+            case 'not_followed_or_requested':
+                if (isFollowed || access.some(e => outboundStatus(e) === 'requested')) return true;
+                break;
+        }
+    }
+    return false;
+}
+
 // ── Step badge ────────────────────────────────────────────────────────────────
 
 function StepBadge({n, active}: { n: number; active?: boolean }) {
@@ -258,7 +295,7 @@ function KernelAccountPill({entry, communityDropdown, onRemove, onTagToggle}: Ke
 
             <IconButton size="small" onClick={onRemove}
                         sx={{p: 0.25, ml: 0.25, color: 'primary.light', '&:hover': {color: 'error.main'}}}
-                        aria-label={`Remove ${entry.account.title} from kernel`}>
+                        aria-label={`Remove ${entry.account.title} from seeds`}>
                 <CloseIcon sx={{fontSize: '0.8rem'}}/>
             </IconButton>
         </Box>
@@ -302,13 +339,14 @@ function CandidateCard({
             followingCount={candidate.following_count}
             postCount={candidate.post_count}
             score={candidate.score}
+            kernelConnections={candidate.kernel_connections}
             archiverAccess={candidate.archiver_access}
             tagDistribution={tagDistribution}
             tagDistributionLoading={tagDistributionLoading}
             onTagDistributionOpen={onTagDistributionOpen}
             actions={
                 <>
-                    {communityDropdown && (
+                    {communityDropdown ? (
                         <>
                             <Typography
                                 variant="caption"
@@ -320,34 +358,43 @@ function CandidateCard({
                                     lineHeight: 1,
                                 }}
                             >
-                                Tag &amp; add to kernel
+                                Tag &amp; add to seeds
                             </Typography>
                             <QuickAccessTypeDropdown
                                 dropdown={communityDropdown}
                                 assignedTagIds={assignedCommunityTagIds}
                                 onSelect={onTagToggle}
                                 placeholder={COMMUNITY_TAG_PLACEHOLDER}
+                                emphasized
                             />
                             <Divider flexItem sx={{my: 0.25}}>
                                 <Typography variant="caption" color="text.disabled" sx={{fontSize: '0.65rem'}}>
                                     or
                                 </Typography>
                             </Divider>
+                            <Button
+                                size="small" variant="text" color="inherit"
+                                onClick={onAddToKernel}
+                                sx={{whiteSpace: 'nowrap', fontSize: '0.75rem', color: 'text.secondary'}}
+                            >
+                                Add without tag
+                            </Button>
                         </>
+                    ) : (
+                        <Button
+                            size="small" variant="contained"
+                            onClick={onAddToKernel}
+                            sx={{whiteSpace: 'nowrap', fontSize: '0.75rem'}}
+                        >
+                            Add to seeds
+                        </Button>
                     )}
                     <Button
-                        size="small" variant="outlined" color={"success"}
-                        onClick={onAddToKernel}
-                        sx={{whiteSpace: 'nowrap', fontSize: '0.75rem'}}
-                    >
-                        {communityDropdown ? 'Add to kernel without attaching tag' : 'Add to kernel'}
-                    </Button>
-                    <Button
-                        size="small" variant="outlined" color="error"
+                        size="small" variant="text" color="error"
                         onClick={onExclude}
                         sx={{fontSize: '0.75rem'}}
                     >
-                        Remove from Candidates List
+                        Dismiss
                     </Button>
                 </>
             }
@@ -406,6 +453,7 @@ function KernelAccountCard({
             followingCount={detail?.following_count ?? 0}
             postCount={detail?.post_count ?? 0}
             score={detail?.score ?? 0}
+            kernelConnections={detail?.kernel_connections ?? 0}
             archiverAccess={detail?.archiver_access}
             tagDistribution={tagDistribution}
             tagDistributionLoading={tagDistributionLoading}
@@ -413,7 +461,7 @@ function KernelAccountCard({
             actions={
                 <Tooltip
                     title={removesTags
-                        ? `Removes the tag(s) ${tagSources.map(t => t.name).join(', ')} before taking the account out of the kernel`
+                        ? 'Also removes the community tag(s) from this account in the database'
                         : ''}
                     disableHoverListener={!removesTags}
                 >
@@ -422,9 +470,7 @@ function KernelAccountCard({
                         onClick={onTakeOut}
                         sx={{fontSize: '0.75rem'}}
                     >
-                        {removesTags
-                            ? `Remove tag(s) ${tagSources.map(t => t.name).join(', ')} & take out of kernel`
-                            : 'Take out of kernel'}
+                        Remove from seeds
                     </Button>
                 </Tooltip>
             }
@@ -434,8 +480,14 @@ function KernelAccountCard({
 
 // ── Tie weight labels ─────────────────────────────────────────────────────────
 
+// User-facing names for the tie types. "Tagged in posts" (not "Tag") — the
+// bare word collides with the page's community-tag concept, which is unrelated.
 const TIE_LABELS: Record<keyof TieWeights, string> = {
-    follow: 'Follow', suggested: 'Suggested', like: 'Like', comment: 'Comment', tag: 'Tag',
+    follow: 'Follows',
+    suggested: 'Suggested by Instagram',
+    like: 'Likes',
+    comment: 'Comments',
+    tag: 'Tagged in posts',
 };
 
 const KERNEL_SEARCH_QUERY: ISearchQuery = {
@@ -467,9 +519,12 @@ export default function CommunityDetectionPage() {
     // member's inclusion and taking it out of the kernel (tag mode only).
     const [pendingKernelTagRemoval, setPendingKernelTagRemoval] = useState<KernelEntry | null>(null);
 
-    // Display filters: visually hide entries by scraping state. Shared by the
-    // kernel (expanded view only) and the candidates list; never exported.
-    const [displayFilters, setDisplayFilters] = useState<DisplayFilters>(DEFAULT_DISPLAY_FILTERS);
+    // Display filters: visually hide entries by scraping state. The seeds list
+    // (expanded view only) and the candidates list each have their own filter
+    // state — filtering one list must never silently affect the other (or the
+    // seeds CSV copy). Never exported.
+    const [kernelFilters, setKernelFilters] = useState<DisplayFilters>(DEFAULT_DISPLAY_FILTERS);
+    const [candidateFilters, setCandidateFilters] = useState<DisplayFilters>(DEFAULT_DISPLAY_FILTERS);
 
     // Whether this viewer may see archiver-access data (drives the access chips
     // and the archiver filter section). The server independently gates the data.
@@ -506,12 +561,22 @@ export default function CommunityDetectionPage() {
     // are only committed here on Run Analysis, so the kernel expanded-view scores
     // refresh on the same trigger as the candidates list — not on every keystroke.
     const [appliedWeights, setAppliedWeights] = useState<TieWeights>({...DEFAULT_TIE_WEIGHTS});
+    // The weights inputs live in a collapsed "Advanced" disclosure inside the run
+    // card. Open-state is UI-only — never exported.
+    const [weightsOpen, setWeightsOpen] = useState(false);
 
     // Candidates
     const [candidates, setCandidates] = useState<CandidateAccount[]>([]);
     const [candidateAllTags, setCandidateAllTags] = useState<Record<number, ITagWithType[]>>({});
     const [isComputing, setIsComputing] = useState(false);
     const [hasRun, setHasRun] = useState(false);
+    // Seed ids as of the last run — drives the "results are stale" bar when the
+    // seed set changes after a run. Dismissals deliberately don't count as stale
+    // (the bar would otherwise be permanent during triage).
+    const [lastRunKernelIds, setLastRunKernelIds] = useState<Set<number> | null>(null);
+    // Scroll target for the first-run reveal of the candidates card.
+    const candidatesCardRef = useRef<HTMLDivElement>(null);
+    const prevHasRun = useRef(false);
 
     // Lazy-loaded, cached tag distribution shown in each candidate's score tooltip.
     // Cleared whenever a new analysis is run (see runAnalysis).
@@ -533,8 +598,16 @@ export default function CommunityDetectionPage() {
 
     // Export / import
     const [importError, setImportError] = useState<string | null>(null);
-    const [copyFeedback, setCopyFeedback] = useState<{ severity: 'success' | 'error'; message: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Page-level feedback snackbar (copy results, analysis errors, dismiss/add
+    // confirmations). `undoId` renders an Undo action restoring that dismissed
+    // candidate.
+    const [feedback, setFeedback] = useState<{
+        severity: 'success' | 'error' | 'info';
+        message: string;
+        undoId?: number;
+    } | null>(null);
 
     // URL state: the selected community tag id is reflected in the `communityTag`
     // search param (absent when no tag is selected).
@@ -607,45 +680,31 @@ export default function CommunityDetectionPage() {
     const visibleCandidates = useMemo(() => candidates.filter(c => !excludedIdSet.has(c.id)), [candidates, excludedIdSet]);
     const hasVerifiedVisible = useMemo(() => visibleCandidates.some(c => c.is_verified === true), [visibleCandidates]);
 
-    // Display-filter predicate (true => hidden). Operates on per-account scraped
-    // relation / post counts. Used for candidates (always) and kernel members
-    // (expanded view only).
-    const isHiddenByFilters = React.useCallback((c: Pick<CandidateAccount, 'follower_count' | 'following_count' | 'post_count' | 'archiver_access'>): boolean => {
-        const relations = c.follower_count + c.following_count;
-        if (displayFilters.relationsMode === 'over' && !(relations > displayFilters.relationsThreshold)) return true;
-        if (displayFilters.relationsMode === 'under' && !(relations < displayFilters.relationsThreshold)) return true;
-        if (displayFilters.postsMode === 'has' && !(c.post_count >= 1)) return true;
-        if (displayFilters.postsMode === 'none' && !(c.post_count === 0)) return true;
-        if (displayFilters.archiverMode !== 'all') {
-            const access = c.archiver_access ?? [];
-            const isFollowed = access.some(e => outboundStatus(e) === 'following');
-            switch (displayFilters.archiverMode) {
-                case 'followed_by_any':
-                    if (!isFollowed) return true;
-                    break;
-                case 'followed_by':
-                    // A null label means no archiver has been picked yet — treat as
-                    // no constraint (show all) rather than hiding everything.
-                    if (displayFilters.archiverLabel &&
-                        !access.some(e => e.label === displayFilters.archiverLabel && outboundStatus(e) === 'following'))
-                        return true;
-                    break;
-                case 'not_followed':
-                    if (isFollowed) return true;
-                    break;
-                case 'not_followed_or_requested':
-                    if (isFollowed || access.some(e => outboundStatus(e) === 'requested')) return true;
-                    break;
-            }
-        }
-        return false;
-    }, [displayFilters]);
-
-    const displayFiltersActive = isDisplayFilterActive(displayFilters);
+    const candidateFiltersActive = isDisplayFilterActive(candidateFilters);
 
     const shownCandidates = useMemo(
-        () => visibleCandidates.filter(c => !isHiddenByFilters(c)),
-        [visibleCandidates, isHiddenByFilters],
+        () => visibleCandidates.filter(c => !isHiddenByFilters(c, candidateFilters)),
+        [visibleCandidates, candidateFilters],
+    );
+
+    // ── Staleness ─────────────────────────────────────────────────────────────
+
+    // The candidates list is stale when the seed set or the weights changed
+    // since the run that produced it. Dismissals don't count (see state note).
+    const weightsStale = useMemo(
+        () => (Object.keys(weights) as (keyof TieWeights)[]).some(k => weights[k] !== appliedWeights[k]),
+        [weights, appliedWeights],
+    );
+    const kernelChangedSinceRun = useMemo(() => {
+        if (!lastRunKernelIds) return false;
+        if (lastRunKernelIds.size !== kernelIds.length) return true;
+        return kernelIds.some(id => !lastRunKernelIds.has(id));
+    }, [lastRunKernelIds, kernelIds]);
+    const resultsStale = hasRun && kernelIds.length > 0 && (kernelChangedSinceRun || weightsStale);
+
+    const weightsModified = useMemo(
+        () => (Object.keys(DEFAULT_TIE_WEIGHTS) as (keyof TieWeights)[]).some(k => weights[k] !== DEFAULT_TIE_WEIGHTS[k]),
+        [weights],
     );
 
     // Archiver labels available for the "Followed by…" filter. Every enriched
@@ -699,6 +758,13 @@ export default function CommunityDetectionPage() {
                 for (const c of resp.candidates) map[c.id] = c;
                 setKernelDetails(map);
             })
+            .catch(() => {
+                if (cancelled) return;
+                setFeedback({
+                    severity: 'error',
+                    message: "Couldn't load seed account details — check your connection and try again.",
+                });
+            })
             .finally(() => {
                 if (!cancelled) setKernelDetailsLoading(false);
             });
@@ -714,10 +780,10 @@ export default function CommunityDetectionPage() {
         () => kernelExpandedView
             ? kernelEntries.filter(e => {
                 const d = kernelDetails[e.account.id];
-                return !d || !isHiddenByFilters(d);
+                return !d || !isHiddenByFilters(d, kernelFilters);
             })
             : kernelEntries,
-        [kernelExpandedView, kernelEntries, kernelDetails, isHiddenByFilters],
+        [kernelExpandedView, kernelEntries, kernelDetails, kernelFilters],
     );
 
     const kernelPageCount = Math.max(1, Math.ceil(filteredKernelEntries.length / KERNEL_PAGE_SIZE));
@@ -738,7 +804,21 @@ export default function CommunityDetectionPage() {
         setCandidateTagDistributions({});
         setLoadingTagDistributions({});
         setHasRun(false);
+        setLastRunKernelIds(null);
     };
+
+    // Reveal the candidates card on the first run only (never on refreshes —
+    // the user is already looking at the list by then).
+    useEffect(() => {
+        if (hasRun && !prevHasRun.current && candidatesCardRef.current) {
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            candidatesCardRef.current.scrollIntoView({
+                behavior: reduceMotion ? 'auto' : 'smooth',
+                block: 'start',
+            });
+        }
+        prevHasRun.current = hasRun;
+    }, [hasRun]);
 
     const handleCommunityTagChange = async (tag: ITagWithType | null) => {
         if (!tag) {
@@ -904,18 +984,33 @@ export default function CommunityDetectionPage() {
                 kernelIds, excludedIds, weights
             );
             setCandidates(resp.candidates);
-            // Commit the weights used for this run so the kernel expanded-view
-            // scores refresh against the same weights as the candidates.
+            // Commit the weights and seed set used for this run so the kernel
+            // expanded-view scores refresh against the same weights as the
+            // candidates, and so staleness is measured against this snapshot.
             setAppliedWeights(weights);
+            setLastRunKernelIds(new Set(kernelIds));
             setHasRun(true);
 
             // In tag mode, bulk-fetch community tags for all returned candidates
             if (communityTag && resp.candidates.length > 0) {
-                const allTags = await fetchTagsForSearchResults('accounts', resp.candidates.map(c => c.id));
-                setCandidateAllTags(allTags);
+                try {
+                    const allTags = await fetchTagsForSearchResults('accounts', resp.candidates.map(c => c.id));
+                    setCandidateAllTags(allTags);
+                } catch {
+                    setCandidateAllTags({});
+                    setFeedback({
+                        severity: 'error',
+                        message: "Candidates loaded, but their community-tag info couldn't be fetched.",
+                    });
+                }
             } else {
                 setCandidateAllTags({});
             }
+        } catch {
+            setFeedback({
+                severity: 'error',
+                message: 'Analysis failed — check your connection and try again.',
+            });
         } finally {
             setIsComputing(false);
         }
@@ -937,6 +1032,8 @@ export default function CommunityDetectionPage() {
             tagSources,
         }]);
         setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+        // The card vanishes from the list — say where it went.
+        setFeedback({severity: 'success', message: `Added ${candidateTitle(candidate)} to the seed accounts`});
     };
 
     // Toggle a community tag on a candidate account
@@ -977,6 +1074,11 @@ export default function CommunityDetectionPage() {
                             tagSources,
                         }]);
                         setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+                        // The card vanishes from the list — say where it went.
+                        setFeedback({
+                            severity: 'success',
+                            message: `Tagged ${candidateTitle(candidate)} and added it to the seed accounts`,
+                        });
                     }
                 },
             });
@@ -999,6 +1101,13 @@ export default function CommunityDetectionPage() {
         const next = [...excludedAccounts, candidate];
         setExcludedAccounts(next);
         persistDismissals(next);
+        // Dismissal is a single unconfirmed click (and persists in tag mode) —
+        // offer an immediate undo.
+        setFeedback({
+            severity: 'info',
+            message: `Dismissed ${candidateTitle(candidate)}`,
+            undoId: candidate.id,
+        });
     };
 
     const restoreCandidate = (id: number) => {
@@ -1008,9 +1117,14 @@ export default function CommunityDetectionPage() {
     };
 
     const autoRemoveVerified = () => {
-        const next = [...excludedAccounts, ...visibleCandidates.filter(c => c.is_verified === true)];
+        const verified = visibleCandidates.filter(c => c.is_verified === true);
+        const next = [...excludedAccounts, ...verified];
         setExcludedAccounts(next);
         persistDismissals(next);
+        setFeedback({
+            severity: 'info',
+            message: `Dismissed ${verified.length} verified account${verified.length === 1 ? '' : 's'}`,
+        });
     };
 
     // ── Export / import ───────────────────────────────────────────────────────
@@ -1040,12 +1154,12 @@ export default function CommunityDetectionPage() {
             const copied = rows.length - 1;
             const hiddenNote = hidden > 0 ? ` (${hidden} hidden by filters)` : '';
             const skippedNote = skipped > 0 ? ` (${skipped} skipped — no url_suffix)` : '';
-            setCopyFeedback({
+            setFeedback({
                 severity: 'success',
                 message: `Copied ${copied} row${copied === 1 ? '' : 's'} to clipboard${hiddenNote}${skippedNote}`,
             });
         } catch (err) {
-            setCopyFeedback({
+            setFeedback({
                 severity: 'error',
                 message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}`,
             });
@@ -1069,12 +1183,12 @@ export default function CommunityDetectionPage() {
         try {
             await navigator.clipboard.writeText(urls.join('\n'));
             const skippedNote = skipped > 0 ? ` (${skipped} skipped — no url_suffix)` : '';
-            setCopyFeedback({
+            setFeedback({
                 severity: 'success',
                 message: `Copied ${urls.length} URL${urls.length === 1 ? '' : 's'} to clipboard${skippedNote}`,
             });
         } catch (err) {
-            setCopyFeedback({
+            setFeedback({
                 severity: 'error',
                 message: `Failed to copy: ${err instanceof Error ? err.message : String(err)}`,
             });
@@ -1137,6 +1251,7 @@ export default function CommunityDetectionPage() {
                 setCandidates([]);
                 setCandidateAllTags({});
                 setHasRun(false);
+                setLastRunKernelIds(null);
             } catch {
                 setImportError('Could not parse file — make sure it is a valid JSON export.');
             }
@@ -1168,28 +1283,34 @@ export default function CommunityDetectionPage() {
                     onChange={handleImportFile}
                 />
 
-                {/* ── Export / import bar ───────────────────────────────────── */}
-                <Stack direction="row" justifyContent="flex-end" gap={1} sx={{mb: 1.5}}>
-                    <Tooltip title="Load a previously exported state file">
-                        <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<FileUploadOutlinedIcon/>}
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            Import state
-                        </Button>
-                    </Tooltip>
-                    <Tooltip title="Save current kernel, weights and exclusions to a JSON file">
-                        <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<FileDownloadOutlinedIcon/>}
-                            onClick={exportState}
-                        >
-                            Export state
-                        </Button>
-                    </Tooltip>
+                {/* ── Orientation + export / import bar ─────────────────────── */}
+                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} sx={{mb: 1.5}}>
+                    <Typography variant="body2" color="text.secondary">
+                        Start from a few accounts you know belong to a community — the tool finds
+                        other accounts that interact with them.
+                    </Typography>
+                    <Stack direction="row" gap={1} sx={{flexShrink: 0}}>
+                        <Tooltip title="Load a previously exported state file">
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<FileUploadOutlinedIcon/>}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                Import state
+                            </Button>
+                        </Tooltip>
+                        <Tooltip title="Save current seed accounts, weights and dismissals to a JSON file">
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<FileDownloadOutlinedIcon/>}
+                                onClick={exportState}
+                            >
+                                Export state
+                            </Button>
+                        </Tooltip>
+                    </Stack>
                 </Stack>
 
                 {/* ── Import error snackbar ─────────────────────────────────── */}
@@ -1204,19 +1325,38 @@ export default function CommunityDetectionPage() {
                     </Alert>
                 </Snackbar>
 
-                {/* ── Clipboard feedback snackbar ───────────────────────────── */}
+                {/* ── Feedback snackbar (copy / errors / dismiss-undo) ─────── */}
                 <Snackbar
-                    open={copyFeedback !== null}
-                    autoHideDuration={3000}
-                    onClose={() => setCopyFeedback(null)}
+                    open={feedback !== null}
+                    autoHideDuration={feedback?.undoId != null ? 6000 : 3000}
+                    onClose={(_, reason) => {
+                        if (reason === 'clickaway') return;
+                        setFeedback(null);
+                    }}
                     anchorOrigin={{vertical: 'bottom', horizontal: 'center'}}
                 >
                     <Alert
-                        severity={copyFeedback?.severity ?? 'success'}
-                        onClose={() => setCopyFeedback(null)}
+                        severity={feedback?.severity ?? 'success'}
+                        onClose={() => setFeedback(null)}
                         variant="filled"
+                        action={feedback?.undoId != null ? (
+                            <Stack direction="row" alignItems="center" gap={0.5}>
+                                <Button
+                                    color="inherit" size="small"
+                                    onClick={() => {
+                                        restoreCandidate(feedback.undoId!);
+                                        setFeedback(null);
+                                    }}
+                                >
+                                    Undo
+                                </Button>
+                                <IconButton size="small" color="inherit" onClick={() => setFeedback(null)}>
+                                    <CloseIcon fontSize="small"/>
+                                </IconButton>
+                            </Stack>
+                        ) : undefined}
                     >
-                        {copyFeedback?.message}
+                        {feedback?.message}
                     </Alert>
                 </Snackbar>
 
@@ -1224,7 +1364,7 @@ export default function CommunityDetectionPage() {
                 <Dialog open={kernelModalOpen} onClose={() => setKernelModalOpen(false)}
                         maxWidth="sm" fullWidth>
                     <DialogTitle sx={{pr: 6}}>
-                        Add Accounts to Kernel
+                        Add seed accounts
                         <IconButton onClick={() => setKernelModalOpen(false)} size="small"
                                     sx={{position: 'absolute', right: 8, top: 8}}>
                             <CloseIcon/>
@@ -1248,7 +1388,7 @@ export default function CommunityDetectionPage() {
                     </DialogContent>
                     <DialogActions>
                         <Typography variant="body2" color="text.secondary" sx={{flex: 1, pl: 1}}>
-                            {kernelEntries.length} account{kernelEntries.length !== 1 ? 's' : ''} in kernel
+                            {kernelEntries.length} seed account{kernelEntries.length !== 1 ? 's' : ''}
                         </Typography>
                         <Button variant="contained" onClick={() => setKernelModalOpen(false)}>Done</Button>
                     </DialogActions>
@@ -1303,16 +1443,16 @@ export default function CommunityDetectionPage() {
                     maxWidth="sm"
                     fullWidth
                 >
-                    <DialogTitle>Keep Account in Kernel?</DialogTitle>
+                    <DialogTitle>Keep account in seeds?</DialogTitle>
                     <DialogContent dividers>
                         <Typography variant="body2">
                             After removing this tag, <strong>{pendingKernelRemoval?.account.title}</strong> will
-                            have no community tag justifying its inclusion in the kernel. Should it be removed
-                            from the kernel, or kept for analysis?
+                            have no community tag justifying its inclusion in the seed accounts. Should it be
+                            removed from the seeds, or kept for analysis?
                         </Typography>
                     </DialogContent>
                     <DialogActions>
-                        <Button onClick={() => setPendingKernelRemoval(null)}>Keep in kernel</Button>
+                        <Button onClick={() => setPendingKernelRemoval(null)}>Keep in seeds</Button>
                         <Button
                             variant="contained"
                             color="error"
@@ -1322,7 +1462,7 @@ export default function CommunityDetectionPage() {
                                 setPendingKernelRemoval(null);
                             }}
                         >
-                            Remove from kernel
+                            Remove from seeds
                         </Button>
                     </DialogActions>
                 </Dialog>
@@ -1334,12 +1474,12 @@ export default function CommunityDetectionPage() {
                     maxWidth="sm"
                     fullWidth
                 >
-                    <DialogTitle>Remove Tag(s) and Take Out of Kernel?</DialogTitle>
+                    <DialogTitle>Remove tag(s) and remove from seeds?</DialogTitle>
                     <DialogContent dividers>
                         <Typography variant="body2">
-                            <strong>{pendingKernelTagRemoval?.account.title}</strong> is in the kernel because of
-                            the following community tag(s), which will be <strong>removed from the account in the
-                            database</strong> before it is taken out of the kernel:
+                            <strong>{pendingKernelTagRemoval?.account.title}</strong> is in the seed accounts
+                            because of the following community tag(s), which will be <strong>removed from the
+                            account in the database</strong> before it is taken out of the seeds:
                         </Typography>
                         <Box component="ul" sx={{pl: 2.5, mt: 1, mb: 0}}>
                             {pendingKernelTagRemoval?.tagSources.map(t => (
@@ -1352,7 +1492,7 @@ export default function CommunityDetectionPage() {
                     <DialogActions>
                         <Button onClick={() => setPendingKernelTagRemoval(null)}>Cancel</Button>
                         <Button variant="contained" color="error" onClick={confirmKernelTagRemoval}>
-                            Remove tag(s) &amp; take out
+                            Remove tag(s) &amp; remove from seeds
                         </Button>
                     </DialogActions>
                 </Dialog>
@@ -1376,7 +1516,7 @@ export default function CommunityDetectionPage() {
                                     <Typography variant="body2">
                                         <strong>{tagTransitionPending?.tagKernelAccounts.filter(a => !kernelIdSet.has(a.id)).length ?? 0}</strong> account(s)
                                         tagged with <em>{tagTransitionPending?.tag.name}</em> (or its subtags) will be
-                                        added to the kernel.
+                                        added to the seed accounts.
                                     </Typography>
                                 </li>
                             </Box>
@@ -1391,7 +1531,7 @@ export default function CommunityDetectionPage() {
                                 label={
                                     <Typography variant="body2">
                                         Also attach the <strong>{tagTransitionPending?.tag.name}</strong> tag
-                                        to the {kernelEntries.length} account(s) already in the kernel
+                                        to the {kernelEntries.length} account(s) already in the seeds
                                     </Typography>
                                 }
                             />
@@ -1420,7 +1560,8 @@ export default function CommunityDetectionPage() {
                             </Box>
                             {tagTransitionLoading && <CircularProgress size={20}/>}
                             {communityTag && (
-                                <Tooltip title="Clear community tag (switch to ad-hoc mode)">
+                                <Tooltip
+                                    title="Detach from the tag — keeps the current seed accounts; tag assignments stay in the database">
                                     <IconButton
                                         size="small"
                                         onClick={() => handleCommunityTagChange(null)}
@@ -1433,7 +1574,7 @@ export default function CommunityDetectionPage() {
                         </Stack>
                         {communityTag && (
                             <Typography variant="caption" color="text.secondary" sx={{mt: 0.75, display: 'block'}}>
-                                Tag mode active — kernel seeded from accounts tagged
+                                Tag mode active — seed accounts loaded from accounts tagged
                                 with <strong>{communityTag.name}</strong> (and its subtags).
                                 Tag assignments are saved to the database.
                             </Typography>
@@ -1446,12 +1587,12 @@ export default function CommunityDetectionPage() {
                     <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
                         <SectionHeader
                             step={1}
-                            title="Kernel — Seed Accounts"
+                            title="Seed accounts"
                             active={kernelEntries.length > 0}
                             action={
                                 <Stack direction="row" spacing={1} alignItems="center">
                                     {kernelEntries.length > 0 && kernelExpandedView && (
-                                        <AccountDisplayFilters value={displayFilters} onChange={setDisplayFilters}
+                                        <AccountDisplayFilters value={kernelFilters} onChange={setKernelFilters}
                                                               showArchiverSection={canViewArchiver}
                                                               archiverLabels={archiverLabels}/>
                                     )}
@@ -1477,7 +1618,7 @@ export default function CommunityDetectionPage() {
                                             </ToggleButton>
                                         </ToggleButtonGroup>
                                     )}
-                                    <Tooltip title="Copy kernel as CSV (url, tags)">
+                                    <Tooltip title="Copy seed accounts as CSV (url, tags)">
                                         <span>
                                             <Button
                                                 size="small"
@@ -1510,7 +1651,7 @@ export default function CommunityDetectionPage() {
                             kernelExpandedView ? (
                                 filteredKernelEntries.length === 0 ? (
                                     <Typography color="text.secondary" variant="body2">
-                                        No kernel accounts match the current display filters.
+                                        No seed accounts match the current display filters.
                                     </Typography>
                                 ) : (
                                 <>
@@ -1586,41 +1727,11 @@ export default function CommunityDetectionPage() {
 
                     <Box sx={{width: 2, height: 16, bgcolor: 'divider', mx: 'auto'}}/>
 
-                    {/* ── Step 2: Weights ──────────────────────────────────── */}
+                    {/* ── Step 2: Run (weights tucked behind an Advanced disclosure) ── */}
                     <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
-                        <SectionHeader
-                            step={2}
-                            title="Tie Weights"
-                        />
-                        <Stack direction="column" gap={1}>
-                            <Typography variant="body2" color="text.secondary" sx={{mt: -0.5}}>
-                                Adjust how different interaction types influence the strength of relation between
-                                accounts:
-                            </Typography>
-                            <Stack direction="row" flexWrap="wrap" gap={2} sx={{mt: 0.5}}>
-                                {(Object.keys(TIE_LABELS) as (keyof TieWeights)[]).map(tie => (
-                                    <NumberField
-                                        key={tie}
-                                        label={TIE_LABELS[tie]}
-                                        value={weights[tie]}
-                                        min={0}
-                                        step={0.1}
-                                        size="small"
-                                        onValueChange={v => setWeights(prev => ({...prev, [tie]: v ?? 0}))}
-                                        sx={{width: 130}}
-                                    />
-                                ))}
-                            </Stack>
-                        </Stack>
-                    </Paper>
-
-                    <Box sx={{width: 2, height: 16, bgcolor: 'divider', mx: 'auto'}}/>
-
-                    {/* ── Step 3: Run ──────────────────────────────────────── */}
-                    <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
-                        <SectionHeader step={3} title="Run Analysis"/>
+                        <SectionHeader step={2} title="Find connected accounts"/>
                         <Tooltip
-                            title={kernelIds.length === 0 ? 'Add at least one account to the kernel first' : ''}
+                            title={kernelIds.length === 0 ? 'Add at least one seed account first' : ''}
                             disableHoverListener={kernelIds.length > 0}
                         >
                             <span>
@@ -1636,10 +1747,58 @@ export default function CommunityDetectionPage() {
                                     }
                                     sx={{minWidth: 220}}
                                 >
-                                    {isComputing ? 'Analyzing…' : (hasRun ? 'Re-run Detection' : 'Run Community Detection')}
+                                    {isComputing ? 'Analyzing…' : (hasRun ? 'Refresh candidates' : 'Find connected accounts')}
                                 </Button>
                             </span>
                         </Tooltip>
+                        <Stack direction="row" alignItems="center" gap={1} sx={{mt: 1.5}}>
+                            <Button
+                                variant="text" size="small"
+                                onClick={() => setWeightsOpen(p => !p)}
+                                endIcon={<ExpandMoreIcon sx={{
+                                    transform: weightsOpen ? 'rotate(180deg)' : 'none',
+                                    transition: 'transform 0.2s',
+                                }}/>}
+                                sx={{color: 'text.secondary'}}
+                            >
+                                Adjust Connection Weights
+                            </Button>
+                            {weightsModified && (
+                                <Tooltip title="Weights differ from the defaults">
+                                    <Chip label="modified" size="small" color="warning" variant="outlined"
+                                          sx={{height: 20}}/>
+                                </Tooltip>
+                            )}
+                        </Stack>
+                        <Collapse in={weightsOpen} unmountOnExit>
+                            <Stack direction="column" gap={1} sx={{mt: 1}}>
+                                <Typography variant="body2" color="text.secondary">
+                                    Adjust how much each interaction type counts towards the strength of
+                                    connection between accounts:
+                                </Typography>
+                                <Stack direction="row" flexWrap="wrap" gap={2} alignItems="center" sx={{mt: 0.5}}>
+                                    {(Object.keys(TIE_LABELS) as (keyof TieWeights)[]).map(tie => (
+                                        <NumberField
+                                            key={tie}
+                                            label={TIE_LABELS[tie]}
+                                            value={weights[tie]}
+                                            min={0}
+                                            step={0.1}
+                                            size="small"
+                                            onValueChange={v => setWeights(prev => ({...prev, [tie]: v ?? 0}))}
+                                            sx={{width: 170}}
+                                        />
+                                    ))}
+                                    <Button
+                                        variant="text" size="small"
+                                        disabled={!weightsModified}
+                                        onClick={() => setWeights({...DEFAULT_TIE_WEIGHTS})}
+                                    >
+                                        Reset to defaults
+                                    </Button>
+                                </Stack>
+                            </Stack>
+                        </Collapse>
                     </Paper>
 
                     {/* ── Candidates ───────────────────────────────────────── */}
@@ -1648,9 +1807,10 @@ export default function CommunityDetectionPage() {
                             <Box sx={{display: 'flex', justifyContent: 'center'}}>
                                 <Box sx={{width: '2px', height: 16, bgcolor: 'divider'}}/>
                             </Box>
-                            <Paper variant="outlined" sx={{p: 2.5, borderRadius: 2}}>
+                            <Paper ref={candidatesCardRef} variant="outlined"
+                                   sx={{p: 2.5, borderRadius: 2, scrollMarginTop: 80}}>
                                 <Stack direction="row" justifyContent="space-between" alignItems="center"
-                                       sx={{mb: 1.5}}>
+                                       sx={{mb: 0.5}}>
                                     <Typography variant="subtitle1" sx={{fontWeight: 600}}>
                                         Top Candidates
                                         {shownCandidates.length > 0 && (
@@ -1661,18 +1821,18 @@ export default function CommunityDetectionPage() {
                                         )}
                                     </Typography>
                                     <Stack direction="row" spacing={1} alignItems="center">
-                                        <AccountDisplayFilters value={displayFilters} onChange={setDisplayFilters}
+                                        <AccountDisplayFilters value={candidateFilters} onChange={setCandidateFilters}
                                                               showArchiverSection={canViewArchiver}
                                                               archiverLabels={archiverLabels}/>
                                         <Tooltip
-                                            title={displayFiltersActive
-                                                ? 'Clear the display filters to remove verified accounts — otherwise it would also remove verified accounts hidden by the current filters'
-                                                : hasVerifiedVisible ? 'Remove all verified accounts from candidates list to screen out celebs and brands' : 'No verified accounts in current results'}>
+                                            title={candidateFiltersActive
+                                                ? 'Clear the display filters to dismiss verified accounts — otherwise it would also dismiss verified accounts hidden by the current filters'
+                                                : hasVerifiedVisible ? 'Dismiss all verified accounts from the candidates list to screen out celebs and brands' : 'No verified accounts in current results'}>
                                             <span>
                                                 <Button variant="outlined" size="small"
-                                                        disabled={!hasVerifiedVisible || displayFiltersActive}
+                                                        disabled={!hasVerifiedVisible || candidateFiltersActive}
                                                         onClick={autoRemoveVerified} sx={{flexShrink: 0}}>
-                                                    Remove Verified
+                                                    Dismiss all verified
                                                 </Button>
                                             </span>
                                         </Tooltip>
@@ -1692,12 +1852,31 @@ export default function CommunityDetectionPage() {
                                     </Stack>
                                 </Stack>
 
+                                <Typography variant="caption" color="text.secondary" sx={{display: 'block', mb: 1.5}}>
+                                    Ranked by strength of connection to the seed accounts.
+                                </Typography>
+
+                                {resultsStale && (
+                                    <Alert
+                                        severity="info"
+                                        sx={{mb: 1.5, py: 0, alignItems: 'center'}}
+                                        action={
+                                            <Button color="inherit" size="small" disabled={isComputing}
+                                                    onClick={runAnalysis}>
+                                                {isComputing ? 'Refreshing…' : 'Refresh'}
+                                            </Button>
+                                        }
+                                    >
+                                        The seed accounts or weights changed since these candidates were computed.
+                                    </Alert>
+                                )}
+
                                 {shownCandidates.length === 0 ? (
                                     <Typography color="text.secondary" variant="body2">
                                         {candidates.length === 0
-                                            ? 'No candidates found. Try expanding the kernel or adjusting weights.'
+                                            ? 'No connected accounts found. Add more seed accounts or adjust the connection weights.'
                                             : visibleCandidates.length === 0
-                                                ? 'All candidates have been excluded.'
+                                                ? 'All candidates have been dismissed.'
                                                 : 'No accounts match the current display filters.'}
                                     </Typography>
                                 ) : (
@@ -1736,7 +1915,7 @@ export default function CommunityDetectionPage() {
                                     }}/>}
                                     sx={{color: 'text.secondary'}}
                                 >
-                                    Excluded ({excludedAccounts.length})
+                                    Dismissed ({excludedAccounts.length})
                                 </Button>
                                 <Collapse in={excludedOpen} unmountOnExit>
                                     <Box sx={{display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5, pl: 0.5}}>

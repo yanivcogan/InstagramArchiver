@@ -25,6 +25,9 @@ export interface AccountBlockProps {
     followingCount: number;
     postCount: number;
     score: number;
+    // Number of seed accounts this account is connected to — shown as a
+    // plain-language caption under the weighted score.
+    kernelConnections: number;
     tagDistribution?: ITagStat[];
     tagDistributionLoading: boolean;
     onTagDistributionOpen: () => void;
@@ -45,6 +48,7 @@ export default function AccountBlock({
                                          followingCount,
                                          postCount,
                                          score,
+                                         kernelConnections,
                                          tagDistribution,
                                          tagDistributionLoading,
                                          onTagDistributionOpen,
@@ -84,9 +88,14 @@ export default function AccountBlock({
                     },
                 }}
                 title={
-                    tagDistributionLoading
-                        ? <CircularProgress size={16}/>
-                        : <RelatedTagDistributionTable stats={tagDistribution ?? []}/>
+                    <Box>
+                        <Typography variant="subtitle2" sx={{fontWeight: 600, mb: 0.5}}>
+                            {kernelConnections} connected seed account{kernelConnections === 1 ? '' : 's'}
+                        </Typography>
+                        {tagDistributionLoading
+                            ? <CircularProgress size={16}/>
+                            : <RelatedTagDistributionTable stats={tagDistribution ?? []}/>}
+                    </Box>
                 }
             >
                 <Box sx={{
@@ -104,7 +113,7 @@ export default function AccountBlock({
                         mt: 0.25,
                         letterSpacing: '0.05em',
                         textTransform: 'uppercase',
-                        fontSize: '0.6rem'
+                        fontSize: '0.6rem',
                     }}>
                         score
                     </Typography>

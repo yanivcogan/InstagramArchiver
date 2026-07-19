@@ -101,9 +101,12 @@ interface IProps {
     assignedTagIds: Set<number>;
     onSelect: (tag: ITagWithType) => void;
     placeholder?: string;
+    // Renders the trigger as a contained primary button — for contexts where
+    // tag assignment is the recommended action rather than a quiet control.
+    emphasized?: boolean;
 }
 
-export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSelect, placeholder}: IProps) {
+export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSelect, placeholder, emphasized}: IProps) {
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const [minWidth, setMinWidth] = useState(0);
     const measureRef = useRef<HTMLSpanElement>(null);
@@ -150,7 +153,7 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
                 {placeholder ?? dropdown.type_name}
             </span>
             <Button
-                variant="outlined"
+                variant={emphasized ? 'contained' : 'outlined'}
                 onClick={(e) => setAnchorEl(e.currentTarget)}
                 endIcon={<ArrowDropDownIcon/>}
                 sx={{
@@ -162,9 +165,11 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
                     paddingBottom: '5px',
                     paddingLeft: '10px',
                     paddingRight: '6px',
-                    color: 'text.primary',
-                    borderColor: 'divider',
-                    '&:hover': {borderColor: 'text.primary'},
+                    ...(emphasized ? {} : {
+                        color: 'text.primary',
+                        borderColor: 'divider',
+                        '&:hover': {borderColor: 'text.primary'},
+                    }),
                     '& .MuiButton-endIcon': {marginLeft: 'auto'},
                 }}
             >
@@ -172,7 +177,9 @@ export default function QuickAccessTypeDropdown({dropdown, assignedTagIds, onSel
                     ? (
                         <Box sx={{display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center'}}>
                             {selectedTags.map(tag => (
-                                <Chip key={tag.id} label={tag.name} size="small" variant="outlined" color="primary"/>
+                                <Chip key={tag.id} label={tag.name} size="small"
+                                      variant={emphasized ? 'filled' : 'outlined'}
+                                      color={emphasized ? 'default' : 'primary'}/>
                             ))}
                         </Box>
                     )
