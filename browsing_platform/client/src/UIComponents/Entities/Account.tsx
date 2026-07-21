@@ -122,53 +122,34 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
     loadingInteractions: boolean;
     interactions: IAccountInteractions | null;
 }) {
-    const commentColumns = useMemo(() => buildInteractionColumns({withContent: true}), []);
-    const contentlessColumns = useMemo(() => buildInteractionColumns({withContent: false}), []);
+    const columns = useMemo(() => buildInteractionColumns(), []);
+    // One unified grid with a filterable Type column. Entity ids from different
+    // tables (comment/like/tagged) can collide, so drop them and let the grid
+    // assign synthetic row ids (interactions have no highlight deep links).
+    const rows = useMemo(() => {
+        if (!interactions) return [];
+        return [
+            ...interactions.comments.map(c => ({...c, id: undefined, interaction_type: 'comment' as const})),
+            ...interactions.likes.map(l => ({...l, id: undefined, interaction_type: 'like' as const})),
+            ...interactions.tagged_in.map(ta => ({...ta, id: undefined, interaction_type: 'tagged' as const})),
+        ];
+    }, [interactions]);
     return (
         <>
             {loadingInteractions && <CircularProgress size={16}/>}
             {interactions && (
-                <Stack gap={1}>
-                    {interactions.comments.length > 0 && (
-                        <Stack gap={0.5}>
-                            <Typography variant="caption" color="text.secondary">
-                                Comments ({interactions.comments.length})
-                            </Typography>
-                            <EntityPanelGrid
-                                rows={interactions.comments}
-                                columns={commentColumns}
-                                sx={{'& .MuiDataGrid-row': {borderLeft: '2px solid', borderLeftColor: 'primary.light'}}}
-                            />
-                        </Stack>
-                    )}
-                    {interactions.likes.length > 0 && (
-                        <Stack gap={0.5}>
-                            <Typography variant="caption" color="text.secondary">
-                                Likes ({interactions.likes.length})
-                            </Typography>
-                            <EntityPanelGrid
-                                rows={interactions.likes}
-                                columns={contentlessColumns}
-                                sx={{'& .MuiDataGrid-row': {borderLeft: '2px solid', borderLeftColor: 'error.light'}}}
-                            />
-                        </Stack>
-                    )}
-                    {interactions.tagged_in.length > 0 && (
-                        <Stack gap={0.5}>
-                            <Typography variant="caption" color="text.secondary">
-                                Tagged in ({interactions.tagged_in.length})
-                            </Typography>
-                            <EntityPanelGrid
-                                rows={interactions.tagged_in}
-                                columns={contentlessColumns}
-                                sx={{'& .MuiDataGrid-row': {borderLeft: '2px solid', borderLeftColor: 'warning.light'}}}
-                            />
-                        </Stack>
-                    )}
-                    {interactions.comments.length === 0 && interactions.likes.length === 0 && interactions.tagged_in.length === 0 && (
-                        <Typography variant="caption" color="text.secondary">No interactions found</Typography>
-                    )}
-                </Stack>
+                rows.length > 0
+                    ? <EntityPanelGrid
+                        rows={rows}
+                        columns={columns}
+                        getRowClassName={params => `interaction-row-${params.row.interaction_type}`}
+                        sx={{
+                            '& .interaction-row-comment': {borderLeft: '2px solid', borderLeftColor: 'primary.light'},
+                            '& .interaction-row-like': {borderLeft: '2px solid', borderLeftColor: 'error.light'},
+                            '& .interaction-row-tagged': {borderLeft: '2px solid', borderLeftColor: 'warning.light'},
+                        }}
+                    />
+                    : <Typography variant="caption" color="text.secondary">No interactions found</Typography>
             )}
         </>
     );

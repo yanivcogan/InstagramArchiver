@@ -34,6 +34,8 @@ export function buildLikeColumns({postId, shareToken, accountTagsMap}: IColumnsO
             headerName: 'Account',
             flex: 1,
             minWidth: 140,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: IPostLike) => accountLabel(row.account_url, row.account_display_name),
             renderCell: params => {
                 const like = params.row as IPostLike;
@@ -49,6 +51,8 @@ export function buildLikeColumns({postId, shareToken, accountTagsMap}: IColumnsO
             headerName: 'Tags',
             flex: 1.5,
             minWidth: 140,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: IPostLike) => tagsFor(row).map(t => t.name).join(', '),
             renderCell: params => <InlineTagsDisplay tags={tagsFor(params.row as IPostLike)}/>,
         },
@@ -58,6 +62,8 @@ export function buildLikeColumns({postId, shareToken, accountTagsMap}: IColumnsO
             width: 56,
             sortable: false,
             resizable: false,
+            filterable: false,
+            disableColumnMenu: true,
             renderCell: params => {
                 const permalink = likePermalink(params.row as IPostLike, postId, shareToken);
                 return permalink

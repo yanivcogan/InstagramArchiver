@@ -76,6 +76,8 @@ export function buildRelationColumns({contextAccountId, accountTagsMap}: IColumn
             headerName: 'Account',
             flex: 1.2,
             minWidth: 160,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: IAccountRelation) => {
                 const {oriented, other} = orientRelation(row, contextAccountId);
                 return oriented
@@ -120,6 +122,8 @@ export function buildRelationColumns({contextAccountId, accountTagsMap}: IColumn
             headerName: 'Relation',
             flex: 1,
             minWidth: 120,
+            type: 'singleSelect',
+            valueOptions: ['follows', 'followed by', 'suggested'],
             valueGetter: (_, row: IAccountRelation) => orientRelation(row, contextAccountId).label,
             renderCell: params => {
                 const relation = params.row as IAccountRelation;
@@ -140,6 +144,8 @@ export function buildRelationColumns({contextAccountId, accountTagsMap}: IColumn
             width: 56,
             sortable: false,
             resizable: false,
+            filterable: false,
+            disableColumnMenu: true,
             renderCell: params => {
                 const relation = params.row as IAccountRelation;
                 if (contextAccountId == null || relation.id == null) return null;

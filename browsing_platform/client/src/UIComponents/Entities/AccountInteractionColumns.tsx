@@ -1,13 +1,19 @@
 import React from 'react';
-import {Link, Typography} from '@mui/material';
+import {Link, Stack, Typography} from '@mui/material';
 import {GridColDef} from '@mui/x-data-grid';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined';
+import LocalOfferIcon from '@mui/icons-material/LocalOffer';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
 dayjs.extend(utc);
 
+export type InteractionType = 'comment' | 'like' | 'tagged';
+
 /** Fields shared by all three interaction row types (comments, likes, tagged-in). */
 interface InteractionRow {
+    interaction_type: InteractionType;
     post_author_account_id?: number;
     post_author_display_name?: string;
     post_author_url_suffix?: string;
@@ -16,18 +22,42 @@ interface InteractionRow {
     text?: string;
 }
 
+const TYPE_DISPLAY: Record<InteractionType, {Icon: React.ComponentType<{sx?: object}>; color: string}> = {
+    comment: {Icon: ChatBubbleOutlineIcon, color: 'primary.main'},
+    like: {Icon: ThumbUpOutlinedIcon, color: 'error.main'},
+    tagged: {Icon: LocalOfferIcon, color: 'warning.main'},
+};
+
 /**
- * Columns for the account interactions panel sections. All sections share the
- * author/date columns so they stay visually consistent; only the comments
- * section adds a content column.
+ * Columns for the unified account interactions grid. The Type column is
+ * filterable (client-side, via the column header menu); the rest are not.
  */
-export function buildInteractionColumns({withContent}: {withContent: boolean}): GridColDef[] {
-    const columns: GridColDef[] = [
+export function buildInteractionColumns(): GridColDef[] {
+    return [
+        {
+            field: 'interaction_type',
+            headerName: 'Type',
+            width: 110,
+            type: 'singleSelect',
+            valueOptions: ['comment', 'like', 'tagged'],
+            renderCell: params => {
+                const row = params.row as InteractionRow;
+                const display = TYPE_DISPLAY[row.interaction_type];
+                if (!display) return null;
+                const {Icon, color} = display;
+                return <Stack direction="row" gap={0.5} alignItems="center">
+                    <Icon sx={{fontSize: 14, color}}/>
+                    <Typography variant="caption">{row.interaction_type}</Typography>
+                </Stack>;
+            },
+        },
         {
             field: 'author',
             headerName: 'Post author',
             flex: 1,
             minWidth: 140,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: InteractionRow) =>
                 row.post_author_display_name || row.post_author_url_suffix || '',
             renderCell: params => {
@@ -51,6 +81,8 @@ export function buildInteractionColumns({withContent}: {withContent: boolean}): 
             field: 'post_publication_date',
             headerName: 'Post date',
             width: 110,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: InteractionRow) => row.post_publication_date ?? '',
             renderCell: params => {
                 const row = params.row as InteractionRow;
@@ -67,20 +99,19 @@ export function buildInteractionColumns({withContent}: {withContent: boolean}): 
                     : <Typography variant="caption" sx={{fontFamily: 'monospace'}}>{formattedDate}</Typography>;
             },
         },
-    ];
-    if (withContent) {
-        columns.push({
+        {
             field: 'text',
             headerName: 'Content',
             flex: 2,
             minWidth: 200,
+            filterable: false,
+            disableColumnMenu: true,
             renderCell: params => {
                 const row = params.row as InteractionRow;
                 return row.text
                     ? <Typography variant="body2" sx={{lineHeight: 1.45, fontSize: '0.8125rem'}}>{row.text}</Typography>
                     : null;
             },
-        });
-    }
-    return columns;
+        },
+    ];
 }

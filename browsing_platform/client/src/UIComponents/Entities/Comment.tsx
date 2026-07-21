@@ -34,6 +34,8 @@ export function buildCommentColumns({postId, shareToken, accountTagsMap}: IColum
             headerName: 'Author',
             flex: 1.2,
             minWidth: 140,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: IComment) => accountLabel(row.account_url, row.account_display_name),
             renderCell: params => {
                 const comment = params.row as IComment;
@@ -51,6 +53,8 @@ export function buildCommentColumns({postId, shareToken, accountTagsMap}: IColum
             field: 'publication_date',
             headerName: 'Date',
             width: 155,
+            filterable: false,
+            disableColumnMenu: true,
             valueGetter: (_, row: IComment) => row.publication_date ?? '',
             renderCell: params => {
                 const comment = params.row as IComment;
@@ -71,6 +75,8 @@ export function buildCommentColumns({postId, shareToken, accountTagsMap}: IColum
             headerName: 'Comment',
             flex: 2.5,
             minWidth: 200,
+            filterable: false,
+            disableColumnMenu: true,
             renderCell: params => {
                 const comment = params.row as IComment;
                 return <Box>
