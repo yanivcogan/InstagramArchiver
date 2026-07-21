@@ -51,3 +51,4 @@ archiver/utils/par2/par2.exe
 package_archives.bat
 /spikes/pcap_probe_out
 /utils/wacz_packager/node_modules
+/docs/superpowers
