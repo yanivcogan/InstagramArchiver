@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from browsing_platform.server.services.permissions import auth_user_access
+from utils.db import DbError
 from browsing_platform.server.services.tag_management import (
     ITagType, ITagDetail, ITagHierarchyEntry, ITagUsage, IQuickAccessData,
     list_tag_types, create_tag_type, update_tag_type, delete_tag_type,
@@ -19,6 +20,12 @@ router = APIRouter(
     dependencies=[Depends(auth_user_access)],
     responses={404: {"description": "Not found"}},
 )
+
+
+def _is_duplicate_entry(e: DbError) -> bool:
+    # DbError wraps the mysql.connector error as __cause__; 1062 = ER_DUP_ENTRY.
+    # The message check is a fallback for paths that lose the cause.
+    return getattr(e.__cause__, 'errno', None) == 1062 or 'Duplicate entry' in str(e)
 
 
 # ── Tag Type request bodies ────────────────────────────────────────────────────
@@ -133,13 +140,23 @@ async def get_tag(tag_id: int) -> ITagDetail:
 @router.post("/tags/")
 @router.post("/tags")
 async def post_tag(body: TagBody) -> ITagDetail:
-    return create_tag(body.name, body.description, body.tag_type_id, body.quick_access, body.omit_from_tag_type_dropdown, body.notes_recommended)
+    try:
+        return create_tag(body.name, body.description, body.tag_type_id, body.quick_access, body.omit_from_tag_type_dropdown, body.notes_recommended)
+    except DbError as e:
+        if _is_duplicate_entry(e):
+            raise HTTPException(status_code=409, detail="A tag with this name and type already exists")
+        raise
 
 
 @router.put("/tags/{tag_id}/")
 @router.put("/tags/{tag_id}")
 async def put_tag(tag_id: int, body: TagBody) -> ITagDetail:
-    update_tag(tag_id, body.name, body.description, body.tag_type_id, body.quick_access, body.omit_from_tag_type_dropdown, body.notes_recommended)
+    try:
+        update_tag(tag_id, body.name, body.description, body.tag_type_id, body.quick_access, body.omit_from_tag_type_dropdown, body.notes_recommended)
+    except DbError as e:
+        if _is_duplicate_entry(e):
+            raise HTTPException(status_code=409, detail="A tag with this name and type already exists")
+        raise
     return ITagDetail(id=tag_id, **body.model_dump())
 
 

@@ -20,7 +20,6 @@ import {
     Typography,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
-import AddIcon from '@mui/icons-material/Add';
 import TopNavBar from '../UIComponents/TopNavBar/TopNavBar';
 import TagUsageTabs from '../UIComponents/TagUsageTabs/TagUsageTabs';
 import {ITagHierarchyEntry, ITagType, ITagUsage, ITagWithType} from '../types/tags';
@@ -34,25 +33,17 @@ import {
     fetchTagTypes,
     fetchTagUsage,
     removeHierarchy,
+    tagSaveErrorMessage,
     updateHierarchyNotes,
     updateTag,
 } from '../services/TagManagementService';
 import {lookupTags} from '../services/DataFetcher';
 import {toast} from 'material-react-toastify';
+import {canOfferCreate, CreateOptionRow, isCreateOption, makeCreateOption, TCreateOption} from '../UIComponents/Tags/createTagOption';
 
 /* ── Hierarchy section ────────────────────────────────────────────────────── */
 
-type CreateOption = {inputValue: string; __create: true};
-type AddAutocompleteOption = ITagWithType | CreateOption;
-
-const isCreateOption = (o: AddAutocompleteOption | string | null): o is CreateOption =>
-    !!o && typeof o === 'object' && (o as CreateOption).__create === true;
-
-// Whether typed text should offer a "create new tag" action: non-empty, comma-free, and not an existing option.
-const canOfferCreate = (raw: string, options: ITagWithType[]): boolean => {
-    const t = raw.trim().toLowerCase();
-    return t.length > 0 && !t.includes(',') && !options.some(o => o.name.toLowerCase() === t);
-};
+type AddAutocompleteOption = ITagWithType | TCreateOption;
 
 function HierarchyTagSection({
     label,
@@ -131,7 +122,7 @@ function HierarchyTagSection({
     };
 
     // The "Add" button commits the current selection, or the typed name when creation is enabled.
-    const handleButton = () => commit(addTag ?? (canCreate ? {inputValue: trimmed, __create: true} : null));
+    const handleButton = () => commit(addTag ?? (canCreate ? makeCreateOption(trimmed) : null));
 
     return (
         <Stack gap={0.5}>
@@ -193,7 +184,7 @@ function HierarchyTagSection({
                         const tl = state.inputValue.trim().toLowerCase();
                         const filtered = opts.filter(o => !isCreateOption(o) && o.name.toLowerCase().includes(tl));
                         if (onCreateAndAdd && canOfferCreate(state.inputValue, opts.filter((o): o is ITagWithType => !isCreateOption(o)))) {
-                            filtered.unshift({inputValue: state.inputValue.trim(), __create: true});
+                            filtered.unshift(makeCreateOption(state.inputValue));
                         }
                         return filtered;
                     }}
@@ -204,12 +195,9 @@ function HierarchyTagSection({
                             : a.id === b.id}
                     renderOption={(props, o) => (
                         <li {...props} key={isCreateOption(o) ? `__create:${o.inputValue}` : o.id}>
-                            {isCreateOption(o) ? (
-                                <Stack direction="row" alignItems="center" gap={0.5} sx={{color: 'primary.main'}}>
-                                    <AddIcon fontSize="small"/>
-                                    <span>Create new subtag "{o.inputValue}"</span>
-                                </Stack>
-                            ) : o.name}
+                            {isCreateOption(o)
+                                ? <CreateOptionRow text={`Create new subtag "${o.inputValue}"`}/>
+                                : o.name}
                         </li>
                     )}
                     renderInput={params => (
@@ -318,7 +306,7 @@ export default function EditTagPage() {
             });
             navigate('/tags?tab=tags');
         } catch (e: any) {
-            toast.error(e?.message || 'Error saving tag');
+            toast.error(tagSaveErrorMessage(e, 'Error saving tag'));
         }
     };
 
@@ -355,7 +343,7 @@ export default function EditTagPage() {
             await addHierarchy({super_tag_id: tagId, sub_tag_id: created.id!, notes: null});
             await loadHierarchy();
         } catch (e: any) {
-            toast.error(e?.message || 'Could not create subtag');
+            toast.error(tagSaveErrorMessage(e, 'Could not create subtag'));
         }
     };
 

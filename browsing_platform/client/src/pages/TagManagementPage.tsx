@@ -46,9 +46,11 @@ import {
     fetchTags,
     fetchTagTypeCounts,
     fetchTagTypes,
+    tagSaveErrorMessage,
     updateTag,
     updateTagType,
 } from "../services/TagManagementService";
+import TagNameField, {isValidTagName} from "../UIComponents/Tags/TagNameField";
 import {toast} from "material-react-toastify";
 import ImportTagsTab from "./TagManagement/ImportTagsTab";
 import ImportAnnotationsTab from "./TagManagement/ImportAnnotationsTab";
@@ -152,7 +154,12 @@ function TagTypesTab() {
                         <Select
                             multiple
                             value={form.entity_affinity ?? []}
-                            onChange={e => setForm(f => ({...f, entity_affinity: e.target.value as string[] || null}))}
+                            onChange={e => {
+                                // An empty affinity array means "compatible with nothing" server-side
+                                // (JSON_CONTAINS on '[]' never matches) — store null ("any entity") instead.
+                                const selected = e.target.value as string[];
+                                setForm(f => ({...f, entity_affinity: selected.length ? selected : null}));
+                            }}
                             input={<OutlinedInput label="Entity Affinity"/>}
                             renderValue={(sel) => (
                                 <Stack direction="row" gap={0.5} flexWrap="wrap">
@@ -230,7 +237,7 @@ function TagsTab() {
             setFormOpen(false);
             loadTags();
         } catch (e: any) {
-            toast.error(e?.message || "Error saving tag");
+            toast.error(tagSaveErrorMessage(e, "Error saving tag"));
         }
     };
 
@@ -356,14 +363,7 @@ function TagsTab() {
             <DialogTitle>New Tag</DialogTitle>
             <DialogContent>
                 <Stack gap={2} sx={{mt: 1}}>
-                    <TextField
-                        label="Name"
-                        value={form.name}
-                        onChange={e => setForm(f => ({...f, name: e.target.value}))}
-                        error={form.name.includes(',')}
-                        helperText={form.name.includes(',') ? 'Tag name cannot contain commas' : undefined}
-                        required
-                    />
+                    <TagNameField value={form.name} onChange={name => setForm(f => ({...f, name}))}/>
                     <TextField label="Description" value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}/>
                     <FormControl size="small">
                         <InputLabel>Tag Type</InputLabel>
@@ -392,7 +392,7 @@ function TagsTab() {
             </DialogContent>
             <DialogActions>
                 <Button onClick={() => setFormOpen(false)}>Cancel</Button>
-                <Button variant="contained" onClick={handleSave} disabled={form.name.includes(',') || !form.name.trim()}>Save</Button>
+                <Button variant="contained" onClick={handleSave} disabled={!isValidTagName(form.name)}>Save</Button>
             </DialogActions>
         </Dialog>
     </Stack>;

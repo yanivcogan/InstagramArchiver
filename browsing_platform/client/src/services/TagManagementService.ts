@@ -16,6 +16,11 @@ import {
 
 const BASE = "tag-management";
 
+/** Uniform toast message for tag create/update failures: the server's 409 detail for
+ *  duplicate (name, tag_type_id) pairs, a caller-supplied fallback for everything else. */
+export const tagSaveErrorMessage = (e: any, fallback: string): string =>
+    e?.status === 409 ? (e?.message || 'A tag with this name and type already exists') : fallback;
+
 export const fetchQuickAccessData = async (entity?: E_ENTITY_TYPES): Promise<IQuickAccessData> =>
     server.get(`${BASE}/quick-access/${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`);
 

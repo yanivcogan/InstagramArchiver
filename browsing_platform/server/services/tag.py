@@ -42,7 +42,7 @@ class ITagWithType(ITag):
 
 
 def auto_complete_tags(query: str, tag_type_id: Optional[int] = None, entity: Optional[str] = None) -> list[ITagWithType]:
-    args: dict = {"query": f"%{query}%"}
+    args: dict = {"query": f"%{query}%", "exact": query}
     where = "WHERE tag.name LIKE %(query)s"
     if tag_type_id is not None:
         where += " AND tag.tag_type_id = %(tag_type_id)s"
@@ -60,6 +60,7 @@ def auto_complete_tags(query: str, tag_type_id: Optional[int] = None, entity: Op
             FROM tag
             LEFT JOIN tag_type ON tag.tag_type_id = tag_type.id
             {where}
+            ORDER BY (tag.name = %(exact)s) DESC, tag.name
             LIMIT 10""",
         args,
         return_type="rows"
