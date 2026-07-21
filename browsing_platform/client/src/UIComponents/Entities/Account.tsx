@@ -40,10 +40,9 @@ import {
 } from "../../services/DataFetcher";
 import {EntityViewerConfig} from "./EntitiesViewerConfig";
 import EntityAnnotator from "./Annotator";
-import AccountRelation from "./AccountRelation";
-import AccountComment from "./AccountComment";
-import AccountLike from "./AccountLike";
-import AccountTaggedInPost from "./AccountTaggedInPost";
+import {buildRelationColumns} from "./AccountRelation";
+import {buildInteractionColumns} from "./AccountInteractionColumns";
+import EntityPanelGrid from "./PanelGrid";
 import RelatedTagDistributionTable from "../Tags/RelatedTagDistributionTable";
 import ArchiverAccessMenu from "./ArchiverAccessMenu";
 
@@ -95,21 +94,17 @@ function estimatePostHeight(
     return FIXED + captionHeight + taggedHeight + mediaHeight;
 }
 
-const HIGHLIGHT_STYLE: React.CSSProperties = {
-    backgroundColor: '#fff8dc',
-    borderRadius: 4,
-    padding: '2px 4px',
-    marginLeft: -4,
-};
-
-function AccountRelationsPanel({loadingRelations, relations, highlightRelationId, relationRefs, contextAccountId, accountTagsMap}: {
+function AccountRelationsPanel({loadingRelations, relations, highlightRelationId, contextAccountId, accountTagsMap}: {
     loadingRelations: boolean;
     relations: IAccountRelation[] | null;
     highlightRelationId?: number;
-    relationRefs: React.MutableRefObject<Map<number, HTMLElement>>;
     contextAccountId?: number;
     accountTagsMap: Record<number, ITagWithType[]>;
 }) {
+    const columns = useMemo(
+        () => buildRelationColumns({contextAccountId, accountTagsMap}),
+        [contextAccountId, accountTagsMap]
+    );
     return (
         <>
             {loadingRelations && <CircularProgress size={16}/>}
@@ -117,19 +112,7 @@ function AccountRelationsPanel({loadingRelations, relations, highlightRelationId
                 <Typography variant="caption" color="text.secondary">No relations found</Typography>
             )}
             {relations && relations.length > 0 && (
-                <Stack gap={0.5}>
-                    {relations.map((r, i) => (
-                        <div
-                            key={i}
-                            ref={r.id != null ? el => {
-                                if (el) relationRefs.current.set(r.id!, el);
-                            } : undefined}
-                            style={r.id != null && r.id === highlightRelationId ? HIGHLIGHT_STYLE : undefined}
-                        >
-                            <AccountRelation relation={r} contextAccountId={contextAccountId} accountTagsMap={accountTagsMap}/>
-                        </div>
-                    ))}
-                </Stack>
+                <EntityPanelGrid rows={relations} columns={columns} highlightId={highlightRelationId}/>
             )}
         </>
     );
@@ -139,6 +122,8 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
     loadingInteractions: boolean;
     interactions: IAccountInteractions | null;
 }) {
+    const commentColumns = useMemo(() => buildInteractionColumns({withContent: true}), []);
+    const contentlessColumns = useMemo(() => buildInteractionColumns({withContent: false}), []);
     return (
         <>
             {loadingInteractions && <CircularProgress size={16}/>}
@@ -149,7 +134,11 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
                             <Typography variant="caption" color="text.secondary">
                                 Comments ({interactions.comments.length})
                             </Typography>
-                            {interactions.comments.map((c, i) => <AccountComment key={i} comment={c}/>)}
+                            <EntityPanelGrid
+                                rows={interactions.comments}
+                                columns={commentColumns}
+                                sx={{'& .MuiDataGrid-row': {borderLeft: '2px solid', borderLeftColor: 'primary.light'}}}
+                            />
                         </Stack>
                     )}
                     {interactions.likes.length > 0 && (
@@ -157,7 +146,11 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
                             <Typography variant="caption" color="text.secondary">
                                 Likes ({interactions.likes.length})
                             </Typography>
-                            {interactions.likes.map((l, i) => <AccountLike key={i} like={l}/>)}
+                            <EntityPanelGrid
+                                rows={interactions.likes}
+                                columns={contentlessColumns}
+                                sx={{'& .MuiDataGrid-row': {borderLeft: '2px solid', borderLeftColor: 'error.light'}}}
+                            />
                         </Stack>
                     )}
                     {interactions.tagged_in.length > 0 && (
@@ -165,11 +158,11 @@ function AccountInteractionsPanel({loadingInteractions, interactions}: {
                             <Typography variant="caption" color="text.secondary">
                                 Tagged in ({interactions.tagged_in.length})
                             </Typography>
-                            <Stack gap={0.5}>
-                                {interactions.tagged_in.map((ta, i) => (
-                                    <AccountTaggedInPost key={i} taggedAccount={ta}/>
-                                ))}
-                            </Stack>
+                            <EntityPanelGrid
+                                rows={interactions.tagged_in}
+                                columns={contentlessColumns}
+                                sx={{'& .MuiDataGrid-row': {borderLeft: '2px solid', borderLeftColor: 'warning.light'}}}
+                            />
                         </Stack>
                     )}
                     {interactions.comments.length === 0 && interactions.likes.length === 0 && interactions.tagged_in.length === 0 && (
@@ -326,7 +319,6 @@ export default function Account({
 
     const [auxiliaryCounts, setAuxiliaryCounts] = useState<IAccountAuxiliaryCounts | null>(null);
 
-    const relationRefs = useRef<Map<number, HTMLElement>>(new Map());
     const observerRef = useRef<IntersectionObserver | null>(null);
 
     const fetchAccountDetails = async () => {
@@ -470,14 +462,6 @@ export default function Account({
             });
     }, [account.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Scroll to highlighted relation after load
-    useEffect(() => {
-        if (highlightRelationId && relations) {
-            const el = relationRefs.current.get(highlightRelationId);
-            el?.scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-    }, [relations, highlightRelationId]);
-
     const relationsLabel = auxiliaryCounts != null
         ? `Related Accounts (${auxiliaryCounts.relations_count})`
         : "Related Accounts";
@@ -599,7 +583,6 @@ export default function Account({
                                 loadingRelations={loadingRelations}
                                 relations={relations}
                                 highlightRelationId={highlightRelationId}
-                                relationRefs={relationRefs}
                                 contextAccountId={account.id}
                                 accountTagsMap={accountTagsMap}
                             />

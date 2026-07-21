@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
     IComment,
     ICommentsResponse,
@@ -18,8 +18,9 @@ import dayjs from "dayjs";
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import TaggedAccountChip from "./TaggedAccountChip";
-import Comment from "./Comment";
-import PostLike from "./PostLike";
+import {buildCommentColumns} from "./Comment";
+import {buildLikeColumns} from "./PostLike";
+import EntityPanelGrid from "./PanelGrid";
 
 import {getShareTokenFromHref, SHARE_URL_PARAM} from "../../services/linkSharing";
 import {ChatBubble, DataObject, Favorite, Notes} from "@mui/icons-material";
@@ -27,40 +28,24 @@ import {ChatBubble, DataObject, Favorite, Notes} from "@mui/icons-material";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-const HIGHLIGHT_STYLE: React.CSSProperties = {
-    backgroundColor: '#fff8dc',
-    borderRadius: 4,
-    padding: '2px 4px',
-    marginLeft: -4,
-};
-
-function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlightCommentId, commentRefs, postId, shareToken, accountTagsMap}: {
+function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlightCommentId, postId, shareToken, accountTagsMap}: {
     loadingComments: boolean;
     commentsLoaded: boolean;
     comments: IComment[] | null;
     highlightCommentId?: number;
-    commentRefs: React.MutableRefObject<Map<number, HTMLElement>>;
     postId?: number;
     shareToken: string | null;
     accountTagsMap: Record<number, ITagWithType[]>;
 }) {
+    const columns = useMemo(
+        () => buildCommentColumns({postId, shareToken, accountTagsMap}),
+        [postId, shareToken, accountTagsMap]
+    );
     return (
         <>
             {loadingComments && <CircularProgress size={16}/>}
             {commentsLoaded && comments && comments.length > 0 && (
-                <Stack gap={0.5}>
-                    {comments.map((c, i) => (
-                        <div
-                            key={i}
-                            ref={c.id != null ? el => {
-                                if (el) commentRefs.current.set(c.id!, el);
-                            } : undefined}
-                            style={c.id != null && c.id === highlightCommentId ? HIGHLIGHT_STYLE : undefined}
-                        >
-                            <Comment comment={c} postId={postId} shareToken={shareToken} accountTagsMap={accountTagsMap}/>
-                        </div>
-                    ))}
-                </Stack>
+                <EntityPanelGrid rows={comments} columns={columns} highlightId={highlightCommentId}/>
             )}
             {commentsLoaded && (!comments || comments.length === 0) && (
                 <Typography variant="caption" color="text.secondary">No comments</Typography>
@@ -69,33 +54,24 @@ function PostCommentsPanel({loadingComments, commentsLoaded, comments, highlight
     );
 }
 
-function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, likeRefs, postId, shareToken, accountTagsMap}: {
+function PostLikesPanel({loadingLikes, likesLoaded, likes, highlightLikeId, postId, shareToken, accountTagsMap}: {
     loadingLikes: boolean;
     likesLoaded: boolean;
     likes: IPostLike[] | null;
     highlightLikeId?: number;
-    likeRefs: React.MutableRefObject<Map<number, HTMLElement>>;
     postId?: number;
     shareToken: string | null;
     accountTagsMap: Record<number, ITagWithType[]>;
 }) {
+    const columns = useMemo(
+        () => buildLikeColumns({postId, shareToken, accountTagsMap}),
+        [postId, shareToken, accountTagsMap]
+    );
     return (
         <>
             {loadingLikes && <CircularProgress size={16}/>}
             {likesLoaded && likes && likes.length > 0 && (
-                <Stack gap={0.5}>
-                    {likes.map((l, i) => (
-                        <div
-                            key={i}
-                            ref={l.id != null ? el => {
-                                if (el) likeRefs.current.set(l.id!, el);
-                            } : undefined}
-                            style={l.id != null && l.id === highlightLikeId ? HIGHLIGHT_STYLE : undefined}
-                        >
-                            <PostLike like={l} postId={postId} shareToken={shareToken} accountTagsMap={accountTagsMap}/>
-                        </div>
-                    ))}
-                </Stack>
+                <EntityPanelGrid rows={likes} columns={columns} highlightId={highlightLikeId}/>
             )}
             {likesLoaded && (!likes || likes.length === 0) && (
                 <Typography variant="caption" color="text.secondary">No likes</Typography>
@@ -128,8 +104,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
 
     const [auxiliaryCounts, setAuxiliaryCounts] = useState<IPostAuxiliaryCounts | null>(null);
 
-    const commentRefs = useRef<Map<number, HTMLElement>>(new Map());
-    const likeRefs = useRef<Map<number, HTMLElement>>(new Map());
 
     const fetchPostDetails = async () => {
         const itemId = post.id;
@@ -163,22 +137,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
         setLikesLoaded(true);
         setLoadingLikes(false);
     }, [loadingLikes, likesLoaded, post.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Scroll to highlighted comment after load
-    useEffect(() => {
-        if (highlightCommentId && commentsLoaded) {
-            const el = commentRefs.current.get(highlightCommentId);
-            el?.scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-    }, [commentsLoaded, highlightCommentId]);
-
-    // Scroll to highlighted like after load
-    useEffect(() => {
-        if (highlightLikeId && likesLoaded) {
-            const el = likeRefs.current.get(highlightLikeId);
-            el?.scrollIntoView({behavior: 'smooth', block: 'center'});
-        }
-    }, [likesLoaded, highlightLikeId]);
 
     useEffect(() => {
         if (post.id == null) return;
@@ -369,7 +327,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                                 commentsLoaded={commentsLoaded}
                                 comments={comments}
                                 highlightCommentId={highlightCommentId}
-                                commentRefs={commentRefs}
                                 postId={post.id}
                                 shareToken={shareToken}
                                 accountTagsMap={accountTagsMap}
@@ -381,7 +338,6 @@ export default function Post({post: postProp, viewerConfig, highlightCommentId, 
                                 likesLoaded={likesLoaded}
                                 likes={likes}
                                 highlightLikeId={highlightLikeId}
-                                likeRefs={likeRefs}
                                 postId={post.id}
                                 shareToken={shareToken}
                                 accountTagsMap={accountTagsMap}
