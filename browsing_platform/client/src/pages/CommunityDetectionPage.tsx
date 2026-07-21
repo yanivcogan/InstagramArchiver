@@ -920,9 +920,19 @@ export default function CommunityDetectionPage() {
         setKernelEntries(prev => prev.filter(e => e.account.id !== id));
     };
 
-    // Take an account out of the kernel. In tag mode, an account tagged with the
-    // community tag (or a subtag) would be re-seeded on the next tag load, so its
-    // justifying tag(s) must be removed first — confirmed via a dialog.
+    // Remove the community tag(s) justifying this entry's inclusion from the
+    // account in the database, then take it out of the kernel. Backs both the
+    // pill modal's confirm action and the expanded view's strip button.
+    const stripTagsAndRemove = async (entry: KernelEntry) => {
+        for (const tag of entry.tagSources) {
+            await removeAccountTag(entry.account.id, tag.id!);
+        }
+        removeFromKernel(entry.account.id);
+    };
+
+    // Take an account out of the kernel (compact pill X). In tag mode, an
+    // account tagged with the community tag (or a subtag) would be re-seeded on
+    // the next tag load, so a dialog asks whether to also strip the tag(s).
     const takeOutOfKernel = (entry: KernelEntry) => {
         if (communityDropdown && entry.tagSources.length > 0) {
             setPendingKernelTagRemoval(entry);
@@ -934,10 +944,7 @@ export default function CommunityDetectionPage() {
     const confirmKernelTagRemoval = async () => {
         const entry = pendingKernelTagRemoval;
         if (!entry) return;
-        for (const tag of entry.tagSources) {
-            await removeAccountTag(entry.account.id, tag.id!);
-        }
-        removeFromKernel(entry.account.id);
+        await stripTagsAndRemove(entry);
         setPendingKernelTagRemoval(null);
     };
 
@@ -1467,30 +1474,43 @@ export default function CommunityDetectionPage() {
                     </DialogActions>
                 </Dialog>
 
-                {/* ── Remove community tag(s) + take out of kernel modal ────── */}
+                {/* ── Kernel removal modal (compact pill X, tag mode) ───────── */}
                 <Dialog
                     open={pendingKernelTagRemoval !== null}
                     onClose={() => setPendingKernelTagRemoval(null)}
                     maxWidth="sm"
                     fullWidth
                 >
-                    <DialogTitle>Remove tag(s) and remove from seeds?</DialogTitle>
+                    <DialogTitle>Also remove the community tag(s)?</DialogTitle>
                     <DialogContent dividers>
                         <Typography variant="body2">
                             <strong>{pendingKernelTagRemoval?.account.title}</strong> is in the seed accounts
-                            because of the following community tag(s), which will be <strong>removed from the
-                            account in the database</strong> before it is taken out of the seeds:
+                            because of the following community tag(s):
                         </Typography>
-                        <Box component="ul" sx={{pl: 2.5, mt: 1, mb: 0}}>
+                        <Box component="ul" sx={{pl: 2.5, mt: 1, mb: 1}}>
                             {pendingKernelTagRemoval?.tagSources.map(t => (
                                 <li key={t.id}>
                                     <Typography variant="body2">{t.name}</Typography>
                                 </li>
                             ))}
                         </Box>
+                        <Typography variant="body2">
+                            If you remove it from the seeds <strong>without</strong> removing the tag(s),
+                            it will automatically return to the seeds the next time the community page is
+                            loaded for this tag.
+                        </Typography>
                     </DialogContent>
                     <DialogActions>
                         <Button onClick={() => setPendingKernelTagRemoval(null)}>Cancel</Button>
+                        <Button
+                            onClick={() => {
+                                if (!pendingKernelTagRemoval) return;
+                                removeFromKernel(pendingKernelTagRemoval.account.id);
+                                setPendingKernelTagRemoval(null);
+                            }}
+                        >
+                            Remove from seeds only
+                        </Button>
                         <Button variant="contained" color="error" onClick={confirmKernelTagRemoval}>
                             Remove tag(s) &amp; remove from seeds
                         </Button>
@@ -1690,7 +1710,7 @@ export default function CommunityDetectionPage() {
                                             key={entry.account.id}
                                             entry={entry}
                                             communityDropdown={communityDropdown}
-                                            onRemove={() => removeFromKernel(entry.account.id)}
+                                            onRemove={() => takeOutOfKernel(entry)}
                                             onTagToggle={(tag) => handleKernelTagToggle(entry, tag)}
                                         />
                                     ))}
