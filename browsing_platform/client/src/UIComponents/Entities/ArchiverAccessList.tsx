@@ -17,7 +17,7 @@ export const outboundStatus = (entry: IArchiverAccessEntry): 'following' | 'requ
 const OUTBOUND_META = {
     following: {icon: <CheckCircleIcon fontSize="small" color="success"/>, label: 'Following (has access)'},
     requested: {icon: <ScheduleIcon fontSize="small" color="warning"/>, label: 'Requested access'},
-    none: {icon: <RadioButtonUncheckedIcon fontSize="small" color="disabled"/>, label: 'No relationship'},
+    none: {icon: <RadioButtonUncheckedIcon fontSize="small" color="disabled"/>, label: 'No access'},
 } as const;
 
 interface IProps {
@@ -39,7 +39,7 @@ export default function ArchiverAccessList({entries}: IProps) {
                 <ListItemIcon>
                     <Tooltip title={meta.label}>{meta.icon}</Tooltip>
                 </ListItemIcon>
-                <ListItemText primary={entry.label}/>
+                <ListItemText primary={entry.label} sx={{color: meta.label === "No access" ? "#aaa" : "#000"}}/>
                 {(followedBy || requestedFrom) && (
                     <Stack direction="row" gap={0.5} sx={{ml: 1}}>
                         {followedBy && <Chip size="small" variant="outlined" label="follows back"/>}
