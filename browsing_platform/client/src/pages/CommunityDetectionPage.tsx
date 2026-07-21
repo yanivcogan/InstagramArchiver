@@ -409,7 +409,8 @@ interface KernelAccountCardProps {
     detail?: CandidateAccount;
     loading: boolean;
     communityDropdown: IQuickAccessTypeDropdown | null;
-    onTakeOut: () => void;
+    onStripAndRemove: () => void;
+    onRemoveOnly: () => void;
     tagDistribution?: ITagStat[];
     tagDistributionLoading: boolean;
     onTagDistributionOpen: () => void;
@@ -420,7 +421,8 @@ function KernelAccountCard({
                                detail,
                                loading,
                                communityDropdown,
-                               onTakeOut,
+                               onStripAndRemove,
+                               onRemoveOnly,
                                tagDistribution,
                                tagDistributionLoading,
                                onTagDistributionOpen,
@@ -459,20 +461,37 @@ function KernelAccountCard({
             tagDistributionLoading={tagDistributionLoading}
             onTagDistributionOpen={onTagDistributionOpen}
             actions={
-                <Tooltip
-                    title={removesTags
-                        ? 'Also removes the community tag(s) from this account in the database'
-                        : ''}
-                    disableHoverListener={!removesTags}
-                >
+                removesTags ? (
+                    <>
+                        <Tooltip title="Also removes the community tag(s) from this account in the database">
+                            <Button
+                                size="small" variant="outlined" color="error"
+                                onClick={onStripAndRemove}
+                                sx={{fontSize: '0.75rem'}}
+                            >
+                                Remove &amp; strip tag(s)
+                            </Button>
+                        </Tooltip>
+                        <Tooltip
+                            title="Keeps the tag(s) — the account will return to the seeds the next time the community page is loaded for this tag">
+                            <Button
+                                size="small" variant="text" color="error"
+                                onClick={onRemoveOnly}
+                                sx={{fontSize: '0.75rem'}}
+                            >
+                                Remove from seeds
+                            </Button>
+                        </Tooltip>
+                    </>
+                ) : (
                     <Button
                         size="small" variant="outlined" color="error"
-                        onClick={onTakeOut}
+                        onClick={onRemoveOnly}
                         sx={{fontSize: '0.75rem'}}
                     >
                         Remove from seeds
                     </Button>
-                </Tooltip>
+                )
             }
         />
     );
@@ -1683,7 +1702,8 @@ export default function CommunityDetectionPage() {
                                                 detail={kernelDetails[entry.account.id]}
                                                 loading={kernelDetailsLoading}
                                                 communityDropdown={communityDropdown}
-                                                onTakeOut={() => takeOutOfKernel(entry)}
+                                                onStripAndRemove={() => stripTagsAndRemove(entry)}
+                                                onRemoveOnly={() => removeFromKernel(entry.account.id)}
                                                 tagDistribution={candidateTagDistributions[entry.account.id]}
                                                 tagDistributionLoading={!!loadingTagDistributions[entry.account.id]}
                                                 onTagDistributionOpen={() => loadCandidateTagDistribution(entry.account.id)}
