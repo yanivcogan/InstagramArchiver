@@ -59,7 +59,7 @@ const post = async (
         }
     }
     const res = await fetch(config.serverPath + apiPath + path, {
-        method: HTTP_METHODS[fixedMethod],
+        method: HTTP_METHODS[fixedMethod].toUpperCase(),
         body: fixedMethod === HTTP_METHODS.get ? undefined : JSON.stringify(data),
         headers,
         signal: options?.abortSignal,
