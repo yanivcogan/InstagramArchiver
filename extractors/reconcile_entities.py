@@ -99,6 +99,17 @@ def reconcile_posts(new_post: Post, existing_post: Optional[Post]) -> Post:
     return existing_post
 
 
+def _is_video_asset_suffix(url_suffix: Optional[str]) -> bool:
+    """Whether a media url_suffix names a video asset rather than a still image.
+
+    Both progressive video_versions URLs and DASH manifest <BaseURL>s end in
+    ``.mp4``; poster frames and thumbnails are ``.jpg``/``.webp``.
+    """
+    if not url_suffix:
+        return False
+    return url_suffix.split('?')[0].lower().endswith('.mp4')
+
+
 def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     if existing_media is None:
         return new_media
@@ -115,6 +126,18 @@ def reconcile_media(new_media: Media, existing_media: Optional[Media]) -> Media:
     else:
         existing_media.url_suffix = reconcile_primitives(existing_media.url_suffix, new_media.url_suffix)
         existing_media.media_type = reconcile_primitives(existing_media.media_type, new_media.media_type)
+    # A video's asset URL must name a video. Some responses classify an item as
+    # video while carrying only its poster frame (Instagram's Reels-tab
+    # clips_user_connection nodes), and because later observations win on
+    # conflicts, such a record can overwrite a good .mp4 suffix with its .jpg —
+    # after which attach_media_to_entities links the row to the downloaded
+    # thumbnail and the media_type no longer matches the local file. Whenever
+    # either candidate is a real video asset, keep that one.
+    if existing_media.media_type == "video" and not _is_video_asset_suffix(existing_media.url_suffix):
+        for candidate in (existing_media.url_suffix, new_media.url_suffix):
+            if _is_video_asset_suffix(candidate):
+                existing_media.url_suffix = candidate
+                break
     existing_media.post_url_suffix = reconcile_primitives(existing_media.post_url_suffix, new_media.post_url_suffix)
     new_size = _local_url_size(new_media.local_url)
     existing_size = _local_url_size(existing_media.local_url)

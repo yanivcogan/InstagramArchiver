@@ -40,6 +40,18 @@ def _asset_url_from_item(item) -> Optional[str]:
             url = _html.unescape(raw).strip()
             if url:
                 return url
+    if _is_video(item):
+        # A video item whose response carries no video URL at all — Instagram's
+        # Reels-tab nodes (`clips_user_connection`) are classified media_type=2
+        # but ship only a poster frame. Falling through to image_versions2 here
+        # would hand back the poster as if it were the video's own asset: every
+        # caller pairs this URL with `media_type="video" if _is_video(item)`, so
+        # the Media row would keep media_type "video" while its url_suffix (and
+        # hence the local file attach_media_to_entities links it to) is a .jpg.
+        # Report "no asset URL" instead and let a richer observation of the same
+        # item — the profile timeline, or the media-info detail response — supply
+        # the real one during reconciliation.
+        return None
     image_versions2 = getattr(item, 'image_versions2', None)
     if image_versions2 and image_versions2.candidates:
         return image_versions2.candidates[0].url
