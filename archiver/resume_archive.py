@@ -269,6 +269,7 @@ def resume_archive(archive_dir: Path) -> None:
         download_unfetched_media=storage_config.v_download_unfetched_media,
         download_full_versions_of_fetched_media=storage_config.v_download_full_versions_of_fetched_media,
         download_highest_quality_assets_from_structures=storage_config.v_download_highest_quality_assets_from_structures,
+        download_full_assets_for_opened_posts_only=storage_config.v_download_full_assets_for_opened_posts_only,
     )
     photo_config = PhotoAcquisitionConfig(
         download_missing=True,

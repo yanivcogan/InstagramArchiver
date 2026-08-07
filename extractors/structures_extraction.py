@@ -46,6 +46,49 @@ def extract_structure_from_entry(entry: dict) -> Optional[StructureType]:
     return None
 
 
+def opened_post_structures(structures: list[StructureType]) -> list[StructureType]:
+    """Narrow a structure list to the responses that only appear when a specific
+    post was *opened*, as opposed to merely scrolled past in a feed.
+
+    Instagram serves post-detail payloads from three places, none of which a
+    timeline/grid/reels-tab response ever carries:
+
+    - ``/api/v1/media/{pk}/info/``      -> ``ApiV1Response.media_info``
+    - the SPA's shortcode GraphQL query -> ``GraphQLResponse.post_shortcode``
+    - a ``/p/{shortcode}/`` page bootstrap -> ``PageResponse.posts``
+
+    This matters because Instagram preloads the head of every video in a
+    profile timeline, so "was fetched during the session" cannot tell an opened
+    post apart from one that merely scrolled into view. The post-detail request
+    can: it is issued on click and on nothing else.
+
+    Threads has no equivalent discriminator (``ThreadsResponse`` carries one
+    undifferentiated ``posts`` list), so Threads structures are never reported
+    as opened. Callers must treat an empty result as "cannot determine" rather
+    than "nothing was opened".
+
+    Each match is returned as a *narrowed copy* holding only the post-detail
+    field, so a caller that traverses the result never sees a bulk feed that
+    happened to ride along in the same response.
+    """
+    opened: list[StructureType] = []
+    for s in structures:
+        if isinstance(s, ApiV1Response) and s.media_info:
+            opened.append(ApiV1Response(context=s.context, media_info=s.media_info))
+        elif isinstance(s, GraphQLResponse) and s.post_shortcode:
+            opened.append(GraphQLResponse(context=s.context, post_shortcode=s.post_shortcode))
+        elif isinstance(s, PageResponse) and s.posts:
+            opened.append(PageResponse(
+                posts=s.posts,
+                comments=None,
+                timelines=None,
+                highlight_reels=None,
+                stories=None,
+                stories_direct=None,
+            ))
+    return opened
+
+
 def structures_from_har(har_path: Path) -> list[StructureType]:
     structures: list[StructureType] = []
     with open(har_path, "rb") as f:

@@ -16,7 +16,7 @@ from pydantic import BaseModel, field_validator
 
 from archiver.summarizers import download_log as dl
 from extractors.instagram.models import VideoVersion
-from extractors.structures_extraction import StructureType, structures_from_har
+from extractors.structures_extraction import StructureType, opened_post_structures, structures_from_har
 
 
 def _safe_id(identifier: str, max_len: int = 60) -> str:
@@ -1111,6 +1111,42 @@ class VideoAcquisitionConfig(BaseModel):
     #       acquisition (full network fetch allowed, subject to the other flags).
     # The default keeps user deletions sticky across re-extraction runs.
     on_logged_missing: OnLoggedMissingVideo = "reassemble_from_har_only"
+    # Restrict CDN acquisition (full-asset download and full-track download) to
+    # videos belonging to a post the operator actually opened.
+    #
+    # Instagram preloads the head of every video in a profile timeline, so
+    # scrolling a prolific account leaves dozens of videos with fetched_tracks —
+    # and download_full_versions_of_fetched_media then pulls each one from the
+    # CDN in full, even with download_unfetched_media=False. Archiving one reel
+    # from deep in a timeline can cost hundreds of MB of collateral.
+    #
+    # When True, only videos found in an opened-post response (see
+    # opened_post_structures) are eligible for a network fetch; everything else
+    # falls back to reassembly from the bytes already in the HAR, so the
+    # preloaded fragments are still preserved without re-downloading the asset.
+    # Left False, mere presence in a fetched timeline merits a full download —
+    # the historical behaviour.
+    #
+    # The restriction is skipped entirely (with a warning) for sessions that
+    # contain no opened-post response at all — a Threads session, or one spent
+    # only in the story viewer — because there "nothing was opened" is
+    # indistinguishable from "this platform can't say", and failing closed would
+    # silently drop media that has no HAR-segment fallback.
+    download_full_assets_for_opened_posts_only: bool = False
+
+
+def opened_post_video_ids(structures: Optional[list[StructureType]]) -> set[str]:
+    """The canonical xpv_asset_ids of every video carried by an opened-post
+    response, keyed exactly as acquire_videos keys its combined video map.
+
+    Includes the ids derived from all quality variants (via
+    _build_filename_xpv_map), not just video_versions[0], so an opened post is
+    still recognised when the browser fetched a non-first rendition.
+    """
+    opened = opened_post_structures(structures or [])
+    ids = {v.xpv_asset_id for v in extract_videos_from_structures(opened)}
+    ids |= set(_build_filename_xpv_map(opened).values())
+    return ids
 
 
 def _requested_xpvs_from_urls(urls, struct_filename_to_xpv: dict[str, str]) -> set[str]:
@@ -1147,6 +1183,19 @@ def acquire_videos(
     download_full_versions_of_fetched_media = config.download_full_versions_of_fetched_media
     download_highest_quality_assets_from_structures = config.download_highest_quality_assets_from_structures
     on_logged_missing = config.on_logged_missing
+
+    # None => no restriction in force. A set => only these ids may be fetched
+    # from the CDN; every other video is limited to HAR-segment reassembly.
+    opened_post_xpvs: Optional[set[str]] = None
+    if config.download_full_assets_for_opened_posts_only:
+        if opened_post_structures(structures or []):
+            opened_post_xpvs = opened_post_video_ids(structures)
+            print(f"[acquire] Opened-post restriction active: {len(opened_post_xpvs)} video id(s) "
+                  f"eligible for CDN acquisition; all others limited to HAR-segment reassembly.")
+        else:
+            print("[acquire] download_full_assets_for_opened_posts_only is set, but this session "
+                  "contains no opened-post response (no media-info / shortcode query / permalink "
+                  "page load). Restriction NOT applied -- every video stays eligible.")
 
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -1279,6 +1328,13 @@ def acquire_videos(
             and video.xpv_asset_id in download_log.videos
         )
 
+        # Not part of a post the operator opened -> no CDN traffic for this
+        # asset. It can still be rebuilt from the bytes already in the HAR.
+        cdn_restricted = (
+            opened_post_xpvs is not None
+            and video.xpv_asset_id not in opened_post_xpvs
+        )
+
         # User previously curated this asset away (file missing + in log).
         # Apply the configured policy.
         if logged and on_logged_missing == "skip":
@@ -1292,7 +1348,7 @@ def acquire_videos(
             download_result = save_fetched_asset(
                 video,
                 output_dir,
-                download_full_track=download_full_versions_of_fetched_media,
+                download_full_track=download_full_versions_of_fetched_media and not cdn_restricted,
             )
             if download_result.location is not None:
                 video.local_files = [download_result.location]
@@ -1318,7 +1374,8 @@ def acquire_videos(
         if (
             (not download_result.success) and
             download_highest_quality_assets_from_structures and
-            video.full_asset
+            video.full_asset and
+            not cdn_restricted
         ):
             download_result = download_full_asset(video, output_dir)
         if (
@@ -1327,7 +1384,7 @@ def acquire_videos(
             download_result = save_fetched_asset(
                 video,
                 output_dir,
-                download_full_track=download_full_versions_of_fetched_media,
+                download_full_track=download_full_versions_of_fetched_media and not cdn_restricted,
             )
         if download_result.location is not None:
             if video.local_files is None:

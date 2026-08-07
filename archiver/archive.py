@@ -320,6 +320,7 @@ class StorageConfig(BaseModel):
     v_download_unfetched_media: bool
     v_download_full_versions_of_fetched_media: bool
     v_download_highest_quality_assets_from_structures: bool
+    v_download_full_assets_for_opened_posts_only: bool = False
     p_download_media_not_in_structures: bool
     p_download_unfetched_media: bool
     p_download_highest_quality_assets_from_structures: bool
@@ -370,6 +371,11 @@ def get_storage_config() -> Optional[StorageConfig]:
                             title="Download Highest Quality Assets from Structures (if set to false, the videos will be downloaded in the quality they were displayed in during the session)",
                             key="v_download_highest_quality_assets_from_structures",
                             default_value=True
+                        ),
+                        FormFieldBool(
+                            title="Only Download Videos from Posts I Opened (Instagram preloads the start of every video you scroll past, so a long timeline otherwise costs hundreds of MB; videos merely scrolled past are still rebuilt from the captured bytes)",
+                            key="v_download_full_assets_for_opened_posts_only",
+                            default_value=False
                         )
                     ]
                 ),
@@ -673,6 +679,7 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
     v_download_unfetched_media: bool = storage_config.v_download_unfetched_media
     v_download_full_versions_of_fetched_media: bool = storage_config.v_download_full_versions_of_fetched_media
     v_download_highest_quality_assets_from_structures: bool = storage_config.v_download_highest_quality_assets_from_structures
+    v_download_full_assets_for_opened_posts_only: bool = storage_config.v_download_full_assets_for_opened_posts_only
 
     # photo downloading configuration
     p_download_missing: bool = True
@@ -768,6 +775,7 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
         download_unfetched_media=v_download_unfetched_media,
         download_full_versions_of_fetched_media=v_download_full_versions_of_fetched_media,
         download_highest_quality_assets_from_structures=v_download_highest_quality_assets_from_structures,
+        download_full_assets_for_opened_posts_only=v_download_full_assets_for_opened_posts_only,
     )
     photo_config = PhotoAcquisitionConfig(
         download_missing=p_download_missing,
