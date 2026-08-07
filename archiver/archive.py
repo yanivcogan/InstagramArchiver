@@ -321,6 +321,7 @@ class StorageConfig(BaseModel):
     v_download_full_versions_of_fetched_media: bool
     v_download_highest_quality_assets_from_structures: bool
     v_download_full_assets_for_opened_posts_only: bool = False
+    v_reassemble_unopened_posts_from_har: bool = True
     p_download_media_not_in_structures: bool
     p_download_unfetched_media: bool
     p_download_highest_quality_assets_from_structures: bool
@@ -376,6 +377,11 @@ def get_storage_config() -> Optional[StorageConfig]:
                             title="Only Download Videos from Posts I Opened (Instagram preloads the start of every video you scroll past, so a long timeline otherwise costs hundreds of MB; videos merely scrolled past are still rebuilt from the captured bytes)",
                             key="v_download_full_assets_for_opened_posts_only",
                             default_value=False
+                        ),
+                        FormFieldBool(
+                            title="...but still rebuild the videos I only scrolled past from the captured bytes (uncheck to keep only the posts I opened as files — the scrolled-past fragments stay inside the HAR either way)",
+                            key="v_reassemble_unopened_posts_from_har",
+                            default_value=True
                         )
                     ]
                 ),
@@ -680,6 +686,7 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
     v_download_full_versions_of_fetched_media: bool = storage_config.v_download_full_versions_of_fetched_media
     v_download_highest_quality_assets_from_structures: bool = storage_config.v_download_highest_quality_assets_from_structures
     v_download_full_assets_for_opened_posts_only: bool = storage_config.v_download_full_assets_for_opened_posts_only
+    v_reassemble_unopened_posts_from_har: bool = storage_config.v_reassemble_unopened_posts_from_har
 
     # photo downloading configuration
     p_download_missing: bool = True
@@ -776,6 +783,7 @@ def finish_recording(recording_thread: Optional[threading.Thread], archive_dir: 
         download_full_versions_of_fetched_media=v_download_full_versions_of_fetched_media,
         download_highest_quality_assets_from_structures=v_download_highest_quality_assets_from_structures,
         download_full_assets_for_opened_posts_only=v_download_full_assets_for_opened_posts_only,
+        reassemble_unopened_posts_from_har=v_reassemble_unopened_posts_from_har,
     )
     photo_config = PhotoAcquisitionConfig(
         download_missing=p_download_missing,

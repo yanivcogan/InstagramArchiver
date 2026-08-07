@@ -1133,6 +1133,17 @@ class VideoAcquisitionConfig(BaseModel):
     # indistinguishable from "this platform can't say", and failing closed would
     # silently drop media that has no HAR-segment fallback.
     download_full_assets_for_opened_posts_only: bool = False
+    # Only consulted while the opened-post restriction above is in force.
+    #
+    # True (default): media outside an opened post is still rebuilt from the
+    # response bodies already in the HAR — no network, but Instagram's preload
+    # fragments become files on disk, and each one then attracts a manifest and
+    # a PAR2 recovery set. On a long timeline that is still tens of MB.
+    #
+    # False: unopened media is not extracted at all. The captured bytes remain
+    # in the HAR (and in the WACZ derived from it), so nothing observed during
+    # the session is lost — it simply isn't materialised as a separate asset.
+    reassemble_unopened_posts_from_har: bool = True
 
 
 def opened_post_video_ids(structures: Optional[list[StructureType]]) -> set[str]:
@@ -1190,8 +1201,11 @@ def acquire_videos(
     if config.download_full_assets_for_opened_posts_only:
         if opened_post_structures(structures or []):
             opened_post_xpvs = opened_post_video_ids(structures)
+            fate = ("limited to HAR-segment reassembly"
+                    if config.reassemble_unopened_posts_from_har
+                    else "not extracted at all (their bytes stay in the HAR)")
             print(f"[acquire] Opened-post restriction active: {len(opened_post_xpvs)} video id(s) "
-                  f"eligible for CDN acquisition; all others limited to HAR-segment reassembly.")
+                  f"eligible for CDN acquisition; all others {fate}.")
         else:
             print("[acquire] download_full_assets_for_opened_posts_only is set, but this session "
                   "contains no opened-post response (no media-info / shortcode query / permalink "
@@ -1334,6 +1348,9 @@ def acquire_videos(
             opened_post_xpvs is not None
             and video.xpv_asset_id not in opened_post_xpvs
         )
+        if cdn_restricted and not config.reassemble_unopened_posts_from_har:
+            # Don't materialise this asset at all. Its bytes stay in the HAR.
+            continue
 
         # User previously curated this asset away (file missing + in log).
         # Apply the configured policy.
