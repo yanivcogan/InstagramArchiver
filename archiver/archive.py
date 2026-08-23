@@ -1003,10 +1003,10 @@ if __name__ == "__main__":
     ensure_par2_installed()
     selected_profile = select_profile()
     url = input("Enter the URL to archive: ")
-    # Strip Meta share-sheet tracking params: Instagram's ?igsh=/&igsh= and
-    # Threads' ?xmt=/&xmt= equivalent.
+    # Strip Meta share-sheet tracking params: Instagram's ?igsi=/&igsi= (and the
+    # legacy ?igsh=/&igsh=) and Threads' ?xmt=/&xmt= equivalent.
     url = url.strip()
-    for _sep in ("?igsh=", "&igsh=", "?xmt=", "&xmt="):
+    for _sep in ("?igsi=", "&igsi=", "?igsh=", "&igsh=", "?xmt=", "&xmt="):
         url = url.split(_sep)[0]
     url = url.strip()
 
