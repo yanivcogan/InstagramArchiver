@@ -27,7 +27,7 @@ class FriendshipUserApiV1(BaseModel):
     account_badges: Optional[List[Any]] = Field(default_factory=list)
     latest_reel_media: Optional[int] = None
 
-    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @field_validator('pk', 'pk_id', 'id', 'fbid_v2', mode='before')
     @classmethod
     def coerce_id_to_str(cls, v: Any) -> Any:
         return _str_id(v)
@@ -119,7 +119,7 @@ class CommentUserApiV1(BaseModel):
     profile_pic_url: str
     is_mentionable: Optional[bool] = None # Specific to user in comment items
 
-    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @field_validator('pk', 'pk_id', 'id', 'fbid_v2', mode='before')
     @classmethod
     def coerce_id_to_str(cls, v: Any) -> Any:
         return _str_id(v)
@@ -307,7 +307,7 @@ class MediaUserApiV1(BaseModel):
     is_embeds_disabled: Optional[bool] = None
     latest_reel_media: Optional[int] = None
 
-    @field_validator('pk', 'pk_id', 'id', mode='before')
+    @field_validator('pk', 'pk_id', 'id', 'fbid_v2', mode='before')
     @classmethod
     def coerce_id_to_str(cls, v: Any) -> Any:
         return _str_id(v)

@@ -1,6 +1,11 @@
 from typing import List, Optional, Any
 
-from pydantic import ConfigDict, BaseModel, Field
+from pydantic import ConfigDict, BaseModel, Field, field_validator
+
+
+def _str_id(v: Any) -> Any:
+    """Coerce integer IDs to strings. Instagram's API inconsistently returns IDs as either str or int."""
+    return str(v) if isinstance(v, int) else v
 
 
 class InstagramCaption(BaseModel):
@@ -270,6 +275,11 @@ class PostCommentUser(BaseModel):
     pk: str
     profile_pic_url: Optional[str] = None
     username: str
+
+    @field_validator('pk', 'id', 'fbid_v2', mode='before')
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> Any:
+        return _str_id(v)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
